@@ -1,0 +1,719 @@
+{
+  "generatedAt": "2026-09-29T17:26:21.817Z",
+  "collections": [
+    {
+      "name": "users",
+      "type": "auth",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.role = 'admin'",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "avatar",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "role",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["operador", "supervisor", "admin"]
+        },
+        {
+          "name": "regioes",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "telefone",
+          "type": "text",
+          "required": false,
+          "system": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX `idx_tokenKey__pb_users_auth_` ON `users` (`tokenKey`)",
+        "CREATE UNIQUE INDEX `idx_email__pb_users_auth_` ON `users` (`email`) WHERE `email` != ''"
+      ]
+    },
+    {
+      "name": "clientes",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "codigo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "cpf_cnpj",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "telefone",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "whatsapp",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "telefone_invalido",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "regiao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vendedor",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "segmento",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "endereco",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ultima_compra",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_ultima_compra",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "toneladas_historico",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_historico",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "compras_count",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "dias_sem_faturar",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "faixa",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["60_89", "90_plus", "recente"]
+        },
+        {
+          "name": "score",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "estado",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": [
+            "na_base",
+            "reservado",
+            "em_atendimento",
+            "reativado",
+            "reagendado",
+            "contatado",
+            "compra_terceiros",
+            "nao_quer_negociar",
+            "duplicado",
+            "sem_contato"
+          ]
+        },
+        {
+          "name": "operador",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "lock_timestamp",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "reagendado_para",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "reagendado_operador",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "tentativas_sem_contato",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ciclos_followup",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "quarentena_ate",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "pedido_reativacao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "pedido_confirmado",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "kommo_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "kommo_lead_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "origem",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["importacao", "kommo", "manual"]
+        },
+        {
+          "name": "duplicado_de_codigo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "notas",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "rascunho_respostas",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_clientes_codigo ON clientes (codigo)",
+        "CREATE INDEX idx_clientes_estado ON clientes (estado)",
+        "CREATE INDEX idx_clientes_regiao ON clientes (regiao)",
+        "CREATE INDEX idx_clientes_score ON clientes (score DESC)",
+        "CREATE INDEX idx_clientes_operador ON clientes (operador)"
+      ]
+    },
+    {
+      "name": "interacoes",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "cliente",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "clientes"
+        },
+        {
+          "name": "operador",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "tipo",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["ligacao", "whatsapp", "email", "status", "nota", "formulario"]
+        },
+        {
+          "name": "conteudo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "desfecho",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "motivo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "reagendado_para",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "numero_pedido",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "estado_anterior",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "estado_novo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_interacoes_cliente ON interacoes (cliente, created DESC)",
+        "CREATE INDEX idx_interacoes_operador ON interacoes (operador)"
+      ]
+    },
+    {
+      "name": "respostas_formulario",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "cliente",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "clientes"
+        },
+        {
+          "name": "interacao",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "interacoes"
+        },
+        {
+          "name": "operador",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "respostas",
+          "type": "json",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "desfecho",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_potencial",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "toneladas_potencial",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "anexos",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_respostas_cliente ON respostas_formulario (cliente, created DESC)"
+      ]
+    },
+    {
+      "name": "importacoes",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "nome_arquivo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "linhas_total",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "linhas_importadas",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "linhas_atualizadas",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "linhas_rejeitadas",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "reconciliados_faturaram",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "pedidos_validados",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "pedidos_divergentes",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["processando", "concluida", "erro"]
+        },
+        {
+          "name": "detalhes_erro",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "divergencias_pedidos",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "substituicao_total",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "criado_por",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_importacoes_created ON importacoes (created DESC)"]
+    },
+    {
+      "name": "eventos_log",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "cliente",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "clientes"
+        },
+        {
+          "name": "usuario",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "acao",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "detalhes",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ip",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_eventos_cliente ON eventos_log (cliente, created DESC)",
+        "CREATE INDEX idx_eventos_created ON eventos_log (created DESC)"
+      ]
+    },
+    {
+      "name": "configuracoes",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.role = 'admin' || @request.auth.role = 'supervisor'",
+        "update": "@request.auth.role = 'admin' || @request.auth.role = 'supervisor'",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "chave",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "valor",
+          "type": "json",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "descricao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE UNIQUE INDEX idx_config_chave ON configuracoes (chave)"]
+    }
+  ]
+}

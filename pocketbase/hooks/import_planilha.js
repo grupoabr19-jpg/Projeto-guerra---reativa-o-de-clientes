@@ -1,0 +1,272 @@
+routerAdd(
+  'POST',
+  '/backend/v1/import/process-rows',
+  (e) => {
+    try {
+      const userId = e.auth?.id
+      if (!userId) return e.unauthorizedError('auth required')
+
+      const body = e.requestInfo().body || {}
+      const rows = body.rows || []
+      const fileName = body.fileName || 'planilha.xlsx'
+      const substituicaoTotal = Boolean(body.substituicaoTotal)
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return e.badRequestError('Nenhuma linha fornecida para importação.')
+      }
+
+      const colClientes = $app.findCollectionByNameOrId('clientes')
+      const colImportacoes = $app.findCollectionByNameOrId('importacoes')
+
+      let countNovas = 0
+      let countAtualizadas = 0
+      let countRejeitadas = 0
+      let countReconciliadosFaturaram = 0
+      let countPedidosValidados = 0
+      let countPedidosDivergentes = 0
+      const erros = []
+      const divergencias = []
+      const importedCodigos = new Set()
+
+      // Ler pesos de score
+      let pesos = {
+        recencia: 30,
+        frequencia: 25,
+        ticket_tonelagem: 20,
+        segmento: 10,
+        tentativas_penalidade: 15,
+      }
+      try {
+        const cfg = $app.findFirstRecordByData('configuracoes', 'chave', 'pesos_score')
+        if (cfg && cfg.get('valor')) pesos = cfg.get('valor')
+      } catch (_) {}
+
+      const now = new Date()
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]
+        const linhaNum = i + 2 // cabeçalho = linha 1
+
+        // Validação obrigatória: código único no formato CXXXXXX ou similar
+        const rawCodigo = String(row.codigo || '')
+          .trim()
+          .toUpperCase()
+        const nome = String(row.nome || '').trim()
+
+        if (!rawCodigo) {
+          countRejeitadas++
+          erros.push({
+            linha: linhaNum,
+            codigo: '',
+            erro: "Coluna 'Código do Cliente' obrigatória está vazia.",
+          })
+          continue
+        }
+
+        if (!nome) {
+          countRejeitadas++
+          erros.push({
+            linha: linhaNum,
+            codigo: rawCodigo,
+            erro: "Coluna 'Nome' obrigatória está vazia.",
+          })
+          continue
+        }
+
+        importedCodigos.add(rawCodigo)
+
+        // Tratamento numérico Q15 / Q16 e compras
+        const valorUltimaCompra =
+          typeof row.valor_ultima_compra === 'number'
+            ? row.valor_ultima_compra
+            : parseFloat(
+                String(row.valor_ultima_compra || 0)
+                  .replace(/[^\d.,]/g, '')
+                  .replace(',', '.'),
+              ) || 0
+        const toneladasHistorico =
+          typeof row.toneladas_historico === 'number'
+            ? row.toneladas_historico
+            : parseFloat(
+                String(row.toneladas_historico || 0)
+                  .replace(/[^\d.,]/g, '')
+                  .replace(',', '.'),
+              ) || 0
+        const valorHistorico =
+          typeof row.valor_historico === 'number'
+            ? row.valor_historico
+            : parseFloat(
+                String(row.valor_historico || 0)
+                  .replace(/[^\d.,]/g, '')
+                  .replace(',', '.'),
+              ) || 0
+        const comprasCount = parseInt(row.compras_count || 1, 10) || 1
+
+        // Calcular dias sem faturar
+        let ultimaCompraDate = null
+        let diasSemFaturar = 90
+        if (row.ultima_compra) {
+          const parsed = new Date(row.ultima_compra)
+          if (!isNaN(parsed.getTime())) {
+            ultimaCompraDate = parsed.toISOString()
+            const diffMs = now.getTime() - parsed.getTime()
+            diasSemFaturar = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
+          }
+        }
+
+        // Determinar faixa: recente (< 60), 60_89 (60-89 dias), 90_plus (90+ dias)
+        let faixa = '90_plus'
+        if (diasSemFaturar < 60) {
+          faixa = 'recente'
+        } else if (diasSemFaturar >= 60 && diasSemFaturar <= 89) {
+          faixa = '60_89'
+        } else {
+          faixa = '90_plus'
+        }
+
+        // Cálculo de score ponderado
+        // Recência (30%): mais tempo inativo até 180 dias dá pontuação
+        const scoreRecencia = Math.min(100, Math.round((diasSemFaturar / 180) * 100))
+        // Frequência (25%): compras anteriores
+        const scoreFreq = Math.min(100, comprasCount * 12)
+        // Ticket/Tonelada (20%): ticket médio
+        const ticketMedio = comprasCount > 0 ? valorHistorico / comprasCount : valorUltimaCompra
+        const scoreTicket = Math.min(100, Math.round((ticketMedio / 100000) * 100))
+        // Segmento (10%): base 70
+        const scoreSeg = 70
+
+        const calcScore = Math.min(
+          100,
+          Math.max(
+            0,
+            Math.round(
+              (scoreRecencia * (pesos.recencia || 30)) / 100 +
+                (scoreFreq * (pesos.frequencia || 25)) / 100 +
+                (scoreTicket * (pesos.ticket_tonelagem || 20)) / 100 +
+                (scoreSeg * (pesos.segmento || 10)) / 100,
+            ),
+          ),
+        )
+
+        // UPSERT no cliente
+        let rec = null
+        let isNew = false
+        try {
+          rec = $app.findFirstRecordByData('clientes', 'codigo', rawCodigo)
+        } catch (_) {
+          rec = new Record(colClientes)
+          rec.set('codigo', rawCodigo)
+          isNew = true
+        }
+
+        rec.set('nome', nome)
+        if (row.cpf_cnpj) rec.set('cpf_cnpj', String(row.cpf_cnpj).trim())
+        if (row.telefone) rec.set('telefone', String(row.telefone).replace(/\D/g, ''))
+        if (row.whatsapp) rec.set('whatsapp', String(row.whatsapp).replace(/\D/g, ''))
+        if (row.email) rec.set('email', String(row.email).trim())
+        rec.set('regiao', String(row.regiao || 'Sem Região').trim())
+        if (row.vendedor) rec.set('vendedor', String(row.vendedor).trim())
+        if (row.segmento) rec.set('segmento', String(row.segmento).trim())
+        if (row.endereco) rec.set('endereco', String(row.endereco).trim())
+
+        if (ultimaCompraDate) rec.set('ultima_compra', ultimaCompraDate)
+        rec.set('valor_ultima_compra', valorUltimaCompra)
+        rec.set('toneladas_historico', toneladasHistorico)
+        rec.set('valor_historico', valorHistorico)
+        rec.set('compras_count', comprasCount)
+        rec.set('dias_sem_faturar', diasSemFaturar)
+        rec.set('faixa', faixa)
+
+        // Desconto de penalidade de tentativas anteriores no score
+        const tentativas = rec.getInt('tentativas_sem_contato') || 0
+        const finalScore = Math.max(0, calcScore - tentativas * 5)
+        rec.set('score', finalScore)
+
+        // Reconciliação: se o cliente faturou recentemente (< 60 dias), sai da fila de reativação automaticamente
+        const currentEstado = rec.getString('estado')
+        if (faixa === 'recente') {
+          if (currentEstado !== 'reativado') {
+            rec.set('estado', 'reativado')
+            rec.set('operador', '')
+            rec.set('lock_timestamp', null)
+            countReconciliadosFaturaram++
+          }
+        } else if (isNew) {
+          rec.set('estado', 'na_base')
+          rec.set('origem', 'importacao')
+        }
+
+        // Validação de pedido de reativação informado anteriormente
+        const pedidoSalvo = rec.getString('pedido_reativacao')
+        const pedidoPlanilha = String(row.pedido || row.numero_pedido || '').trim()
+        if (pedidoSalvo) {
+          if (pedidoPlanilha && pedidoPlanilha === pedidoSalvo) {
+            rec.set('pedido_confirmado', true)
+            countPedidosValidados++
+          } else if (pedidoPlanilha && pedidoPlanilha !== pedidoSalvo) {
+            countPedidosDivergentes++
+            divergencias.push({
+              codigo: rawCodigo,
+              nome: nome,
+              pedidoEsperado: pedidoSalvo,
+              pedidoPlanilha: pedidoPlanilha,
+            })
+          }
+        }
+
+        $app.save(rec)
+
+        if (isNew) countNovas++
+        else countAtualizadas++
+      }
+
+      // Se substituição total ativada: quem estava na base e não veio na planilha é marcado como suspenso
+      if (substituicaoTotal) {
+        const allActive = $app.findRecordsByFilter('clientes', "estado = 'na_base'", '', 500, 0)
+        for (let j = 0; j < allActive.length; j++) {
+          const item = allActive[j]
+          if (!importedCodigos.has(item.getString('codigo'))) {
+            item.set('estado', 'suspenso')
+            $app.save(item)
+          }
+        }
+      }
+
+      // Registrar histórico da importação
+      const impRec = new Record(colImportacoes)
+      impRec.set('nome_arquivo', fileName)
+      impRec.set('linhas_total', rows.length)
+      impRec.set('linhas_importadas', countNovas)
+      impRec.set('linhas_atualizadas', countAtualizadas)
+      impRec.set('linhas_rejeitadas', countRejeitadas)
+      impRec.set('reconciliados_faturaram', countReconciliadosFaturaram)
+      impRec.set('pedidos_validados', countPedidosValidados)
+      impRec.set('pedidos_divergentes', countPedidosDivergentes)
+      impRec.set('status', countRejeitadas > 0 && countNovas === 0 ? 'erro' : 'concluida')
+      impRec.set('detalhes_erro', erros)
+      impRec.set('divergencias_pedidos', divergencias)
+      impRec.set('substituicao_total', substituicaoTotal)
+      impRec.set('criado_por', userId)
+      $app.save(impRec)
+
+      return e.json(200, {
+        ok: true,
+        importacao_id: impRec.id,
+        resumo: {
+          total: rows.length,
+          novas: countNovas,
+          atualizadas: countAtualizadas,
+          rejeitadas: countRejeitadas,
+          reconciliadosFaturaram: countReconciliadosFaturaram,
+          pedidosValidados: countPedidosValidados,
+          pedidosDivergentes: countPedidosDivergentes,
+          erros: erros,
+          divergencias: divergencias,
+        },
+      })
+    } catch (err) {
+      return e.json(500, { error: err.message })
+    }
+  },
+  $apis.requireAuth(),
+)
