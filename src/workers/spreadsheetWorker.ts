@@ -178,7 +178,7 @@ function inspectSheetMatrix(
 }
 
 self.onmessage = async (e: MessageEvent) => {
-  const { id, file, sampleSize = 20 } = e.data
+  const { id, file, sampleSize = 20, mode = 'metadata', targetSheet } = e.data
 
   try {
     self.postMessage({
@@ -204,7 +204,7 @@ self.onmessage = async (e: MessageEvent) => {
       type: 'progress',
       id,
       stage: 'parsing_sheets',
-      percent: 40,
+      percent: 35,
       message: 'Decodificando estrutura de abas do Excel (SheetJS)...',
     })
 
@@ -225,11 +225,116 @@ self.onmessage = async (e: MessageEvent) => {
       throw new Error('A planilha não contém nenhuma aba.')
     }
 
+    // Se o modo for 'full_rows' (usado para importar dados linha a linha na tela de Importação)
+    if (mode === 'full_rows') {
+      const sheetName = targetSheet || sheetNames[0]
+      const worksheet = workbook.Sheets[sheetName]
+      if (!worksheet) {
+        throw new Error(`Aba "${sheetName}" não encontrada no arquivo.`)
+      }
+
+      self.postMessage({
+        type: 'progress',
+        id,
+        stage: 'parsing_sheets',
+        percent: 50,
+        message: `Processando linhas da aba "${sheetName}"...`,
+      })
+
+      // Lê a matriz bruta linha a linha
+      const rawMatrix: any[][] = XLSX.utils.sheet_to_json(worksheet, {
+        header: 1,
+        defval: '',
+        blankrows: false,
+      })
+
+      if (!rawMatrix || rawMatrix.length === 0) {
+        throw new Error('A planilha selecionada está vazia.')
+      }
+
+      // Encontra a melhor linha de cabeçalho
+      const { colunas } = inspectSheetMatrix(rawMatrix.slice(0, 10), 1)
+      let headerRowIdx = 0
+      for (let r = 0; r < Math.min(rawMatrix.length, 8); r++) {
+        const row = rawMatrix[r]
+        if (!Array.isArray(row)) continue
+        const nonBlanks = row.filter(
+          (c) => c !== undefined && c !== null && String(c).trim().length > 0,
+        )
+        if (nonBlanks.length >= colunas.length * 0.6 && nonBlanks.length >= 2) {
+          headerRowIdx = r
+          break
+        }
+      }
+
+      const totalDataRows = Math.max(0, rawMatrix.length - (headerRowIdx + 1))
+      self.postMessage({
+        type: 'progress',
+        id,
+        stage: 'analyzing_rows',
+        percent: 65,
+        message: `Convertendo ${totalDataRows.toLocaleString('pt-BR')} linhas...`,
+      })
+
+      // Gera os objetos linha a linha com envio periódico de progresso
+      const allRows: Record<string, unknown>[] = []
+      const step = Math.max(1000, Math.floor(totalDataRows / 20))
+
+      for (let r = headerRowIdx + 1; r < rawMatrix.length; r++) {
+        const row = rawMatrix[r]
+        if (!row) continue
+        const obj: Record<string, unknown> = {}
+        let hasAnyVal = false
+
+        for (let c = 0; c < colunas.length; c++) {
+          const colName = colunas[c]
+          const cellVal = row[c]
+          if (cellVal !== undefined && cellVal !== null && String(cellVal).trim() !== '') {
+            obj[colName] = cellVal
+            hasAnyVal = true
+          } else {
+            obj[colName] = ''
+          }
+        }
+
+        if (hasAnyVal) {
+          allRows.push(obj)
+        }
+
+        if (allRows.length % step === 0) {
+          const pct = 65 + Math.floor((allRows.length / totalDataRows) * 30)
+          self.postMessage({
+            type: 'progress',
+            id,
+            stage: 'analyzing_rows',
+            percent: Math.min(95, pct),
+            message: `Carregadas ${allRows.length.toLocaleString('pt-BR')} de ${totalDataRows.toLocaleString('pt-BR')} linhas...`,
+          })
+        }
+      }
+
+      self.postMessage({
+        type: 'success',
+        id,
+        result: {
+          fileName: (file as File).name,
+          totalLinhas: allRows.length,
+          colunasDetectadas: colunas,
+          amostraLinhas: allRows.slice(0, sampleSize),
+          allRows,
+          sheetNames,
+          selectedSheet: sheetName,
+        },
+      })
+      return
+    }
+
+    // Modo 'metadata' / análise multi-aba padrão
     self.postMessage({
       type: 'progress',
       id,
       stage: 'analyzing_rows',
-      percent: 60,
+      percent: 50,
       message: `Analisando ${sheetNames.length} abas encontradas...`,
     })
 
@@ -251,7 +356,7 @@ self.onmessage = async (e: MessageEvent) => {
       if (!worksheet) continue
 
       // Reporta progresso proporcional às abas
-      const sheetProgressPct = 60 + Math.floor((sIdx / sheetNames.length) * 30)
+      const sheetProgressPct = 50 + Math.floor((sIdx / sheetNames.length) * 40)
       self.postMessage({
         type: 'progress',
         id,

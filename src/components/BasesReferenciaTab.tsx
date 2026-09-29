@@ -14,6 +14,7 @@ import {
   HardDrive,
   Tag,
   AlertTriangle,
+  AlertCircle,
   FileCheck,
   Sparkles,
   Copy,
@@ -81,6 +82,7 @@ export function BasesReferenciaTab() {
   const [tableSheetIndex, setTableSheetIndex] = useState<number>(0)
   const [searchTerm, setSearchTerm] = useState('')
   const [classificationFilter, setClassificationFilter] = useState<'all' | BaseClassificacao>('all')
+  const [generalError, setGeneralError] = useState<string | null>(null)
 
   useEffect(() => {
     loadBases()
@@ -211,11 +213,9 @@ export function BasesReferenciaTab() {
           userFriendlyMessage = `Erro: ${err.message}`
         }
       }
-      alert(
-        `Falha no upload:\n${userFriendlyMessage}\n\nRecomendação: certifique-se de que a conexão esteja estável. O sistema agora isola planilhas acima de 60 MB automaticamente para garantir que sejam lidas sem estourar o servidor.`,
-      )
+      setGeneralError(userFriendlyMessage)
     } finally {
-      // Pequeno delay para usuário ver o 100% concluído
+      // Pequeno delay para usuário ver o 100% concluído se deu certo
       setTimeout(() => {
         setUploading(false)
         setUploadProgress({
@@ -223,7 +223,7 @@ export function BasesReferenciaTab() {
           message: '',
           stage: 'idle',
         })
-      }, 1800)
+      }, 1200)
     }
   }
 
@@ -574,6 +574,25 @@ Regras de saída: uma linha por código de cliente (se duplicado, mantenha a de 
               </div>
             )}
           </div>
+
+          {/* Feedback de Erro Visível para o Usuário */}
+          {generalError && (
+            <div className="mt-4 p-3.5 bg-rose-50 border border-rose-200 rounded-lg flex items-start space-x-3 text-xs text-rose-800">
+              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-semibold">Erro no processamento do arquivo:</span>
+                <p className="text-[11px] text-rose-700 leading-relaxed">{generalError}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setGeneralError(null)}
+                  className="h-6 text-[10px] border-rose-300 text-rose-700 hover:bg-rose-100"
+                >
+                  Fechar Aviso
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

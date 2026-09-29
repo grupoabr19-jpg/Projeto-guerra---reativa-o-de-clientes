@@ -33,9 +33,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { fetchImportacoes, processSpreadsheetRows, fetchConfiguracoes } from '@/services/api'
-import { loadSheetJS } from '@/lib/sheetParser'
+import { parseSpreadsheetWithSheetJS, type ParseProgress } from '@/lib/sheetParser'
 import type { Importacao } from '@/types'
 import { normalizarSegmento } from '@/lib/segmentos'
+import { Progress } from '@/components/ui/progress'
 
 // Normaliza strings para comparação case/espaço/acento insensitive
 function normalizeHeader(str: string): string {
@@ -84,6 +85,8 @@ export default function ImportacaoPage() {
   const [file, setFile] = useState<File | null>(null)
   const [rawRows, setRawRows] = useState<Record<string, unknown>[]>([])
   const [headers, setHeaders] = useState<string[]>([])
+  const [availableSheets, setAvailableSheets] = useState<string[]>([])
+  const [selectedSheet, setSelectedSheet] = useState<string>('')
   const [detectedLayout, setDetectedLayout] = useState<{
     nome: string
     tipo_base: string
@@ -113,6 +116,18 @@ export default function ImportacaoPage() {
   })
   const [substituicaoTotal, setSubstituicaoTotal] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isParsing, setIsParsing] = useState(false)
+  const [parseProgress, setParseProgress] = useState<{
+    percent: number
+    message: string
+  }>({ percent: 0, message: '' })
+  const [processProgress, setProcessProgress] = useState<{
+    percent: number
+    message: string
+    processed: number
+    total: number
+  }>({ percent: 0, message: '', processed: 0, total: 0 })
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<{
     total: number
     novas: number
@@ -374,114 +389,67 @@ export default function ImportacaoPage() {
     }
   }
 
-  const parseFile = async (f: File) => {
+  const parseFile = async (f: File, overrideSheet?: string) => {
     setFile(f)
     setImportResult(null)
     setDetectedLayout(null)
+    setUploadError(null)
+    setIsParsing(true)
+    setParseProgress({ percent: 10, message: 'Iniciando leitura em segundo plano (Web Worker)...' })
 
-    const isXlsx = /\.xlsx?$|\.xls$/i.test(f.name)
+    try {
+      const parsed = await parseSpreadsheetWithSheetJS(
+        f,
+        20,
+        (p: ParseProgress) => {
+          setParseProgress({
+            percent: p.percent,
+            message: p.message,
+          })
+        },
+        { mode: 'full_rows', targetSheet: overrideSheet },
+      )
 
-    if (isXlsx) {
-      try {
-        const XLSX = await loadSheetJS()
-        const arrayBuffer = await f.arrayBuffer()
-        const workbook = XLSX.read(arrayBuffer, { type: 'array' })
-        const firstSheetName = workbook.SheetNames[0]
-        const worksheet = workbook.Sheets[firstSheetName]
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, {
-          defval: '',
-        }) as Record<string, unknown>[]
+      const rows =
+        parsed.allRows && parsed.allRows.length > 0 ? parsed.allRows : parsed.amostraLinhas
 
-        if (jsonData.length === 0) {
-          alert('A planilha selecionada está vazia.')
-          return
-        }
-
-        const rawHeaders = Object.keys(jsonData[0])
-        setHeaders(rawHeaders)
-        setRawRows(jsonData)
-        const autoMap = matchTemplate(rawHeaders)
-        setMapping(autoMap)
-        return
-      } catch (err) {
-        console.error('Erro ao ler XLSX via SheetJS:', err)
-        alert('Falha ao processar arquivo Excel. Tente converter para CSV se o erro persistir.')
-        return
-      }
-    }
-
-    // Processamento de CSV / TXT
-    const reader = new FileReader()
-    reader.onload = (evt) => {
-      const content = evt.target?.result as string
-      if (!content) return
-
-      const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0)
-      if (lines.length < 2) {
-        alert('O arquivo não contém linhas de dados válidas.')
-        return
+      if (!rows || rows.length === 0) {
+        throw new Error('A planilha selecionada está vazia ou não contém dados válidos.')
       }
 
-      const firstLine = lines[0]
-      const delimiter = firstLine.includes(';') ? ';' : ','
+      setHeaders(parsed.colunasDetectadas)
+      setRawRows(rows)
+      setAvailableSheets(parsed.sheetNames || [])
+      setSelectedSheet(parsed.selectedSheet || overrideSheet || parsed.sheetNames?.[0] || '')
 
-      const parseCSVLine = (line: string) => {
-        const result = []
-        let current = ''
-        let inQuotes = false
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i]
-          if (char === '"' || char === "'") {
-            inQuotes = !inQuotes
-          } else if (char === delimiter && !inQuotes) {
-            result.push(current.trim().replace(/^["']|["']$/g, ''))
-            current = ''
-          } else {
-            current += char
-          }
-        }
-        result.push(current.trim().replace(/^["']|["']$/g, ''))
-        return result
-      }
-
-      const rawHeaders = parseCSVLine(lines[0])
-      setHeaders(rawHeaders)
-
-      const parsedRows: Record<string, unknown>[] = []
-      for (let i = 1; i < lines.length; i++) {
-        const cols = parseCSVLine(lines[i])
-        if (cols.length === 0 || cols.every((c) => !c)) continue
-        const rowObj: Record<string, unknown> = {}
-        rawHeaders.forEach((h, idx) => {
-          rowObj[h] = cols[idx] !== undefined ? cols[idx] : ''
-        })
-        parsedRows.push(rowObj)
-      }
-
-      setRawRows(parsedRows)
-      const autoMap = matchTemplate(rawHeaders)
+      const autoMap = matchTemplate(parsed.colunasDetectadas)
       setMapping(autoMap)
+    } catch (err: unknown) {
+      console.error('Erro ao ler planilha na Importação:', err)
+      const msg = err instanceof Error ? err.message : 'Falha ao processar arquivo'
+      setUploadError(msg)
+    } finally {
+      setIsParsing(false)
     }
-
-    reader.readAsText(f, 'ISO-8859-1')
   }
 
-  // Enviar para o backend com processamento atômico e upsert por código CXXXXXX
+  // Enviar para o backend em chunks seguros com atualização de progresso contínua
   const handleConfirmImport = async () => {
     if (!file || rawRows.length === 0) return
 
     if (!mapping.codigo || !mapping.nome) {
-      alert(
+      setUploadError(
         'As colunas de Código do Cliente e Nome são estritamente obrigatórias para o mapeamento!',
       )
       return
     }
 
     setIsProcessing(true)
+    setUploadError(null)
+
     try {
       // Converte rawRows usando o mapping escolhido + dados adicionais de cruzamento (gatilhos de fechamento)
       const mappedRows = rawRows.map((r) => {
-        // Encontrar colunas extras de gatilho se existirem
         const findVal = (terms: string[]) => {
           for (const key of Object.keys(r)) {
             const lk = key.toLowerCase()
@@ -537,19 +505,74 @@ export default function ImportacaoPage() {
         }
       })
 
-      const response = await processSpreadsheetRows({
-        rows: mappedRows,
-        fileName: file.name,
-        substituicaoTotal,
-      })
+      // Envio em lotes (chunks) de 2.000 linhas para garantir que não estoure tempo limite HTTP do backend
+      const CHUNK_SIZE = 2000
+      const totalRows = mappedRows.length
+      const totalChunks = Math.ceil(totalRows / CHUNK_SIZE)
 
-      setImportResult(response.resumo)
+      const consolidatedResumo = {
+        total: totalRows,
+        novas: 0,
+        atualizadas: 0,
+        rejeitadas: 0,
+        reconciliadosFaturaram: 0,
+        pedidosValidados: 0,
+        pedidosDivergentes: 0,
+        erros: [] as Array<{ linha: number; codigo: string; erro: string }>,
+        divergencias: [] as Array<{
+          codigo: string
+          nome: string
+          pedidoEsperado: string
+          pedidoPlanilha: string
+        }>,
+      }
+
+      for (let c = 0; c < totalChunks; c++) {
+        const start = c * CHUNK_SIZE
+        const end = Math.min(start + CHUNK_SIZE, totalRows)
+        const chunk = mappedRows.slice(start, end)
+
+        const pct = Math.round(((c + 1) / totalChunks) * 100)
+        setProcessProgress({
+          percent: pct,
+          message: `Enviando lote ${c + 1} de ${totalChunks} (${start.toLocaleString('pt-BR')} a ${end.toLocaleString('pt-BR')} linhas)...`,
+          processed: end,
+          total: totalRows,
+        })
+
+        // Apenas no último chunk aplicamos a substituição total se habilitada
+        const isLastChunk = c === totalChunks - 1
+        const response = await processSpreadsheetRows({
+          rows: chunk,
+          fileName: `${file.name} (Lote ${c + 1}/${totalChunks})`,
+          substituicaoTotal: substituicaoTotal && isLastChunk,
+        })
+
+        if (response.resumo) {
+          consolidatedResumo.novas += response.resumo.novas || 0
+          consolidatedResumo.atualizadas += response.resumo.atualizadas || 0
+          consolidatedResumo.rejeitadas += response.resumo.rejeitadas || 0
+          consolidatedResumo.reconciliadosFaturaram += response.resumo.reconciliadosFaturaram || 0
+          consolidatedResumo.pedidosValidados += response.resumo.pedidosValidados || 0
+          consolidatedResumo.pedidosDivergentes += response.resumo.pedidosDivergentes || 0
+          if (Array.isArray(response.resumo.erros)) {
+            consolidatedResumo.erros.push(...response.resumo.erros)
+          }
+          if (Array.isArray(response.resumo.divergencias)) {
+            consolidatedResumo.divergencias.push(...response.resumo.divergencias)
+          }
+        }
+      }
+
+      setImportResult(consolidatedResumo)
       loadHistory()
     } catch (err: unknown) {
+      console.error('Falha no envio de lotes da importação:', err)
       const msg = err instanceof Error ? err.message : 'Falha ao processar importação'
-      alert(`Erro: ${msg}`)
+      setUploadError(msg)
     } finally {
       setIsProcessing(false)
+      setProcessProgress({ percent: 0, message: '', processed: 0, total: 0 })
     }
   }
 
@@ -609,25 +632,48 @@ export default function ImportacaoPage() {
           <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
-            className="border-2 border-dashed border-slate-200 hover:border-blue-400 rounded-xl p-8 text-center transition-colors bg-slate-50/50 flex flex-col items-center justify-center cursor-pointer"
-            onClick={() => document.getElementById('file-upload-input')?.click()}
+            className={`border-2 border-dashed rounded-xl p-8 text-center transition-all bg-slate-50/50 flex flex-col items-center justify-center ${
+              isParsing
+                ? 'border-blue-400 bg-blue-50/40 cursor-wait'
+                : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50 cursor-pointer'
+            }`}
+            onClick={() => !isParsing && document.getElementById('file-upload-input')?.click()}
           >
             <input
               id="file-upload-input"
               type="file"
               accept=".xlsx,.xls,.csv,.txt"
               className="hidden"
+              disabled={isParsing || isProcessing}
               onChange={handleFileChange}
             />
             <div className="h-12 w-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-3 shadow-inner">
-              <FileSpreadsheet className="h-6 w-6" />
+              {isParsing ? (
+                <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+              ) : (
+                <FileSpreadsheet className="h-6 w-6" />
+              )}
             </div>
-            {file ? (
+            {isParsing ? (
+              <div className="space-y-2.5 w-full max-w-sm">
+                <div>
+                  <p className="text-sm font-semibold text-blue-800">
+                    Lendo arquivo em segundo plano (Web Worker)
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">{parseProgress.message}</p>
+                </div>
+                <Progress value={parseProgress.percent} className="h-2 bg-blue-100" />
+                <div className="flex justify-between text-[11px] font-mono text-slate-400">
+                  <span>Processando sem travar interface</span>
+                  <span>{parseProgress.percent}%</span>
+                </div>
+              </div>
+            ) : file ? (
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-slate-800">{file.name}</p>
                 <p className="text-xs text-slate-500">
-                  {rawRows.length.toLocaleString('pt-BR')} linhas detectadas no arquivo. Pronto para
-                  mapear e processar.
+                  {rawRows.length.toLocaleString('pt-BR')} linhas prontas para importação.
+                  {availableSheets.length > 1 && ` (Aba ativa: "${selectedSheet}")`}
                 </p>
               </div>
             ) : (
@@ -636,12 +682,76 @@ export default function ImportacaoPage() {
                   Clique para selecionar ou arraste o arquivo .XLSX ou .CSV aqui
                 </p>
                 <p className="text-xs text-slate-400">
-                  Suporte nativo a planilhas Excel (.xlsx / .xls) e arquivos CSV com reconhecimento
-                  automático de layouts.
+                  Suporte nativo a planilhas pesadas com processamento fora da thread principal (Web
+                  Worker).
                 </p>
               </div>
             )}
           </div>
+
+          {/* Seletor de Aba (se arquivo tiver múltiplas abas) */}
+          {availableSheets.length > 1 && file && (
+            <div className="flex items-center space-x-3 bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs">
+              <span className="font-semibold text-slate-700">Selecionar Aba da Planilha:</span>
+              <Select
+                value={selectedSheet}
+                onValueChange={(val) => {
+                  setSelectedSheet(val)
+                  if (file) parseFile(file, val)
+                }}
+                disabled={isParsing || isProcessing}
+              >
+                <SelectTrigger className="h-8 text-xs w-48 bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSheets.map((s) => (
+                    <SelectItem key={s} value={s} className="text-xs">
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-[11px] text-slate-500">
+                Alterne a aba caso os dados brutos estejam em &ldquo;BD&rdquo; ou
+                &ldquo;Dados&rdquo;.
+              </span>
+            </div>
+          )}
+
+          {/* Feedback de Erro Visível */}
+          {uploadError && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-lg flex items-start space-x-3 text-xs text-rose-800">
+              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-semibold">Ocorreu um erro no processamento:</span>
+                <p className="text-[11px] text-rose-700 leading-relaxed">{uploadError}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setUploadError(null)}
+                  className="h-6 text-[10px] border-rose-300 text-rose-700 hover:bg-rose-100"
+                >
+                  Fechar Aviso
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Barra de Progresso do Envio em Chunks */}
+          {isProcessing && (
+            <div className="p-4 bg-blue-50/80 border border-blue-200 rounded-lg space-y-2">
+              <div className="flex items-center justify-between text-xs text-blue-900 font-semibold">
+                <span className="flex items-center gap-2">
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                  <span>Enviando dados em lotes para o servidor...</span>
+                </span>
+                <span className="font-mono">{processProgress.percent}%</span>
+              </div>
+              <Progress value={processProgress.percent} className="h-2.5 bg-blue-100" />
+              <p className="text-[11px] text-blue-700">{processProgress.message}</p>
+            </div>
+          )}
 
           {/* Configuração de substituição total */}
           <div className="flex items-start space-x-3 bg-slate-50 p-3.5 rounded-lg border border-slate-200">

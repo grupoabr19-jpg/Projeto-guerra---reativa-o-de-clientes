@@ -9,8 +9,10 @@ export interface ParsedSpreadsheet {
   totalLinhas: number
   colunasDetectadas: string[]
   amostraLinhas: Record<string, unknown>[]
+  allRows?: Record<string, unknown>[]
   sheetNames: string[]
   analiseAbas: AbaReferencia[]
+  selectedSheet?: string
 }
 
 export interface ParseProgress {
@@ -230,6 +232,7 @@ export async function parseCsvStream(
 function parseWithWebWorker(
   file: File,
   sampleSize: number = 20,
+  options?: { mode?: 'metadata' | 'full_rows'; targetSheet?: string },
   onProgress?: (p: ParseProgress) => void,
 ): Promise<ParsedSpreadsheet> {
   return new Promise((resolve, reject) => {
@@ -300,6 +303,8 @@ function parseWithWebWorker(
       id: taskId,
       file,
       sampleSize,
+      mode: options?.mode || 'metadata',
+      targetSheet: options?.targetSheet,
     })
   })
 }
@@ -524,17 +529,24 @@ export async function parseSpreadsheetWithSheetJS(
   file: File,
   sampleSize: number = 20,
   onProgress?: (p: ParseProgress) => void,
+  options?: { mode?: 'metadata' | 'full_rows'; targetSheet?: string },
 ): Promise<ParsedSpreadsheet> {
   const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type.includes('csv')
 
   if (isCsv) {
-    return parseCsvStream(file, sampleSize, onProgress)
+    // Se for CSV e no modo full_rows, ler via parseCsvStream passando um sampleSize maior ou stream dedicado
+    const sample = options?.mode === 'full_rows' ? 1000000 : sampleSize
+    const result = await parseCsvStream(file, sample, onProgress)
+    if (options?.mode === 'full_rows') {
+      result.allRows = result.amostraLinhas
+    }
+    return result
   }
 
   // Se tiver suporte a Worker, executa no Worker
   if (typeof Worker !== 'undefined') {
     try {
-      return await parseWithWebWorker(file, sampleSize, onProgress)
+      return await parseWithWebWorker(file, sampleSize, options, onProgress)
     } catch (workerErr) {
       console.warn(
         'Web Worker falhou ou não pôde ser iniciado, tentando fallback na thread principal:',
