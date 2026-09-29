@@ -17,6 +17,7 @@ import {
   XCircle,
   HelpCircle,
   Activity,
+  Trophy,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -92,7 +93,7 @@ export default function Layout() {
   }
 
   // Definição estrita de permissões de menu:
-  // Operador vê SOMENTE: "Meu Painel" e "Atendimento" (SEM Fila de Atendimento, SEM Clientes, SEM Dashboard, SEM Relatórios, SEM Importação, SEM Configurações).
+  // Operador vê SOMENTE: "Meu Painel", "Atendimento" e "Ranking" (SEM Fila, SEM Clientes, SEM Dashboard, SEM Relatórios, SEM Importação, SEM Configurações).
   // Supervisor e Admin têm acesso ampliado conforme sua função.
   const isOperador = user.role === 'operador' || !user.role
 
@@ -107,6 +108,11 @@ export default function Layout() {
           title: 'Atendimento',
           href: '/atendimento',
           icon: Headphones,
+        },
+        {
+          title: 'Ranking',
+          href: '/ranking',
+          icon: Trophy,
         },
       ]
     : [
@@ -142,6 +148,11 @@ export default function Layout() {
           title: 'Clientes',
           href: '/clientes',
           icon: Users,
+        },
+        {
+          title: 'Ranking',
+          href: '/ranking',
+          icon: Trophy,
         },
         ...(hasRole(['supervisor', 'admin'])
           ? [

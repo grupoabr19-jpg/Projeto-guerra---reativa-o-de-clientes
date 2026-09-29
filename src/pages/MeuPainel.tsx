@@ -15,13 +15,19 @@ import {
   BarChart3,
   RefreshCw,
   Sparkles,
+  Trophy,
+  Award,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useAuth } from '@/contexts/AuthContext'
-import { fetchInteracoesByOperador, fetchClientesReagendadosOperador } from '@/services/api'
-import type { Interacao, Cliente } from '@/types'
+import {
+  fetchInteracoesByOperador,
+  fetchClientesReagendadosOperador,
+  calculateRankingData,
+} from '@/services/api'
+import type { Interacao, Cliente, RankingUserRow } from '@/types'
 
 export function MeuPainelPage() {
   const { user } = useAuth()
@@ -29,23 +35,26 @@ export function MeuPainelPage() {
   const [loading, setLoading] = useState(true)
   const [interacoes, setInteracoes] = useState<Interacao[]>([])
   const [reagendados, setReagendados] = useState<Cliente[]>([])
+  const [meuRanking, setMeuRanking] = useState<RankingUserRow | null>(null)
 
   useEffect(() => {
     if (user?.id) {
       loadData()
     }
-  }, [user?.id])
+  }, [user?.id, periodo])
 
   const loadData = async () => {
     if (!user?.id) return
     setLoading(true)
     try {
-      const [listaInteracoes, listaReag] = await Promise.all([
+      const [listaInteracoes, listaReag, rankingInfo] = await Promise.all([
         fetchInteracoesByOperador(user.id),
         fetchClientesReagendadosOperador(user.id),
+        calculateRankingData({ periodo, currentUserId: user.id }),
       ])
       setInteracoes(listaInteracoes)
       setReagendados(listaReag)
+      setMeuRanking(rankingInfo.currentUserRow || null)
     } catch (err) {
       console.error('Erro ao carregar dados do operador:', err)
     } finally {
@@ -123,12 +132,48 @@ export function MeuPainelPage() {
           <div className="flex items-center space-x-2">
             <h1 className="text-xl font-bold tracking-tight text-slate-900">Meu Painel de Ação</h1>
             <Badge className="bg-blue-600 text-white text-[10px] font-mono">Operador</Badge>
+            {meuRanking?.tituloAtual && (
+              <Badge
+                variant="outline"
+                className="bg-amber-50 text-amber-900 border-amber-300 font-medium text-xs flex items-center space-x-1"
+              >
+                <span>{meuRanking.tituloAtual.emoji}</span>
+                <span>{meuRanking.tituloAtual.nome}</span>
+              </Badge>
+            )}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Olá, <strong className="text-slate-700">{user?.name || user?.email}</strong>. Acompanhe
-            seus resultados diários, conversões e agenda de follow-ups.
+            seus resultados diários, conversões e sua posição na classificação.
           </p>
         </div>
+
+        {/* Card Gamificação Rápido */}
+        {meuRanking && (
+          <div className="flex items-center space-x-3 bg-slate-900 text-white p-2.5 px-3.5 rounded-lg border border-slate-800 text-xs">
+            <div className="text-center pr-2.5 border-r border-slate-700">
+              <span className="text-[9px] text-slate-400 block font-mono uppercase">Posição</span>
+              <span className="font-mono font-bold text-amber-400 text-base">
+                #{meuRanking.posicao}
+              </span>
+            </div>
+            <div>
+              <div className="flex items-center space-x-1 font-mono font-semibold text-slate-200">
+                <span className="text-amber-300">
+                  {meuRanking.pontos.toLocaleString('pt-BR')} pts
+                </span>
+                <span className="text-slate-400">• {meuRanking.conversoes} reativações</span>
+              </div>
+              <Link
+                to="/ranking"
+                className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center mt-0.5"
+              >
+                <span>Ver ranking completo</span>
+                <ArrowRight className="h-2.5 w-2.5 ml-0.5" />
+              </Link>
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center space-x-2">
           {/* Seletor de período */}

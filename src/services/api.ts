@@ -242,3 +242,6 @@ export async function updateBaseReferencia(
 export async function deleteBaseReferencia(id: string) {
   return pb.collection('bases_referencia').delete(id)
 }
+
+// Re-export gamificação APIs
+export * from './gamificacao'

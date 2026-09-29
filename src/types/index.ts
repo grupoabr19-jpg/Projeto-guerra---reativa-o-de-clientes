@@ -208,3 +208,84 @@ export const REGIOES_PADRAO: readonly string[] = [
   'EXTREMA',
   'CAMBUÍ',
 ] as const
+
+export type TituloNivel = 'bronze' | 'prata' | 'ouro' | 'platina' | 'diamante'
+
+export interface TituloCatalogo {
+  id: string
+  codigo: string
+  nome: string
+  emoji: string
+  nivel: TituloNivel
+  ordem: number
+  pontos_necessarios: number
+  descricao?: string
+  categoria?: string
+  cor_hex?: string
+  created: string
+  updated: string
+}
+
+export interface ConquistaUsuario {
+  id: string
+  usuario: string
+  titulo: string
+  pontos_no_momento?: number
+  data_conquista?: string
+  expand?: {
+    usuario?: User
+    titulo?: TituloCatalogo
+  }
+  created: string
+  updated: string
+}
+
+export type ConcursoMetricaTipo = 'conversoes' | 'toneladas' | 'atendimentos' | 'pontos'
+export type ConcursoStatus = 'ativo' | 'encerrado' | 'planejado'
+
+export interface ConcursoSazonal {
+  id: string
+  titulo: string
+  descricao?: string
+  data_inicio: string
+  data_fim: string
+  metrica_tipo: ConcursoMetricaTipo
+  meta_quantidade: number
+  premio_descricao: string
+  badge_exclusiva_nome?: string
+  badge_exclusiva_emoji?: string
+  status: ConcursoStatus
+  vencedor?: string
+  resultado_vencedor?: string
+  criado_por?: string
+  expand?: {
+    vencedor?: User
+    criado_por?: User
+  }
+  created: string
+  updated: string
+}
+
+export interface PesosGamificacao {
+  atendimento_ligacao: number
+  atendimento_formulario: number
+  conversao_reativacao: number
+  reagendamento_qualificado: number
+  venda_perdida_com_motivo: number
+  pontos_por_tonelada: number
+}
+
+export interface RankingUserRow {
+  posicao: number
+  usuario: User
+  pontos: number
+  atendimentos: number
+  conversoes: number
+  reagendados: number
+  toneladas: number
+  tituloAtual: TituloCatalogo
+  proximoTitulo?: TituloCatalogo
+  progressoProximoPerc: number
+  totalTitulosDesbloqueados: number
+  isCurrentUser: boolean
+}

@@ -17,6 +17,7 @@ import ClientesPage from '@/pages/Clientes'
 import RelatoriosPage from '@/pages/Relatorios'
 import ConfiguracoesPage from '@/pages/Configuracoes'
 import MeuPainelPage from '@/pages/MeuPainel'
+import RankingPage from '@/pages/Ranking'
 import { ForgotPassword, ResetPassword, VerifyEmail } from '@/pages/AuthPages'
 import NotFound from '@/pages/NotFound'
 
@@ -35,7 +36,7 @@ const App = () => (
             <Route path="/verify-email" element={<VerifyEmail />} />
 
             {/* Rotas Operacionais Autorizadas */}
-            {/* Operador: vê SOMENTE /meu-painel e /atendimento */}
+            {/* Operador: vê /meu-painel, /atendimento e agora /ranking (gamificação e posição pessoal) */}
             <Route
               path="/meu-painel"
               element={
@@ -57,6 +58,14 @@ const App = () => (
               element={
                 <RoleRoute allowedRoles={['operador', 'supervisor', 'admin']}>
                   <AtendimentoPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/ranking"
+              element={
+                <RoleRoute allowedRoles={['operador', 'supervisor', 'admin']}>
+                  <RankingPage />
                 </RoleRoute>
               }
             />

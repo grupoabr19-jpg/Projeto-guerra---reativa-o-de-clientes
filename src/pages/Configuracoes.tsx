@@ -12,7 +12,15 @@ import {
   ExternalLink,
   Plus,
   Save,
+  Trophy,
+  Award,
 } from 'lucide-react'
+import {
+  fetchPesosGamificacao,
+  updatePesosGamificacao,
+  PESOS_GAMIFICACAO_PADRAO,
+} from '@/services/gamificacao'
+import type { PesosGamificacao } from '@/types'
 import {
   Card,
   CardContent,
@@ -78,6 +86,11 @@ export default function ConfiguracoesPage() {
     segmento: 10,
     tentativas_penalidade: 15,
   })
+
+  // Pesos da Gamificação
+  const [pesosGamificacao, setPesosGamificacao] =
+    useState<PesosGamificacao>(PESOS_GAMIFICACAO_PADRAO)
+  const [savingGamificacao, setSavingGamificacao] = useState(false)
 
   // Motor da Fila
   const [motorFila, setMotorFila] = useState({
@@ -148,6 +161,9 @@ export default function ConfiguracoesPage() {
       if (motorCfg?.valor) {
         setMotorFila(motorCfg.valor as any)
       }
+
+      const pesosGam = await fetchPesosGamificacao()
+      setPesosGamificacao(pesosGam)
     } catch (err) {
       console.error('Erro ao carregar configurações:', err)
     }
@@ -207,6 +223,19 @@ export default function ConfiguracoesPage() {
       alert('Erro ao salvar configurações.')
     } finally {
       setSavingConfig(false)
+    }
+  }
+
+  const handleSavePesosGamificacao = async () => {
+    setSavingGamificacao(true)
+    try {
+      await updatePesosGamificacao(pesosGamificacao)
+      alert('Pesos de pontuação da Gamificação salvos com sucesso!')
+    } catch (err) {
+      console.error('Falha ao salvar pesos de gamificação:', err)
+      alert('Erro ao salvar pesos da gamificação.')
+    } finally {
+      setSavingGamificacao(false)
     }
   }
 
@@ -338,6 +367,13 @@ export default function ConfiguracoesPage() {
           <TabsTrigger value="motor" className="text-xs font-medium flex items-center gap-1.5">
             <Sliders className="h-3.5 w-3.5" />
             <span>Pesos & Motor de Fila</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="gamificacao"
+            className="text-xs font-medium flex items-center gap-1.5"
+          >
+            <Trophy className="h-3.5 w-3.5 text-amber-500" />
+            <span>Pontuação da Gamificação</span>
           </TabsTrigger>
         </TabsList>
 
@@ -774,6 +810,172 @@ export default function ConfiguracoesPage() {
               >
                 <Save className="h-3.5 w-3.5 mr-1.5" />
                 {savingConfig ? 'Salvando...' : 'Salvar Pesos e Parâmetros'}
+              </Button>
+            </CardFooter>
+          </Card>
+        </TabsContent>
+
+        {/* TAB 4: GAMIFICAÇÃO & PONTUAÇÃO */}
+        <TabsContent value="gamificacao" className="space-y-4">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm font-semibold text-slate-800 flex items-center space-x-2">
+                    <Trophy className="h-4 w-4 text-amber-500" />
+                    <span>Pesos de Pontuação e Recompensas da Gamificação</span>
+                  </CardTitle>
+                  <CardDescription className="text-xs text-slate-500">
+                    Configure quantos pontos os operadores recebem por cada ação registrada no
+                    sistema
+                  </CardDescription>
+                </div>
+                <Badge
+                  variant="outline"
+                  className="border-amber-300 text-amber-800 bg-amber-50 text-[11px] font-mono"
+                >
+                  100 Títulos no Catálogo
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start space-x-2.5">
+                <Info className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  Os pontos são somados on-the-fly para todos os operadores e supervisores,
+                  refletindo diretamente no pódio e nos degraus de títulos da tela de{' '}
+                  <strong>Ranking</strong>.
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-slate-700">
+                    Reativação com Pedido (Conversão)
+                  </Label>
+                  <Input
+                    type="number"
+                    value={pesosGamificacao.conversao_reativacao}
+                    onChange={(e) =>
+                      setPesosGamificacao({
+                        ...pesosGamificacao,
+                        conversao_reativacao: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    className="h-8 text-xs font-mono font-bold text-emerald-600"
+                  />
+                  <span className="text-[10px] text-slate-400">Padrão: +150 pts (maior valor)</span>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-slate-700">
+                    Ficha de 17 Perguntas Preenchida
+                  </Label>
+                  <Input
+                    type="number"
+                    value={pesosGamificacao.atendimento_formulario}
+                    onChange={(e) =>
+                      setPesosGamificacao({
+                        ...pesosGamificacao,
+                        atendimento_formulario: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    className="h-8 text-xs font-mono font-bold text-blue-600"
+                  />
+                  <span className="text-[10px] text-slate-400">Padrão: +25 pts por formulário</span>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-slate-700">
+                    Reagendamento Qualificado
+                  </Label>
+                  <Input
+                    type="number"
+                    value={pesosGamificacao.reagendamento_qualificado}
+                    onChange={(e) =>
+                      setPesosGamificacao({
+                        ...pesosGamificacao,
+                        reagendamento_qualificado: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    className="h-8 text-xs font-mono font-bold text-amber-600"
+                  />
+                  <span className="text-[10px] text-slate-400">Padrão: +20 pts</span>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-slate-700">
+                    Ligação Realizada / Contato
+                  </Label>
+                  <Input
+                    type="number"
+                    value={pesosGamificacao.atendimento_ligacao}
+                    onChange={(e) =>
+                      setPesosGamificacao({
+                        ...pesosGamificacao,
+                        atendimento_ligacao: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    className="h-8 text-xs font-mono"
+                  />
+                  <span className="text-[10px] text-slate-400">Padrão: +10 pts</span>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-slate-700">
+                    Venda Perdida com Motivo
+                  </Label>
+                  <Input
+                    type="number"
+                    value={pesosGamificacao.venda_perdida_com_motivo}
+                    onChange={(e) =>
+                      setPesosGamificacao({
+                        ...pesosGamificacao,
+                        venda_perdida_com_motivo: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    className="h-8 text-xs font-mono"
+                  />
+                  <span className="text-[10px] text-slate-400">
+                    Padrão: +5 pts (alimenta inteligência)
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-slate-700">
+                    Pontos por Tonelada Faturada
+                  </Label>
+                  <Input
+                    type="number"
+                    value={pesosGamificacao.pontos_por_tonelada}
+                    onChange={(e) =>
+                      setPesosGamificacao({
+                        ...pesosGamificacao,
+                        pontos_por_tonelada: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    className="h-8 text-xs font-mono font-bold text-purple-600"
+                  />
+                  <span className="text-[10px] text-slate-400">Padrão: +5 pts por ton</span>
+                </div>
+              </div>
+            </CardContent>
+            <CardFooter className="flex justify-between border-t border-slate-100 pt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPesosGamificacao({ ...PESOS_GAMIFICACAO_PADRAO })}
+                className="text-xs text-slate-600"
+              >
+                Restaurar Padrões
+              </Button>
+              <Button
+                onClick={handleSavePesosGamificacao}
+                disabled={savingGamificacao}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
+              >
+                <Save className="h-3.5 w-3.5 mr-1.5" />
+                {savingGamificacao ? 'Salvando...' : 'Salvar Pesos da Gamificação'}
               </Button>
             </CardFooter>
           </Card>

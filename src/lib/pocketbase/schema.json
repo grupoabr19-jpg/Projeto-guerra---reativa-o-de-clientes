@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-29T19:37:43.204Z",
+  "generatedAt": "2026-09-29T19:48:07.022Z",
   "collections": [
     {
       "name": "users",
@@ -970,6 +970,263 @@
       "indexes": [
         "CREATE INDEX idx_bases_referencia_created ON bases_referencia (created DESC)",
         "CREATE INDEX idx_bases_referencia_status ON bases_referencia (status)"
+      ]
+    },
+    {
+      "name": "titulos_catalogo",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.role = 'admin'",
+        "update": "@request.auth.role = 'admin'",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "codigo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "emoji",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "nivel",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["bronze", "prata", "ouro", "platina", "diamante"]
+        },
+        {
+          "name": "ordem",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "pontos_necessarios",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "descricao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "categoria",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cor_hex",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_titulos_codigo ON titulos_catalogo (codigo)",
+        "CREATE INDEX idx_titulos_ordem ON titulos_catalogo (ordem ASC)",
+        "CREATE INDEX idx_titulos_pontos ON titulos_catalogo (pontos_necessarios ASC)"
+      ]
+    },
+    {
+      "name": "conquistas_usuarios",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.role = 'admin'",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "usuario",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "titulo",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "titulos_catalogo"
+        },
+        {
+          "name": "pontos_no_momento",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data_conquista",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_conquistas_user_titulo ON conquistas_usuarios (usuario, titulo)",
+        "CREATE INDEX idx_conquistas_usuario ON conquistas_usuarios (usuario)"
+      ]
+    },
+    {
+      "name": "concursos_sazonais",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.role = 'admin'",
+        "update": "@request.auth.role = 'admin'",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "titulo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "descricao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data_inicio",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "data_fim",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "metrica_tipo",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["conversoes", "toneladas", "atendimentos", "pontos"]
+        },
+        {
+          "name": "meta_quantidade",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "premio_descricao",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "badge_exclusiva_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "badge_exclusiva_emoji",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["ativo", "encerrado", "planejado"]
+        },
+        {
+          "name": "vencedor",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "resultado_vencedor",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "criado_por",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_concursos_status ON concursos_sazonais (status)",
+        "CREATE INDEX idx_concursos_periodo ON concursos_sazonais (data_inicio, data_fim)"
       ]
     }
   ]
