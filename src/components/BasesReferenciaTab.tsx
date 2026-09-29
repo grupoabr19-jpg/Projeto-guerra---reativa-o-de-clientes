@@ -5,20 +5,29 @@ import {
   Layers,
   Eye,
   Trash2,
-  Calendar,
   User as UserIcon,
-  CheckCircle2,
-  Clock,
   Code2,
   Table,
   Info,
   RefreshCw,
   Search,
+  HardDrive,
+  Tag,
+  AlertTriangle,
+  FileCheck,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Progress } from '@/components/ui/progress'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -28,19 +37,45 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { fetchBasesReferencia, createBaseReferencia, deleteBaseReferencia } from '@/services/api'
-import { parseSpreadsheetWithSheetJS } from '@/lib/sheetParser'
-import type { BaseReferencia } from '@/types'
+import { parseSpreadsheetWithSheetJS, type ParseProgress } from '@/lib/sheetParser'
+import type { BaseReferencia, BaseClassificacao } from '@/types'
 import { useAuth } from '@/contexts/AuthContext'
+
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return '—'
+  const mb = bytes / (1024 * 1024)
+  if (mb >= 1) {
+    return `${mb.toFixed(1)} MB`
+  }
+  const kb = bytes / 1024
+  return `${kb.toFixed(0)} KB`
+}
 
 export function BasesReferenciaTab() {
   const { user } = useAuth()
   const [bases, setBases] = useState<BaseReferencia[]>([])
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [uploadProgressMsg, setUploadProgressMsg] = useState('')
+  const [selectedClassification, setSelectedClassification] = useState<BaseClassificacao>('margem')
+
+  // Estado detalhado de progresso para planilhas pesadas (100MB+)
+  const [uploadProgress, setUploadProgress] = useState<{
+    percent: number
+    message: string
+    stage: 'reading' | 'parsing' | 'uploading' | 'complete' | 'idle'
+    fileName?: string
+    fileSizeStr?: string
+    processedRows?: number
+  }>({
+    percent: 0,
+    message: '',
+    stage: 'idle',
+  })
+
   const [previewBase, setPreviewBase] = useState<BaseReferencia | null>(null)
   const [previewMode, setPreviewMode] = useState<'table' | 'json' | 'columns'>('table')
   const [searchTerm, setSearchTerm] = useState('')
+  const [classificationFilter, setClassificationFilter] = useState<'all' | BaseClassificacao>('all')
 
   useEffect(() => {
     loadBases()
@@ -61,16 +96,43 @@ export function BasesReferenciaTab() {
   const handleFileSelect = async (file: File) => {
     if (!file) return
 
+    const fileSizeMb = file.size / (1024 * 1024)
+    if (fileSizeMb > 200) {
+      alert(`O arquivo possui ${fileSizeMb.toFixed(1)} MB. O limite máximo suportado é de 200 MB.`)
+      return
+    }
+
     setUploading(true)
-    setUploadProgressMsg('Lendo e analisando colunas da planilha com SheetJS...')
+    setUploadProgress({
+      percent: 5,
+      message: 'Iniciando leitura em segundo plano...',
+      stage: 'reading',
+      fileName: file.name,
+      fileSizeStr: formatBytes(file.size),
+    })
 
     try {
-      // 1. Parse no navegador usando SheetJS (XLSX, XLS, CSV)
-      const parsed = await parseSpreadsheetWithSheetJS(file, 50)
+      // 1. Parse em segundo plano (Web Worker para XLSX / streaming para CSV)
+      // Mantém apenas cabeçalhos, contagem total e 50 linhas de amostra na memória
+      const parsed = await parseSpreadsheetWithSheetJS(file, 50, (p: ParseProgress) => {
+        setUploadProgress((prev) => ({
+          ...prev,
+          percent: Math.min(85, Math.max(prev.percent, p.percent)),
+          message: p.message,
+          stage: p.stage === 'reading' ? 'reading' : 'parsing',
+          processedRows: p.processedRows,
+        }))
+      })
 
-      setUploadProgressMsg('Enviando arquivo e metadados ao servidor...')
+      // 2. Envio do arquivo original e dos metadados extraídos para o backend
+      setUploadProgress((prev) => ({
+        ...prev,
+        percent: 88,
+        message: 'Enviando arquivo original e metadados ao servidor...',
+        stage: 'uploading',
+        processedRows: parsed.totalLinhas,
+      }))
 
-      // 2. Cria FormData para envio ao PocketBase (campo file + JSONs)
       const formData = new FormData()
       formData.append('arquivo', file)
       formData.append('nome_arquivo', file.name)
@@ -81,24 +143,39 @@ export function BasesReferenciaTab() {
       formData.append('colunas_detectadas', JSON.stringify(parsed.colunasDetectadas))
       formData.append('amostra_linhas', JSON.stringify(parsed.amostraLinhas))
       formData.append('status', 'aguardando_analise')
+      formData.append('classificacao', selectedClassification)
+      formData.append('tamanho_bytes', String(file.size))
       formData.append(
         'notas',
-        `Arquivo cru recebido para análise de layout. ${parsed.sheetNames.length > 1 ? `Abas: ${parsed.sheetNames.join(', ')}` : ''}`,
+        `Arquivo de referência (${selectedClassification.toUpperCase()}) - ${parsed.sheetNames.length > 1 ? `Abas: ${parsed.sheetNames.join(', ')}` : 'Planilha única'}.`,
       )
 
       await createBaseReferencia(formData)
 
-      alert(
-        `Base de Referência "${file.name}" subida com sucesso!\n${parsed.totalLinhas} linhas e ${parsed.colunasDetectadas.length} colunas detectadas.`,
-      )
+      setUploadProgress({
+        percent: 100,
+        message: 'Planilha processada e salva com sucesso!',
+        stage: 'complete',
+        fileName: file.name,
+        fileSizeStr: formatBytes(file.size),
+        processedRows: parsed.totalLinhas,
+      })
+
       loadBases()
     } catch (err: unknown) {
       console.error('Falha no upload da base de referência:', err)
       const msg = err instanceof Error ? err.message : 'Erro desconhecido ao processar planilha'
-      alert(`Erro: ${msg}`)
+      alert(`Erro no processamento da planilha: ${msg}`)
     } finally {
-      setUploading(false)
-      setUploadProgressMsg('')
+      // Pequeno delay para usuário ver o 100% concluído
+      setTimeout(() => {
+        setUploading(false)
+        setUploadProgress({
+          percent: 0,
+          message: '',
+          stage: 'idle',
+        })
+      }, 1800)
     }
   }
 
@@ -131,9 +208,41 @@ export function BasesReferenciaTab() {
     }
   }
 
-  const filteredBases = bases.filter((b) =>
-    b.nome_arquivo.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  const filteredBases = bases.filter((b) => {
+    const matchesSearch = b.nome_arquivo.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesClass =
+      classificationFilter === 'all' ||
+      b.classificacao === classificationFilter ||
+      (!b.classificacao && classificationFilter === 'outra')
+    return matchesSearch && matchesClass
+  })
+
+  const getClassificacaoBadge = (classificacao?: BaseClassificacao) => {
+    switch (classificacao) {
+      case 'margem':
+        return (
+          <Badge className="bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 text-[10px] font-mono">
+            Margem
+          </Badge>
+        )
+      case 'clientes':
+        return (
+          <Badge className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 text-[10px] font-mono">
+            Clientes
+          </Badge>
+        )
+      case 'outra':
+      default:
+        return (
+          <Badge
+            variant="outline"
+            className="text-slate-500 border-slate-200 text-[10px] font-mono"
+          >
+            Outra
+          </Badge>
+        )
+    }
+  }
 
   const getStatusBadge = (status: BaseReferencia['status']) => {
     switch (status) {
@@ -188,9 +297,9 @@ export function BasesReferenciaTab() {
           referência para leitura da estrutura de dados e definição exata de como a base deve ser
           alimentada.
           <span className="block mt-1 text-[11px] text-blue-800">
-            ⚠ <strong>Importante:</strong> Planilhas enviadas nesta aba NÃO entram na fila
-            operacional, NÃO tocam no banco de clientes e NÃO disparam reconciliação comercial —
-            ficam armazenadas exclusivamente para análise técnica de layout de colunas e mapeamento.
+            ⚡ <strong>Suporte a Planilhas Pesadas (até 150-200 MB):</strong> O processamento é
+            feito em Web Worker e streaming sem congelar o navegador. São extraídos os cabeçalhos, a
+            contagem de linhas e uma amostra de 50 registros para inspeção imediata.
           </span>
         </div>
       </div>
@@ -198,24 +307,55 @@ export function BasesReferenciaTab() {
       {/* Upload Zone Card */}
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-slate-800 flex items-center space-x-2">
-            <UploadCloud className="h-4 w-4 text-blue-600" />
-            <span>Upload de Planilha de Referência</span>
-          </CardTitle>
-          <CardDescription className="text-xs text-slate-500">
-            Arraste ou selecione planilhas (.xlsx, .xls, .csv). O sistema detecta automaticamente os
-            cabeçalhos e guarda uma amostra inicial de até 50 linhas para inspeção.
-          </CardDescription>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-sm font-semibold text-slate-800 flex items-center space-x-2">
+                <UploadCloud className="h-4 w-4 text-blue-600" />
+                <span>Upload de Planilha de Referência</span>
+              </CardTitle>
+              <CardDescription className="text-xs text-slate-500">
+                Arraste ou selecione planilhas (.xlsx, .xls, .csv). O sistema detecta
+                automaticamente os cabeçalhos e guarda uma amostra inicial de até 50 linhas para
+                inspeção.
+              </CardDescription>
+            </div>
+
+            {/* Seletor de Tipo de Base */}
+            <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-lg p-1.5 shrink-0">
+              <Tag className="h-3.5 w-3.5 text-slate-500 ml-1" />
+              <span className="text-xs font-medium text-slate-700">Tipo de Base:</span>
+              <Select
+                value={selectedClassification}
+                onValueChange={(val: BaseClassificacao) => setSelectedClassification(val)}
+                disabled={uploading}
+              >
+                <SelectTrigger className="h-7 text-xs w-36 bg-white border-slate-200">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="margem" className="text-xs">
+                    📊 Margem
+                  </SelectItem>
+                  <SelectItem value="clientes" className="text-xs">
+                    👥 Clientes
+                  </SelectItem>
+                  <SelectItem value="outra" className="text-xs">
+                    📁 Outra
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
-            onClick={() => document.getElementById('ref-file-input')?.click()}
-            className={`border-2 border-dashed rounded-xl p-8 text-center transition-all bg-slate-50/50 flex flex-col items-center justify-center cursor-pointer ${
+            onClick={() => !uploading && document.getElementById('ref-file-input')?.click()}
+            className={`border-2 border-dashed rounded-xl p-8 text-center transition-all bg-slate-50/50 flex flex-col items-center justify-center ${
               uploading
-                ? 'opacity-60 pointer-events-none border-blue-400 bg-blue-50/30'
-                : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50'
+                ? 'border-blue-400 bg-blue-50/40 cursor-wait'
+                : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50 cursor-pointer'
             }`}
           >
             <input
@@ -223,12 +363,14 @@ export function BasesReferenciaTab() {
               type="file"
               accept=".xlsx,.xls,.csv"
               className="hidden"
+              disabled={uploading}
               onChange={(e) => {
                 const f = e.target.files?.[0]
                 if (f) handleFileSelect(f)
                 e.target.value = ''
               }}
             />
+
             <div className="h-12 w-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-3 shadow-inner">
               {uploading ? (
                 <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
@@ -238,9 +380,32 @@ export function BasesReferenciaTab() {
             </div>
 
             {uploading ? (
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-blue-700">Processando planilha...</p>
-                <p className="text-xs text-slate-500 font-mono">{uploadProgressMsg}</p>
+              <div className="space-y-3 w-full max-w-md">
+                <div>
+                  <p className="text-sm font-semibold text-blue-800">
+                    Processando {uploadProgress.fileName} ({uploadProgress.fileSizeStr})
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">{uploadProgress.message}</p>
+                </div>
+
+                <div className="space-y-1">
+                  <Progress value={uploadProgress.percent} className="h-2.5 bg-blue-100" />
+                  <div className="flex justify-between text-[11px] font-mono text-slate-500">
+                    <span>
+                      {uploadProgress.processedRows
+                        ? `${uploadProgress.processedRows.toLocaleString('pt-BR')} linhas identificadas`
+                        : 'Calculando estrutura...'}
+                    </span>
+                    <span>{uploadProgress.percent}%</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-center space-x-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md py-1 px-2.5">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Planilhas grandes (100+ MB) podem levar alguns minutos. Não feche esta página.
+                  </span>
+                </div>
               </div>
             ) : (
               <div className="space-y-1">
@@ -249,8 +414,18 @@ export function BasesReferenciaTab() {
                 </p>
                 <p className="text-xs text-slate-400">
                   Formatos aceitos: <strong>.xlsx</strong>, <strong>.xls</strong> e{' '}
-                  <strong>.csv</strong> (até 50MB)
+                  <strong>.csv</strong> (suporte a arquivos pesados até <strong>200MB</strong>)
                 </p>
+                <div className="pt-2 flex items-center justify-center gap-2 text-[11px] text-slate-500 font-mono">
+                  <span className="inline-flex items-center gap-1">
+                    <FileCheck className="h-3 w-3 text-emerald-600" />
+                    Web Worker ativo
+                  </span>
+                  <span>•</span>
+                  <span>Streaming de memória</span>
+                  <span>•</span>
+                  <span>Amostra de 50 linhas</span>
+                </div>
               </div>
             )}
           </div>
@@ -272,9 +447,34 @@ export function BasesReferenciaTab() {
               </CardDescription>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <div className="relative w-48 sm:w-64">
-                <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Filtro de classificação */}
+              <Select
+                value={classificationFilter}
+                onValueChange={(val: any) => setClassificationFilter(val)}
+              >
+                <SelectTrigger className="h-8 text-xs w-32 bg-white border-slate-200">
+                  <SelectValue placeholder="Todas as bases" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" className="text-xs">
+                    Todos os Tipos
+                  </SelectItem>
+                  <SelectItem value="margem" className="text-xs">
+                    Margem
+                  </SelectItem>
+                  <SelectItem value="clientes" className="text-xs">
+                    Clientes
+                  </SelectItem>
+                  <SelectItem value="outra" className="text-xs">
+                    Outra
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Busca por nome */}
+              <div className="relative w-40 sm:w-56">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
                 <Input
                   type="text"
                   placeholder="Filtrar por nome..."
@@ -283,6 +483,7 @@ export function BasesReferenciaTab() {
                   className="h-8 pl-8 text-xs"
                 />
               </div>
+
               <Button
                 variant="outline"
                 size="sm"
@@ -317,6 +518,8 @@ export function BasesReferenciaTab() {
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
                   <tr>
                     <th className="py-2.5 px-3">Nome do Arquivo</th>
+                    <th className="py-2.5 px-3">Tipo / Base</th>
+                    <th className="py-2.5 px-3">Tamanho</th>
                     <th className="py-2.5 px-3">Data de Envio</th>
                     <th className="py-2.5 px-3">Enviado Por</th>
                     <th className="py-2.5 px-3 text-center">Linhas</th>
@@ -338,8 +541,17 @@ export function BasesReferenciaTab() {
                         <td className="py-2.5 px-3">
                           <div className="flex items-center space-x-2">
                             <FileSpreadsheet className="h-4 w-4 text-blue-600 shrink-0" />
-                            <span className="font-semibold text-slate-800">{b.nome_arquivo}</span>
+                            <span
+                              className="font-semibold text-slate-800 truncate max-w-xs"
+                              title={b.nome_arquivo}
+                            >
+                              {b.nome_arquivo}
+                            </span>
                           </div>
+                        </td>
+                        <td className="py-2.5 px-3">{getClassificacaoBadge(b.classificacao)}</td>
+                        <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                          {formatBytes(b.tamanho_bytes)}
                         </td>
                         <td className="py-2.5 px-3 text-slate-500 whitespace-nowrap font-mono text-[11px]">
                           {b.created ? new Date(b.created).toLocaleString('pt-BR') : '—'}
@@ -401,11 +613,20 @@ export function BasesReferenciaTab() {
                   <DialogTitle className="text-base font-bold text-slate-900 flex items-center space-x-2">
                     <FileSpreadsheet className="h-5 w-5 text-blue-600" />
                     <span>{previewBase.nome_arquivo}</span>
+                    {getClassificacaoBadge(previewBase.classificacao)}
                   </DialogTitle>
-                  <DialogDescription className="text-xs text-slate-500 mt-1">
-                    {previewBase.total_linhas?.toLocaleString('pt-BR')} linhas totais •{' '}
-                    {(previewBase.colunas_detectadas || []).length} colunas detectadas • Amostra de{' '}
-                    {(previewBase.amostra_linhas || []).length} linhas
+                  <DialogDescription className="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                    <span>{previewBase.total_linhas?.toLocaleString('pt-BR')} linhas totais</span>
+                    <span>•</span>
+                    <span>{(previewBase.colunas_detectadas || []).length} colunas detectadas</span>
+                    <span>•</span>
+                    <span>Amostra de {(previewBase.amostra_linhas || []).length} linhas</span>
+                    {previewBase.tamanho_bytes ? (
+                      <>
+                        <span>•</span>
+                        <span className="font-mono">{formatBytes(previewBase.tamanho_bytes)}</span>
+                      </>
+                    ) : null}
                   </DialogDescription>
                 </div>
                 <div>{getStatusBadge(previewBase.status)}</div>
@@ -421,7 +642,7 @@ export function BasesReferenciaTab() {
                 <TabsList className="h-8 bg-slate-100 p-0.5">
                   <TabsTrigger value="table" className="text-xs h-7 px-3 flex items-center gap-1.5">
                     <Table className="h-3.5 w-3.5" />
-                    Tabela de Amostra
+                    Tabela de Amostra (50 linhas)
                   </TabsTrigger>
                   <TabsTrigger
                     value="columns"
@@ -435,6 +656,13 @@ export function BasesReferenciaTab() {
                     JSON Amostra
                   </TabsTrigger>
                 </TabsList>
+
+                {previewBase.arquivo && (
+                  <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                    <HardDrive className="h-3.5 w-3.5 text-slate-400" />
+                    <span>Arquivo original arquivado com segurança no backend</span>
+                  </div>
+                )}
               </div>
 
               {/* MODO TABELA */}
@@ -502,7 +730,7 @@ export function BasesReferenciaTab() {
                         </span>
                         <Badge
                           variant="secondary"
-                          className="font-mono text-[10px] bg-white text-slate-500 border-slate-200"
+                          className="font-mono text-[10px] bg-white text-slate-500 border-slate-200 shrink-0 ml-2"
                         >
                           col {idx + 1}
                         </Badge>
@@ -518,6 +746,8 @@ export function BasesReferenciaTab() {
                   {JSON.stringify(
                     {
                       nome_arquivo: previewBase.nome_arquivo,
+                      classificacao: previewBase.classificacao || 'outra',
+                      tamanho_bytes: previewBase.tamanho_bytes,
                       total_linhas: previewBase.total_linhas,
                       colunas_detectadas: previewBase.colunas_detectadas,
                       amostra_primeiras_linhas: previewBase.amostra_linhas,

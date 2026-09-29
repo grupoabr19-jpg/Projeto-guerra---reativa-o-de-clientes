@@ -155,6 +155,8 @@ export interface Regiao {
   updated: string
 }
 
+export type BaseClassificacao = 'margem' | 'clientes' | 'outra'
+
 export interface BaseReferencia {
   id: string
   nome_arquivo: string
@@ -167,6 +169,8 @@ export interface BaseReferencia {
   colunas_detectadas: string[]
   amostra_linhas: Record<string, unknown>[]
   status: 'aguardando_analise' | 'em_analise' | 'mapeado' | 'arquivado'
+  classificacao?: BaseClassificacao
+  tamanho_bytes?: number
   notas?: string
   created: string
   updated: string

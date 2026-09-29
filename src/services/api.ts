@@ -211,6 +211,15 @@ export async function createBaseReferencia(formData: FormData) {
   })
 }
 
+export async function updateBaseReferencia(
+  id: string,
+  data: Partial<import('@/types').BaseReferencia>,
+) {
+  return pb.collection('bases_referencia').update<import('@/types').BaseReferencia>(id, data, {
+    expand: 'enviado_por',
+  })
+}
+
 export async function deleteBaseReferencia(id: string) {
   return pb.collection('bases_referencia').delete(id)
 }

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-29T18:32:26.823Z",
+  "generatedAt": "2026-09-29T18:40:51.434Z",
   "collections": [
     {
       "name": "users",
@@ -880,6 +880,19 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "classificacao",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["margem", "clientes", "outra"]
+        },
+        {
+          "name": "tamanho_bytes",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
