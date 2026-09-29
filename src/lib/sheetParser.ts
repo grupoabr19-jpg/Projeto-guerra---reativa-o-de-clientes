@@ -2,12 +2,15 @@
 // Suporta arquivos pequenos e super-pesados (até 150-200 MB) sem travar a interface do navegador.
 // Usa Web Worker para XLSX e streaming por chunks (ReadableStream / TextDecoder) para CSV grande.
 
+import type { AbaReferencia } from '@/types'
+
 export interface ParsedSpreadsheet {
   fileName: string
   totalLinhas: number
   colunasDetectadas: string[]
   amostraLinhas: Record<string, unknown>[]
   sheetNames: string[]
+  analiseAbas: AbaReferencia[]
 }
 
 export interface ParseProgress {
@@ -200,12 +203,24 @@ export async function parseCsvStream(
     totalBytes: file.size,
   })
 
+  const analiseAbas: AbaReferencia[] = [
+    {
+      nome: 'CSV',
+      total_linhas: totalLinhas,
+      colunas: colunasDetectadas,
+      amostra: amostraLinhas,
+      is_pivot: false,
+      tipo_aba: 'dados',
+    },
+  ]
+
   return {
     fileName: file.name,
     totalLinhas,
     colunasDetectadas,
     amostraLinhas,
     sheetNames: ['CSV'],
+    analiseAbas,
   }
 }
 
@@ -214,7 +229,7 @@ export async function parseCsvStream(
  */
 function parseWithWebWorker(
   file: File,
-  sampleSize: number = 50,
+  sampleSize: number = 20,
   onProgress?: (p: ParseProgress) => void,
 ): Promise<ParsedSpreadsheet> {
   return new Promise((resolve, reject) => {
@@ -329,69 +344,174 @@ async function parseWithMainThreadSheetJS(
     raw: false,
   })
 
-  const firstSheetName = workbook.SheetNames[0]
-  if (!firstSheetName) {
+  const sheetNames = workbook.SheetNames || []
+  if (sheetNames.length === 0) {
     throw new Error('Nenhuma aba encontrada na planilha')
   }
 
-  const worksheet = workbook.Sheets[firstSheetName]
+  const analiseAbas: AbaReferencia[] = []
+  let maxLinhasOverall = 0
 
-  // Obter range para contagem de linhas sem inflar memória
-  let totalLinhas = 0
-  const ref = worksheet['!ref']
-  if (ref) {
-    const range = XLSX.utils.decode_range(ref)
-    totalLinhas = Math.max(0, range.e.r - range.s.r)
-  }
+  for (let sIdx = 0; sIdx < sheetNames.length; sIdx++) {
+    const sheetName = sheetNames[sIdx]
+    const worksheet = workbook.Sheets[sheetName]
+    if (!worksheet) continue
 
-  // Lê linhas de cabeçalho e amostra
-  const rawMatrix: any[][] = XLSX.utils.sheet_to_json(worksheet, {
-    header: 1,
-    defval: '',
-    blankrows: false,
-  })
+    let totalLinhasAba = 0
+    const ref = worksheet['!ref']
+    if (ref) {
+      try {
+        const range = XLSX.utils.decode_range(ref)
+        totalLinhasAba = Math.max(0, range.e.r - range.s.r)
+      } catch {
+        /* intentionally ignored */
+      }
+    }
 
-  if (!rawMatrix || rawMatrix.length === 0) {
-    throw new Error('A planilha está vazia')
-  }
+    const rawMatrix: any[][] = XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      defval: '',
+      blankrows: false,
+    })
 
-  if (totalLinhas === 0) {
-    totalLinhas = Math.max(0, rawMatrix.length - 1)
-  } else {
-    totalLinhas = Math.max(totalLinhas, rawMatrix.length - 1)
-  }
+    if (totalLinhasAba === 0 && rawMatrix) {
+      totalLinhasAba = Math.max(0, rawMatrix.length - 1)
+    }
 
-  const headerRow = rawMatrix[0] || []
-  const colunasDetectadas: string[] = headerRow
-    .map((c: any, idx: number) => {
+    if (totalLinhasAba > maxLinhasOverall) {
+      maxLinhasOverall = totalLinhasAba
+    }
+
+    // Identificar melhor linha de cabeçalho
+    let bestHeaderIdx = 0
+    let bestScore = -1
+    const inspectLimit = Math.min(rawMatrix.length, 8)
+    for (let r = 0; r < inspectLimit; r++) {
+      const row = rawMatrix[r]
+      if (!Array.isArray(row)) continue
+      const nonBlankCells = row.filter(
+        (c) => c !== undefined && c !== null && String(c).trim().length > 0,
+      )
+      if (nonBlankCells.length === 0) continue
+
+      let textCount = 0
+      let hasPivotMarkers = false
+      for (const cell of nonBlankCells) {
+        const s = String(cell).trim().toLowerCase()
+        if (
+          s.includes('rótulos') ||
+          s.includes('rotulos') ||
+          s.includes('total geral') ||
+          s.includes('soma de')
+        ) {
+          hasPivotMarkers = true
+        }
+        if (isNaN(Number(s)) && s.length >= 2) {
+          textCount++
+        }
+      }
+      const score = textCount * 2 + nonBlankCells.length - (hasPivotMarkers ? 3 : 0)
+      if (score > bestScore) {
+        bestScore = score
+        bestHeaderIdx = r
+      }
+    }
+
+    const headerRow = rawMatrix[bestHeaderIdx] || []
+    const rawCols = headerRow.map((c: any, idx: number) => {
       const val = String(c ?? '').trim()
       return val || `Coluna_${idx + 1}`
     })
-    .filter((c: string) => c.length > 0)
 
-  const sampleMatrix = rawMatrix.slice(1, sampleSize + 1)
-  const amostraLinhas: Record<string, unknown>[] = sampleMatrix.map((row) => {
-    const obj: Record<string, unknown> = {}
-    colunasDetectadas.forEach((colName, idx) => {
-      const cellVal = row[idx]
-      obj[colName] = cellVal !== undefined && cellVal !== null ? cellVal : ''
+    const lowerCols = rawCols.map((c: string) => c.toLowerCase())
+    const isPivot =
+      lowerCols.some(
+        (c: string) => c.includes('rótulos') || c.includes('rotulos') || c.includes('total geral'),
+      ) || rawCols.filter((c: string) => c.startsWith('Coluna_')).length >= rawCols.length * 0.5
+
+    const seen: Record<string, number> = {}
+    const colunas = rawCols.map((c: string, idx: number) => {
+      let name = c || `Coluna_${idx + 1}`
+      if (seen[name]) {
+        seen[name]++
+        name = `${name}_${seen[name]}`
+      } else {
+        seen[name] = 1
+      }
+      return name
     })
-    return obj
-  })
+
+    const sampleRows = rawMatrix.slice(bestHeaderIdx + 1, bestHeaderIdx + 1 + sampleSize)
+    const amostra: Record<string, unknown>[] = []
+    for (const row of sampleRows) {
+      if (!row) continue
+      const obj: Record<string, unknown> = {}
+      let hasAnyValue = false
+      for (let c = 0; c < colunas.length; c++) {
+        const colName = colunas[c]
+        const cellVal = row[c]
+        if (cellVal !== undefined && cellVal !== null && String(cellVal).trim() !== '') {
+          obj[colName] = cellVal
+          hasAnyValue = true
+        } else {
+          obj[colName] = ''
+        }
+      }
+      if (hasAnyValue) {
+        amostra.push(obj)
+      }
+    }
+
+    let tipoAba: 'dados' | 'tabela_dinamica' | 'referencia' | 'resumo' = isPivot
+      ? 'tabela_dinamica'
+      : 'dados'
+    const lowerName = sheetName.toLowerCase()
+    if (lowerName.includes('resumo')) tipoAba = 'resumo'
+    else if (lowerName.includes('apoio') || lowerName.includes('tabela')) tipoAba = 'referencia'
+
+    analiseAbas.push({
+      nome: sheetName,
+      total_linhas: totalLinhasAba,
+      colunas,
+      amostra,
+      is_pivot: isPivot,
+      tipo_aba: tipoAba,
+    })
+  }
+
+  // Escolhe a aba principal (prioriza BD / não-pivô)
+  let bestSheetIndex = 0
+  let highestScore = -1
+  for (let i = 0; i < analiseAbas.length; i++) {
+    const a = analiseAbas[i]
+    const lower = a.nome.toLowerCase()
+    let s = 0
+    if (lower === 'bd' || lower === 'base' || lower === 'dados') s += 10000
+    if (lower.startsWith('bd_')) s += 5000
+    if (!a.is_pivot) s += 2000
+    s += a.colunas.length * 10
+    if (s > highestScore) {
+      highestScore = s
+      bestSheetIndex = i
+    }
+  }
+
+  const primaryAba = analiseAbas[bestSheetIndex] || analiseAbas[0]
 
   onProgress?.({
     stage: 'complete',
     percent: 100,
-    message: 'Análise concluída com sucesso!',
-    processedRows: totalLinhas,
+    message: 'Análise multi-aba concluída com sucesso!',
+    processedRows: primaryAba?.total_linhas || maxLinhasOverall,
   })
 
   return {
     fileName: file.name,
-    totalLinhas,
-    colunasDetectadas,
-    amostraLinhas,
+    totalLinhas: primaryAba?.total_linhas || maxLinhasOverall,
+    colunasDetectadas: primaryAba?.colunas || [],
+    amostraLinhas: primaryAba?.amostra || [],
     sheetNames: workbook.SheetNames,
+    analiseAbas,
   }
 }
 
@@ -402,7 +522,7 @@ async function parseWithMainThreadSheetJS(
  */
 export async function parseSpreadsheetWithSheetJS(
   file: File,
-  sampleSize: number = 50,
+  sampleSize: number = 20,
   onProgress?: (p: ParseProgress) => void,
 ): Promise<ParsedSpreadsheet> {
   const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type.includes('csv')

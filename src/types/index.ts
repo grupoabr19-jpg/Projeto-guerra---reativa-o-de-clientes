@@ -157,6 +157,15 @@ export interface Regiao {
 
 export type BaseClassificacao = 'margem' | 'clientes' | 'faturamento' | 'outra'
 
+export interface AbaReferencia {
+  nome: string
+  total_linhas: number
+  colunas: string[]
+  amostra: Record<string, unknown>[]
+  is_pivot?: boolean
+  tipo_aba?: 'dados' | 'tabela_dinamica' | 'referencia' | 'resumo'
+}
+
 export interface BaseReferencia {
   id: string
   nome_arquivo: string
@@ -168,6 +177,7 @@ export interface BaseReferencia {
   total_linhas: number
   colunas_detectadas: string[]
   amostra_linhas: Record<string, unknown>[]
+  analise_abas?: AbaReferencia[]
   status: 'aguardando_analise' | 'em_analise' | 'mapeado' | 'arquivado'
   classificacao?: BaseClassificacao
   tamanho_bytes?: number

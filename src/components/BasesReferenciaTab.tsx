@@ -73,7 +73,9 @@ export function BasesReferenciaTab() {
   })
 
   const [previewBase, setPreviewBase] = useState<BaseReferencia | null>(null)
-  const [previewMode, setPreviewMode] = useState<'table' | 'json' | 'columns'>('table')
+  const [previewMode, setPreviewMode] = useState<'abas' | 'table' | 'json' | 'columns'>('abas')
+  const [selectedSheetIndex, setSelectedSheetIndex] = useState<number>(0)
+  const [tableSheetIndex, setTableSheetIndex] = useState<number>(0)
   const [searchTerm, setSearchTerm] = useState('')
   const [classificationFilter, setClassificationFilter] = useState<'all' | BaseClassificacao>('all')
 
@@ -153,6 +155,9 @@ export function BasesReferenciaTab() {
       formData.append('total_linhas', String(parsed.totalLinhas))
       formData.append('colunas_detectadas', JSON.stringify(parsed.colunasDetectadas))
       formData.append('amostra_linhas', JSON.stringify(parsed.amostraLinhas))
+      if (parsed.analiseAbas && parsed.analiseAbas.length > 0) {
+        formData.append('analise_abas', JSON.stringify(parsed.analiseAbas))
+      }
       formData.append('status', 'aguardando_analise')
       formData.append('classificacao', selectedClassification)
       formData.append('tamanho_bytes', String(file.size))
@@ -588,17 +593,36 @@ export function BasesReferenciaTab() {
                     const autor =
                       b.expand?.enviado_por?.name || b.expand?.enviado_por?.email || 'Admin'
 
+                    const hasAnaliseAbas =
+                      Array.isArray(b.analise_abas) && b.analise_abas.length > 0
+                    const isLegacyLargeWithoutAttachment = !b.arquivo && !hasAnaliseAbas
+
                     return (
                       <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-2.5 px-3">
                           <div className="flex items-center space-x-2">
                             <FileSpreadsheet className="h-4 w-4 text-blue-600 shrink-0" />
-                            <span
-                              className="font-semibold text-slate-800 truncate max-w-xs"
-                              title={b.nome_arquivo}
-                            >
-                              {b.nome_arquivo}
-                            </span>
+                            <div className="flex flex-col">
+                              <span
+                                className="font-semibold text-slate-800 truncate max-w-xs"
+                                title={b.nome_arquivo}
+                              >
+                                {b.nome_arquivo}
+                              </span>
+                              {hasAnaliseAbas && (
+                                <span className="text-[10px] text-blue-700 font-medium">
+                                  {b.analise_abas!.length} abas analisadas
+                                </span>
+                              )}
+                              {isLegacyLargeWithoutAttachment && (
+                                <span
+                                  className="text-[10px] text-amber-700 font-sans"
+                                  title="Arquivo grande analisado no formato antigo de aba única. A análise completa multi-aba será gerada em um novo upload."
+                                >
+                                  Análise por aba disponível em novo upload
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="py-2.5 px-3">{getClassificacaoBadge(b.classificacao)}</td>
@@ -640,7 +664,17 @@ export function BasesReferenciaTab() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setPreviewBase(b)}
+                            onClick={() => {
+                              setPreviewBase(b)
+                              setSelectedSheetIndex(0)
+                              setTableSheetIndex(0)
+                              // Se tiver analise_abas, abre na visualização de abas por padrão
+                              if (Array.isArray(b.analise_abas) && b.analise_abas.length > 0) {
+                                setPreviewMode('abas')
+                              } else {
+                                setPreviewMode('table')
+                              }
+                            }}
                             className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                           >
                             <Eye className="h-3.5 w-3.5 mr-1" />
@@ -712,136 +746,390 @@ export function BasesReferenciaTab() {
               )}
             </DialogHeader>
 
-            <Tabs
-              value={previewMode}
-              onValueChange={(v: any) => setPreviewMode(v)}
-              className="flex-1 flex flex-col min-h-0 pt-2"
-            >
-              <div className="flex items-center justify-between border-b pb-2">
-                <TabsList className="h-8 bg-slate-100 p-0.5">
-                  <TabsTrigger value="table" className="text-xs h-7 px-3 flex items-center gap-1.5">
-                    <Table className="h-3.5 w-3.5" />
-                    Tabela de Amostra (50 linhas)
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="columns"
-                    className="text-xs h-7 px-3 flex items-center gap-1.5"
-                  >
-                    <Layers className="h-3.5 w-3.5" />
-                    Lista de Colunas ({(previewBase.colunas_detectadas || []).length})
-                  </TabsTrigger>
-                  <TabsTrigger value="json" className="text-xs h-7 px-3 flex items-center gap-1.5">
-                    <Code2 className="h-3.5 w-3.5" />
-                    JSON Amostra
-                  </TabsTrigger>
-                </TabsList>
+            {(() => {
+              const abasDisponiveis = Array.isArray(previewBase.analise_abas)
+                ? previewBase.analise_abas
+                : []
+              const hasMultiAba = abasDisponiveis.length > 0
 
-                {previewBase.arquivo ? (
-                  <div className="text-[11px] text-slate-500 flex items-center gap-1">
-                    <HardDrive className="h-3.5 w-3.5 text-slate-400" />
-                    <span>Arquivo original arquivado com segurança no backend</span>
-                  </div>
-                ) : (
-                  <div className="text-[11px] text-amber-700 flex items-center gap-1 bg-amber-50 px-2 py-1 rounded border border-amber-200">
-                    <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                    <span>Arquivo grande gravado sem o arquivo bruto para análise estrutural</span>
-                  </div>
-                )}
-              </div>
+              // Dados da aba selecionada para a tabela
+              const activeAba = hasMultiAba
+                ? abasDisponiveis[tableSheetIndex] || abasDisponiveis[0]
+                : null
 
-              {/* MODO TABELA */}
-              <TabsContent value="table" className="flex-1 overflow-auto min-h-0 pt-3">
-                <div className="border border-slate-200 rounded-lg overflow-auto max-h-[55vh]">
-                  <table className="w-full text-xs text-left border-collapse">
-                    <thead className="bg-slate-100 sticky top-0 z-10 text-slate-700 font-semibold border-b border-slate-200 shadow-sm">
-                      <tr>
-                        <th className="py-2 px-3 border-r border-slate-200 w-12 text-center text-slate-400">
-                          #
-                        </th>
-                        {(previewBase.colunas_detectadas || []).map((col, idx) => (
-                          <th
-                            key={idx}
-                            className="py-2 px-3 border-r border-slate-200 whitespace-nowrap text-slate-800"
-                          >
-                            {col}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(previewBase.amostra_linhas || []).map((row, rowIdx) => (
-                        <tr key={rowIdx} className="hover:bg-blue-50/40">
-                          <td className="py-1.5 px-3 border-r border-slate-200 text-center text-[10px] text-slate-400 font-mono bg-slate-50/50">
-                            {rowIdx + 1}
-                          </td>
-                          {(previewBase.colunas_detectadas || []).map((col, colIdx) => {
-                            const val = row[col]
+              const activeCols = activeAba
+                ? activeAba.colunas
+                : previewBase.colunas_detectadas || []
+              const activeAmostra = activeAba ? activeAba.amostra : previewBase.amostra_linhas || []
+              const activeTotalLinhas = activeAba
+                ? activeAba.total_linhas
+                : previewBase.total_linhas
+
+              return (
+                <Tabs
+                  value={previewMode}
+                  onValueChange={(v: any) => setPreviewMode(v)}
+                  className="flex-1 flex flex-col min-h-0 pt-2"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-2">
+                    <TabsList className="h-8 bg-slate-100 p-0.5">
+                      {hasMultiAba && (
+                        <TabsTrigger
+                          value="abas"
+                          className="text-xs h-7 px-3 flex items-center gap-1.5"
+                        >
+                          <Layers className="h-3.5 w-3.5" />
+                          Visão das Abas ({abasDisponiveis.length})
+                        </TabsTrigger>
+                      )}
+                      <TabsTrigger
+                        value="table"
+                        className="text-xs h-7 px-3 flex items-center gap-1.5"
+                      >
+                        <Table className="h-3.5 w-3.5" />
+                        Tabela de Amostra{' '}
+                        {hasMultiAba ? `(${activeAba?.nome || 'Aba'})` : '(Geral)'}
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="columns"
+                        className="text-xs h-7 px-3 flex items-center gap-1.5"
+                      >
+                        <Tag className="h-3.5 w-3.5" />
+                        Colunas ({activeCols.length})
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="json"
+                        className="text-xs h-7 px-3 flex items-center gap-1.5"
+                      >
+                        <Code2 className="h-3.5 w-3.5" />
+                        JSON Estrutura
+                      </TabsTrigger>
+                    </TabsList>
+
+                    {previewBase.arquivo ? (
+                      <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                        <HardDrive className="h-3.5 w-3.5 text-slate-400" />
+                        <span>Arquivo arquivado no backend</span>
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-amber-700 flex items-center gap-1 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                        <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                        <span>Arquivo grande sem binário bruto</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SEÇÃO ABAS (NOVO MODO) */}
+                  {hasMultiAba && (
+                    <TabsContent value="abas" className="flex-1 overflow-auto min-h-0 pt-3">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs text-slate-600">
+                            Todas as abas detectadas no arquivo. Clique em{' '}
+                            <strong>Ver Tabela</strong> em qualquer aba para inspecionar seus
+                            cabeçalhos e amostra:
+                          </p>
+                          <Badge variant="outline" className="text-[10px] font-mono text-slate-600">
+                            {abasDisponiveis.length} abas encontradas
+                          </Badge>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
+                          {abasDisponiveis.map((aba, idx) => {
+                            const isSelected = tableSheetIndex === idx
+                            const isPivot = aba.is_pivot
+                            const isData =
+                              !isPivot &&
+                              (aba.nome.toLowerCase() === 'bd' ||
+                                aba.nome.toLowerCase().includes('base'))
+
                             return (
-                              <td
-                                key={colIdx}
-                                className="py-1.5 px-3 border-r border-slate-100 max-w-xs truncate font-mono text-[11px] text-slate-700"
-                                title={String(val ?? '')}
+                              <div
+                                key={idx}
+                                className={`border rounded-lg p-3.5 transition-all flex flex-col justify-between space-y-2.5 ${
+                                  isSelected
+                                    ? 'border-blue-500 bg-blue-50/50 shadow-sm'
+                                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/60'
+                                }`}
                               >
-                                {val !== undefined && val !== null && String(val).trim() !== '' ? (
-                                  String(val)
-                                ) : (
-                                  <span className="text-slate-300 italic">—</span>
-                                )}
-                              </td>
+                                <div>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center space-x-2 truncate">
+                                      <FileSpreadsheet
+                                        className={`h-4 w-4 shrink-0 ${
+                                          isData
+                                            ? 'text-emerald-600'
+                                            : isPivot
+                                              ? 'text-purple-600'
+                                              : 'text-blue-600'
+                                        }`}
+                                      />
+                                      <span
+                                        className="font-bold text-xs text-slate-800 truncate"
+                                        title={aba.nome}
+                                      >
+                                        {aba.nome}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center space-x-1 shrink-0">
+                                      {isPivot && (
+                                        <Badge
+                                          variant="secondary"
+                                          className="text-[9px] font-mono bg-purple-50 text-purple-700 border-purple-200"
+                                        >
+                                          Tabela Dinâmica / Pivô
+                                        </Badge>
+                                      )}
+                                      {isData && (
+                                        <Badge
+                                          variant="secondary"
+                                          className="text-[9px] font-mono bg-emerald-50 text-emerald-700 border-emerald-200"
+                                        >
+                                          Base Bruta (BD)
+                                        </Badge>
+                                      )}
+                                      {aba.tipo_aba === 'resumo' && (
+                                        <Badge
+                                          variant="secondary"
+                                          className="text-[9px] font-mono bg-slate-100 text-slate-600"
+                                        >
+                                          Resumo
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-2 flex items-center space-x-3 text-[11px] text-slate-500 font-mono">
+                                    <span>
+                                      <strong>
+                                        {aba.total_linhas?.toLocaleString('pt-BR') || 0}
+                                      </strong>{' '}
+                                      linhas
+                                    </span>
+                                    <span>•</span>
+                                    <span>
+                                      <strong>{aba.colunas?.length || 0}</strong> colunas
+                                    </span>
+                                    <span>•</span>
+                                    <span>
+                                      <strong>{aba.amostra?.length || 0}</strong> amostras
+                                    </span>
+                                  </div>
+
+                                  <div className="mt-2 text-[11px] text-slate-600 line-clamp-2">
+                                    <strong className="text-slate-500 font-medium">Colunas:</strong>{' '}
+                                    <span className="font-mono text-[10px] text-slate-700">
+                                      {aba.colunas && aba.colunas.length > 0
+                                        ? aba.colunas.slice(0, 7).join(', ') +
+                                          (aba.colunas.length > 7
+                                            ? ` (+${aba.colunas.length - 7})`
+                                            : '')
+                                        : 'Nenhuma coluna identificada'}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                                  <span className="text-[10px] text-slate-400 font-mono">
+                                    Aba #{idx + 1}
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant={isSelected ? 'default' : 'outline'}
+                                    onClick={() => {
+                                      setTableSheetIndex(idx)
+                                      setPreviewMode('table')
+                                    }}
+                                    className={`h-7 px-3 text-xs ${
+                                      isSelected
+                                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                                        : 'text-slate-700 border-slate-200 hover:bg-slate-100'
+                                    }`}
+                                  >
+                                    <Table className="h-3 w-3 mr-1" />
+                                    Ver Tabela & Amostra
+                                  </Button>
+                                </div>
+                              </div>
                             )
                           })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </TabsContent>
-
-              {/* MODO COLUNAS */}
-              <TabsContent value="columns" className="flex-1 overflow-auto min-h-0 pt-3">
-                <div className="space-y-3">
-                  <div className="text-xs text-slate-500">
-                    Ordem exata das colunas identificadas na primeira linha da planilha:
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-[55vh] overflow-y-auto pr-1">
-                    {(previewBase.colunas_detectadas || []).map((col, idx) => (
-                      <div
-                        key={idx}
-                        className="p-2.5 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-between text-xs"
-                      >
-                        <span className="font-semibold text-slate-800 truncate" title={col}>
-                          {col}
-                        </span>
-                        <Badge
-                          variant="secondary"
-                          className="font-mono text-[10px] bg-white text-slate-500 border-slate-200 shrink-0 ml-2"
-                        >
-                          col {idx + 1}
-                        </Badge>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              </TabsContent>
-
-              {/* MODO JSON */}
-              <TabsContent value="json" className="flex-1 overflow-auto min-h-0 pt-3">
-                <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-[11px] font-mono overflow-auto max-h-[55vh] leading-relaxed">
-                  {JSON.stringify(
-                    {
-                      nome_arquivo: previewBase.nome_arquivo,
-                      classificacao: previewBase.classificacao || 'outra',
-                      tamanho_bytes: previewBase.tamanho_bytes,
-                      total_linhas: previewBase.total_linhas,
-                      colunas_detectadas: previewBase.colunas_detectadas,
-                      amostra_primeiras_linhas: previewBase.amostra_linhas,
-                    },
-                    null,
-                    2,
+                    </TabsContent>
                   )}
-                </pre>
-              </TabsContent>
-            </Tabs>
+
+                  {/* MODO TABELA COM SELETOR DE ABA */}
+                  <TabsContent value="table" className="flex-1 overflow-auto min-h-0 pt-3">
+                    <div className="space-y-3">
+                      {/* Seletor de aba para a tabela quando há múltiplas abas */}
+                      {hasMultiAba && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                          <div className="flex items-center space-x-2">
+                            <Layers className="h-4 w-4 text-blue-600 shrink-0" />
+                            <span className="text-xs font-semibold text-slate-700">
+                              Aba Selecionada:
+                            </span>
+                            <Select
+                              value={String(tableSheetIndex)}
+                              onValueChange={(val) => setTableSheetIndex(Number(val))}
+                            >
+                              <SelectTrigger className="h-7 text-xs w-56 bg-white border-slate-200 font-medium">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {abasDisponiveis.map((aba, idx) => (
+                                  <SelectItem key={idx} value={String(idx)} className="text-xs">
+                                    {aba.nome}{' '}
+                                    <span className="text-slate-400 font-mono text-[10px]">
+                                      ({aba.total_linhas?.toLocaleString('pt-BR')} lin,{' '}
+                                      {aba.colunas?.length} cols)
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="flex items-center space-x-2 text-[11px] text-slate-500">
+                            {activeAba?.is_pivot ? (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] font-mono bg-purple-50 text-purple-700 border-purple-200"
+                              >
+                                Tabela Dinâmica / Pivô
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] font-mono bg-emerald-50 text-emerald-700 border-emerald-200"
+                              >
+                                Aba de Dados
+                              </Badge>
+                            )}
+                            <span>{activeAmostra.length} linhas de amostra exibidas</span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="border border-slate-200 rounded-lg overflow-auto max-h-[50vh]">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead className="bg-slate-100 sticky top-0 z-10 text-slate-700 font-semibold border-b border-slate-200 shadow-sm">
+                            <tr>
+                              <th className="py-2 px-3 border-r border-slate-200 w-12 text-center text-slate-400">
+                                #
+                              </th>
+                              {activeCols.map((col, idx) => (
+                                <th
+                                  key={idx}
+                                  className="py-2 px-3 border-r border-slate-200 whitespace-nowrap text-slate-800 font-semibold"
+                                >
+                                  {col}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {activeAmostra.length === 0 ? (
+                              <tr>
+                                <td
+                                  colSpan={Math.max(1, activeCols.length + 1)}
+                                  className="py-8 text-center text-slate-400 text-xs italic"
+                                >
+                                  Nenhuma linha de amostra disponível nesta aba.
+                                </td>
+                              </tr>
+                            ) : (
+                              activeAmostra.map((row, rowIdx) => (
+                                <tr key={rowIdx} className="hover:bg-blue-50/40">
+                                  <td className="py-1.5 px-3 border-r border-slate-200 text-center text-[10px] text-slate-400 font-mono bg-slate-50/50">
+                                    {rowIdx + 1}
+                                  </td>
+                                  {activeCols.map((col, colIdx) => {
+                                    const val = row[col]
+                                    return (
+                                      <td
+                                        key={colIdx}
+                                        className="py-1.5 px-3 border-r border-slate-100 max-w-xs truncate font-mono text-[11px] text-slate-700"
+                                        title={String(val ?? '')}
+                                      >
+                                        {val !== undefined &&
+                                        val !== null &&
+                                        String(val).trim() !== '' ? (
+                                          String(val)
+                                        ) : (
+                                          <span className="text-slate-300 italic">—</span>
+                                        )}
+                                      </td>
+                                    )
+                                  })}
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  {/* MODO COLUNAS */}
+                  <TabsContent value="columns" className="flex-1 overflow-auto min-h-0 pt-3">
+                    <div className="space-y-3">
+                      {hasMultiAba && (
+                        <div className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-200">
+                          <span>
+                            Exibindo colunas da aba:{' '}
+                            <strong>{activeAba?.nome || 'Aba Atual'}</strong>
+                          </span>
+                          <span className="font-mono text-slate-500">
+                            {activeCols.length} colunas
+                          </span>
+                        </div>
+                      )}
+                      <div className="text-xs text-slate-500">
+                        Ordem exata das colunas identificadas na linha de cabeçalho:
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-[50vh] overflow-y-auto pr-1">
+                        {activeCols.map((col, idx) => (
+                          <div
+                            key={idx}
+                            className="p-2.5 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-between text-xs"
+                          >
+                            <span className="font-semibold text-slate-800 truncate" title={col}>
+                              {col}
+                            </span>
+                            <Badge
+                              variant="secondary"
+                              className="font-mono text-[10px] bg-white text-slate-500 border-slate-200 shrink-0 ml-2"
+                            >
+                              col {idx + 1}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  {/* MODO JSON */}
+                  <TabsContent value="json" className="flex-1 overflow-auto min-h-0 pt-3">
+                    <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-[11px] font-mono overflow-auto max-h-[55vh] leading-relaxed">
+                      {JSON.stringify(
+                        {
+                          nome_arquivo: previewBase.nome_arquivo,
+                          classificacao: previewBase.classificacao || 'outra',
+                          tamanho_bytes: previewBase.tamanho_bytes,
+                          total_linhas: previewBase.total_linhas,
+                          colunas_detectadas: previewBase.colunas_detectadas,
+                          analise_abas: previewBase.analise_abas || null,
+                          amostra_primeiras_linhas: previewBase.amostra_linhas,
+                        },
+                        null,
+                        2,
+                      )}
+                    </pre>
+                  </TabsContent>
+                </Tabs>
+              )
+            })()}
           </DialogContent>
         </Dialog>
       )}
