@@ -35,12 +35,6 @@ export default function FilaPage() {
   const { user, hasRole, hasRegiaoAccess } = useAuth()
   const navigate = useNavigate()
 
-  useEffect(() => {
-    if (user?.role === 'operador') {
-      navigate('/meu-painel', { replace: true })
-    }
-  }, [user?.role, navigate])
-
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [regioesList, setRegioesList] = useState<string[]>([...REGIOES_PADRAO])
   const [loading, setLoading] = useState(true)
@@ -50,8 +44,20 @@ export default function FilaPage() {
   const [filterFaixa, setFilterFaixa] = useState<string>('todas')
 
   useEffect(() => {
-    loadQueue()
-  }, [])
+    if (user && user.role === 'operador') {
+      navigate('/meu-painel', { replace: true })
+    }
+  }, [user, navigate])
+
+  useEffect(() => {
+    if (user && user.role !== 'operador') {
+      loadQueue()
+    }
+  }, [user])
+
+  if (user?.role === 'operador') {
+    return null
+  }
 
   const loadQueue = async () => {
     setLoading(true)

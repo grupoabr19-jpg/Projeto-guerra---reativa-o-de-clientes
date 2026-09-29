@@ -91,77 +91,77 @@ export default function Layout() {
     return null
   }
 
-  // Definição de permissões de menu conforme regra do usuário:
-  // Operador vê SOMENTE: "Meu Painel" e "Atendimento" (NÃO vê Fila nem lista de Clientes)
-  // Supervisor e Admin mantêm tudo que têm hoje (Dashboard, Fila gerencial, Atendimento, Clientes, Relatórios, etc.)
-  const navItems = [
-    ...(user.role === 'operador'
-      ? [
-          {
-            title: 'Meu Painel',
-            href: '/meu-painel',
-            icon: Activity,
-          },
-          {
-            title: 'Atendimento',
-            href: '/atendimento',
-            icon: Headphones,
-          },
-        ]
-      : [
-          ...(hasRole(['supervisor', 'admin'])
-            ? [
-                {
-                  title: 'Dashboard',
-                  href: '/dashboard',
-                  icon: LayoutDashboard,
-                },
-              ]
-            : []),
-          ...(hasRole('admin')
-            ? [
-                {
-                  title: 'Importação',
-                  href: '/importacao',
-                  icon: FileSpreadsheet,
-                },
-              ]
-            : []),
-          {
-            title: 'Fila de Atendimento',
-            href: '/fila',
-            icon: ListOrdered,
-          },
-          {
-            title: 'Atendimento',
-            href: '/atendimento',
-            icon: Headphones,
-          },
-          {
-            title: 'Clientes',
-            href: '/clientes',
-            icon: Users,
-          },
-          ...(hasRole(['supervisor', 'admin'])
-            ? [
-                {
-                  title: 'Relatórios',
-                  href: '/relatorios',
-                  icon: BarChart3,
-                },
-              ]
-            : []),
-          ...(hasRole('admin')
-            ? [
-                {
-                  title: 'Configurações',
-                  href: '/configuracoes',
-                  icon: Settings,
-                },
-              ]
-            : []),
-        ]),
-  ]
+  // Definição estrita de permissões de menu:
+  // Operador vê SOMENTE: "Meu Painel" e "Atendimento" (SEM Fila de Atendimento, SEM Clientes, SEM Dashboard, SEM Relatórios, SEM Importação, SEM Configurações).
+  // Supervisor e Admin têm acesso ampliado conforme sua função.
+  const isOperador = user.role === 'operador' || !user.role
+
+  const navItems = isOperador
+    ? [
+        {
+          title: 'Meu Painel',
+          href: '/meu-painel',
+          icon: Activity,
+        },
+        {
+          title: 'Atendimento',
+          href: '/atendimento',
+          icon: Headphones,
+        },
+      ]
+    : [
+        ...(hasRole(['supervisor', 'admin'])
+          ? [
+              {
+                title: 'Dashboard',
+                href: '/dashboard',
+                icon: LayoutDashboard,
+              },
+            ]
+          : []),
+        ...(hasRole('admin')
+          ? [
+              {
+                title: 'Importação',
+                href: '/importacao',
+                icon: FileSpreadsheet,
+              },
+            ]
+          : []),
+        {
+          title: 'Fila de Atendimento',
+          href: '/fila',
+          icon: ListOrdered,
+        },
+        {
+          title: 'Atendimento',
+          href: '/atendimento',
+          icon: Headphones,
+        },
+        {
+          title: 'Clientes',
+          href: '/clientes',
+          icon: Users,
+        },
+        ...(hasRole(['supervisor', 'admin'])
+          ? [
+              {
+                title: 'Relatórios',
+                href: '/relatorios',
+                icon: BarChart3,
+              },
+            ]
+          : []),
+        ...(hasRole('admin')
+          ? [
+              {
+                title: 'Configurações',
+                href: '/configuracoes',
+                icon: Settings,
+              },
+            ]
+          : []),
+      ]
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full bg-slate-900 text-slate-100">

@@ -69,7 +69,13 @@ interface ColumnMapping {
   faixa: string
 }
 
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/contexts/AuthContext'
+
 export default function ImportacaoPage() {
+  const { user } = useAuth()
+  const navigate = useNavigate()
+
   const [importacoes, setImportacoes] = useState<Importacao[]>([])
   const [loadingHistory, setLoadingHistory] = useState(true)
 
@@ -124,9 +130,21 @@ export default function ImportacaoPage() {
   } | null>(null)
 
   useEffect(() => {
-    loadHistory()
-    loadTemplates()
-  }, [])
+    if (user && user.role === 'operador') {
+      navigate('/meu-painel', { replace: true })
+    }
+  }, [user, navigate])
+
+  useEffect(() => {
+    if (user && user.role !== 'operador') {
+      loadHistory()
+      loadTemplates()
+    }
+  }, [user])
+
+  if (user?.role === 'operador') {
+    return null
+  }
 
   const loadTemplates = async () => {
     try {

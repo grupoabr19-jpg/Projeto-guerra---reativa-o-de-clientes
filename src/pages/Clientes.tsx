@@ -45,12 +45,6 @@ export default function ClientesPage() {
   const { user, hasRole, hasRegiaoAccess } = useAuth()
   const navigate = useNavigate()
 
-  useEffect(() => {
-    if (user?.role === 'operador') {
-      navigate('/meu-painel', { replace: true })
-    }
-  }, [user?.role, navigate])
-
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [regioesList, setRegioesList] = useState<string[]>([...REGIOES_PADRAO])
   const [loading, setLoading] = useState(true)
@@ -64,8 +58,20 @@ export default function ClientesPage() {
   const [loadingDetails, setLoadingDetails] = useState(false)
 
   useEffect(() => {
-    loadClientes()
-  }, [])
+    if (user && user.role === 'operador') {
+      navigate('/meu-painel', { replace: true })
+    }
+  }, [user, navigate])
+
+  useEffect(() => {
+    if (user && user.role !== 'operador') {
+      loadClientes()
+    }
+  }, [user])
+
+  if (user?.role === 'operador') {
+    return null
+  }
 
   const loadClientes = async () => {
     setLoading(true)

@@ -25,7 +25,13 @@ import { fetchClientes, fetchImportacoes, fetchRegioes } from '@/services/api'
 import type { Cliente, Importacao, Regiao } from '@/types'
 import { REGIOES_PADRAO } from '@/types'
 
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/contexts/AuthContext'
+
 export default function RelatoriosPage() {
+  const { user } = useAuth()
+  const navigate = useNavigate()
+
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [importacoes, setImportacoes] = useState<Importacao[]>([])
   const [regioesList, setRegioesList] = useState<string[]>([...REGIOES_PADRAO])
@@ -33,8 +39,20 @@ export default function RelatoriosPage() {
   const [selectedRegiao, setSelectedRegiao] = useState<string>('todas')
 
   useEffect(() => {
-    loadData()
-  }, [])
+    if (user && user.role === 'operador') {
+      navigate('/meu-painel', { replace: true })
+    }
+  }, [user, navigate])
+
+  useEffect(() => {
+    if (user && user.role !== 'operador') {
+      loadData()
+    }
+  }, [user])
+
+  if (user?.role === 'operador') {
+    return null
+  }
 
   const loadData = async () => {
     setLoading(true)

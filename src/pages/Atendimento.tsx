@@ -93,8 +93,9 @@ export default function AtendimentoPage() {
   useEffect(() => {
     // Carregar segmentos reais da base de clientes
     import('@/lib/pocketbase/client').then((module) => {
-      const pocketbaseClient = module.pb
-      pocketbaseClient.collection('clientes')
+      const pocketbaseClient = module.default
+      pocketbaseClient
+        .collection('clientes')
         .getFullList<{ segmento?: string }>({ fields: 'segmento' })
         .then((records) => {
           const segs = Array.from(

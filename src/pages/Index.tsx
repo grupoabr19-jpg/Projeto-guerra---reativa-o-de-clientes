@@ -27,10 +27,10 @@ export default function Index() {
   // Se já autenticado, vai para a tela adequada (operador vai direto para Meu Painel)
   React.useEffect(() => {
     if (user) {
-      if (user.role === 'operador') {
-        navigate('/meu-painel')
+      if (user.role === 'operador' || !user.role) {
+        navigate('/meu-painel', { replace: true })
       } else {
-        navigate('/dashboard')
+        navigate('/dashboard', { replace: true })
       }
     }
   }, [user, navigate])

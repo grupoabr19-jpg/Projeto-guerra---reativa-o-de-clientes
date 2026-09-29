@@ -48,7 +48,13 @@ import { REGIOES_PADRAO } from '@/types'
 import { MapPin, Info, Edit2, Check, AlertCircle } from 'lucide-react'
 import { BasesReferenciaTab } from '@/components/BasesReferenciaTab'
 
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/contexts/AuthContext'
+
 export default function ConfiguracoesPage() {
+  const { user } = useAuth()
+  const navigate = useNavigate()
+
   const [kommoStatus, setKommoStatus] = useState<{
     configured: boolean
     subdomain: string
@@ -110,10 +116,22 @@ export default function ConfiguracoesPage() {
   const [activeTab, setActiveTab] = useState('bases')
 
   useEffect(() => {
-    loadSettings()
-    loadUsers()
-    loadRegioesData()
-  }, [])
+    if (user && user.role === 'operador') {
+      navigate('/meu-painel', { replace: true })
+    }
+  }, [user, navigate])
+
+  useEffect(() => {
+    if (user && user.role !== 'operador') {
+      loadSettings()
+      loadUsers()
+      loadRegioesData()
+    }
+  }, [user])
+
+  if (user?.role === 'operador') {
+    return null
+  }
 
   const loadSettings = async () => {
     try {

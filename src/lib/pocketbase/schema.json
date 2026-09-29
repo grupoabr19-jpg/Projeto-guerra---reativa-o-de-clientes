@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-29T19:27:47.755Z",
+  "generatedAt": "2026-09-29T19:37:43.204Z",
   "collections": [
     {
       "name": "users",
@@ -568,10 +568,10 @@
       "name": "importacoes",
       "type": "base",
       "apiRules": {
-        "list": "@request.auth.id != ''",
-        "view": "@request.auth.id != ''",
-        "create": "@request.auth.id != ''",
-        "update": "@request.auth.id != ''",
+        "list": "@request.auth.role = 'admin' || @request.auth.role = 'supervisor'",
+        "view": "@request.auth.role = 'admin' || @request.auth.role = 'supervisor'",
+        "create": "@request.auth.role = 'admin'",
+        "update": "@request.auth.role = 'admin'",
         "delete": "@request.auth.role = 'admin'"
       },
       "fields": [
@@ -739,8 +739,8 @@
       "name": "configuracoes",
       "type": "base",
       "apiRules": {
-        "list": "@request.auth.id != ''",
-        "view": "@request.auth.id != ''",
+        "list": "@request.auth.role = 'admin' || @request.auth.role = 'supervisor'",
+        "view": "@request.auth.role = 'admin' || @request.auth.role = 'supervisor'",
         "create": "@request.auth.role = 'admin' || @request.auth.role = 'supervisor'",
         "update": "@request.auth.role = 'admin' || @request.auth.role = 'supervisor'",
         "delete": "@request.auth.role = 'admin'"

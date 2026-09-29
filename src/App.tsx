@@ -5,6 +5,7 @@ import { Toaster as Sonner } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AuthProvider } from '@/contexts/AuthContext'
 import Layout from '@/components/Layout'
+import { RoleRoute } from '@/components/RoleRoute'
 
 // Pages
 import Index from '@/pages/Index'
@@ -33,16 +34,84 @@ const App = () => (
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
 
-            {/* Authenticated Operational Routes */}
-            <Route path="/meu-painel" element={<MeuPainelPage />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/importacao" element={<ImportacaoPage />} />
-            <Route path="/fila" element={<FilaPage />} />
-            <Route path="/atendimento" element={<AtendimentoPage />} />
-            <Route path="/atendimento/:clientId" element={<AtendimentoPage />} />
-            <Route path="/clientes" element={<ClientesPage />} />
-            <Route path="/relatorios" element={<RelatoriosPage />} />
-            <Route path="/configuracoes" element={<ConfiguracoesPage />} />
+            {/* Rotas Operacionais Autorizadas */}
+            {/* Operador: vê SOMENTE /meu-painel e /atendimento */}
+            <Route
+              path="/meu-painel"
+              element={
+                <RoleRoute allowedRoles={['operador', 'supervisor', 'admin']}>
+                  <MeuPainelPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/atendimento"
+              element={
+                <RoleRoute allowedRoles={['operador', 'supervisor', 'admin']}>
+                  <AtendimentoPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/atendimento/:clientId"
+              element={
+                <RoleRoute allowedRoles={['operador', 'supervisor', 'admin']}>
+                  <AtendimentoPage />
+                </RoleRoute>
+              }
+            />
+
+            {/* Rotas restritas para Supervisor e Admin (Operador é bloqueado e redirecionado para /meu-painel) */}
+            <Route
+              path="/dashboard"
+              element={
+                <RoleRoute allowedRoles={['supervisor', 'admin']}>
+                  <Dashboard />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/fila"
+              element={
+                <RoleRoute allowedRoles={['supervisor', 'admin']}>
+                  <FilaPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/clientes"
+              element={
+                <RoleRoute allowedRoles={['supervisor', 'admin']}>
+                  <ClientesPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/relatorios"
+              element={
+                <RoleRoute allowedRoles={['supervisor', 'admin']}>
+                  <RelatoriosPage />
+                </RoleRoute>
+              }
+            />
+
+            {/* Rotas exclusivas de Administrador (Operador é redirecionado para /meu-painel) */}
+            <Route
+              path="/importacao"
+              element={
+                <RoleRoute allowedRoles={['admin']}>
+                  <ImportacaoPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/configuracoes"
+              element={
+                <RoleRoute allowedRoles={['admin']}>
+                  <ConfiguracoesPage />
+                </RoleRoute>
+              }
+            />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
