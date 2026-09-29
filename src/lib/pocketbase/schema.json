@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-29T19:05:44.245Z",
+  "generatedAt": "2026-09-29T19:27:47.755Z",
   "collections": [
     {
       "name": "users",
@@ -313,6 +313,72 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "ultimo_faturamento_data",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fat_12m_reais",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "peso_nf_tonelagem",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ultimo_pedido_numero",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ultimo_pedido_data",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "canal",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "margem_media_perc",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "margem_reais",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "frequencia_compras_12m",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tipo_vendedor",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "gatilhos_fechamento",
+          "type": "json",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

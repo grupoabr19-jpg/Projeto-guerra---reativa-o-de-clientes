@@ -172,6 +172,61 @@ export default function ImportacaoPage() {
       norm: normalizeHeader(h),
     }))
 
+    // Template 0: Consolidado Projeto Guerra / Cruzamento
+    // Assinatura: 'cod cliente', 'fat 12m', 'peso nf', 'margem media', 'freq compras'
+    const hasConsolidadoGuerra = normalizedHeaders.some(
+      (h) =>
+        h.norm.includes('fat 12m') || h.norm.includes('peso nf') || h.norm.includes('margem media'),
+    )
+
+    if (hasConsolidadoGuerra) {
+      setDetectedLayout({
+        nome: 'Base Consolidada Projeto Guerra (Cruzada)',
+        tipo_base: 'clientes',
+        descricao:
+          'Planilha consolidada detectada: Código, Razão Social, Região, Vendedor, Segmento, Fat 12M R$, Peso NF, Margem %, Frequência e Último Pedido.',
+      })
+
+      const findHeader = (predicate: (norm: string) => boolean) =>
+        normalizedHeaders.find((h) => predicate(h.norm))?.original || ''
+
+      return {
+        codigo: findHeader((n) => n.includes('cod') && n.includes('cliente')),
+        nome: findHeader((n) => n.includes('nome') || n.includes('razao')),
+        telefone: findHeader(
+          (n) => n.includes('celular') || n.includes('telefone') || n.includes('contato'),
+        ),
+        whatsapp: findHeader((n) => n.includes('whatsapp') || n.includes('celular')),
+        email: findHeader((n) => n.includes('mail')),
+        cidade: findHeader((n) => n === 'cidade' || n.includes('cidade')),
+        estado_uf: findHeader((n) => n === 'estado' || n === 'uf'),
+        regiao: findHeader(
+          (n) => n === 'regiao' || (n.includes('regiao') && !n.includes('codigo')),
+        ),
+        vendedor: findHeader(
+          (n) => n === 'vendedor' || (n.includes('vendedor') && !n.includes('tipo')),
+        ),
+        segmento: findHeader((n) => n.includes('segmento')),
+        ultima_compra: findHeader(
+          (n) =>
+            n.includes('ultima venda') ||
+            n.includes('ultimo faturamento') ||
+            n.includes('ultima compra'),
+        ),
+        valor_ultima_compra: findHeader(
+          (n) => n.includes('fat 12m') || n.includes('fat r') || n.includes('faturamento'),
+        ),
+        toneladas_historico: findHeader(
+          (n) => n.includes('peso nf') || n.includes('tonelagem') || n.includes('peso'),
+        ),
+        valor_historico: findHeader((n) => n.includes('fat 12m') || n.includes('valor historico')),
+        compras_count: findHeader((n) => n.includes('freq') || n.includes('pedidos 12m')),
+        pedido: findHeader((n) => n.includes('ultimo pedido') || n === 'pedido'),
+        dias_sem_faturar: findHeader((n) => n.includes('dias sem') || n.includes('menor dias')),
+        faixa: findHeader((n) => n.includes('faixa')),
+      }
+    }
+
     // Template 1: Clientes Inativos
     // Assinatura: 'cod cliente', 'nome do cliente', 'menor dias ultima venda', 'faixa ultima compra'
     const hasCodCliente = normalizedHeaders.some(
@@ -405,31 +460,63 @@ export default function ImportacaoPage() {
 
     setIsProcessing(true)
     try {
-      // Converte rawRows usando o mapping escolhido
-      const mappedRows = rawRows.map((r) => ({
-        codigo: r[mapping.codigo] || '',
-        nome: r[mapping.nome] || '',
-        telefone: mapping.telefone ? r[mapping.telefone] : '',
-        whatsapp: mapping.whatsapp ? r[mapping.whatsapp] : '',
-        email: mapping.email ? r[mapping.email] : '',
-        cidade: mapping.cidade ? r[mapping.cidade] : '',
-        estado: mapping.estado_uf ? r[mapping.estado_uf] : '',
-        regiao: mapping.regiao
-          ? String(r[mapping.regiao] || '')
-              .trim()
-              .toUpperCase()
-          : 'Sem Região',
-        vendedor: mapping.vendedor ? r[mapping.vendedor] : '',
-        segmento: mapping.segmento ? r[mapping.segmento] : '',
-        ultima_compra: mapping.ultima_compra ? r[mapping.ultima_compra] : '',
-        valor_ultima_compra: mapping.valor_ultima_compra ? r[mapping.valor_ultima_compra] : 0,
-        toneladas_historico: mapping.toneladas_historico ? r[mapping.toneladas_historico] : 0,
-        valor_historico: mapping.valor_historico ? r[mapping.valor_historico] : 0,
-        compras_count: mapping.compras_count ? r[mapping.compras_count] : 1,
-        pedido: mapping.pedido ? r[mapping.pedido] : '',
-        dias_sem_faturar: mapping.dias_sem_faturar ? r[mapping.dias_sem_faturar] : '',
-        faixa: mapping.faixa ? r[mapping.faixa] : '',
-      }))
+      // Converte rawRows usando o mapping escolhido + dados adicionais de cruzamento (gatilhos de fechamento)
+      const mappedRows = rawRows.map((r) => {
+        // Encontrar colunas extras de gatilho se existirem
+        const findVal = (terms: string[]) => {
+          for (const key of Object.keys(r)) {
+            const lk = key.toLowerCase()
+            if (terms.some((t) => lk.includes(t))) return r[key]
+          }
+          return undefined
+        }
+
+        const canalVal = findVal(['canal'])
+        const margemMediaVal = findVal(['margem media', 'margem %', 'margem_media'])
+        const margemReaisVal = findVal(['margem r$', 'margem reais', 'margem_reais'])
+        const pesoNfVal = findVal(['peso nf', 'tonelagem', 'peso_nf'])
+        const fat12mVal = findVal(['fat 12m', 'fat r$', 'faturamento 12m'])
+        const freqComprasVal = findVal(['freq compras', 'frequencia', 'freq 12m'])
+        const tipoVendedorVal = findVal(['tipo vendedor', 'tipo de vendedor'])
+
+        return {
+          codigo: r[mapping.codigo] || '',
+          nome: r[mapping.nome] || '',
+          telefone: mapping.telefone ? r[mapping.telefone] : '',
+          whatsapp: mapping.whatsapp ? r[mapping.whatsapp] : '',
+          email: mapping.email ? r[mapping.email] : '',
+          cidade: mapping.cidade ? r[mapping.cidade] : '',
+          estado: mapping.estado_uf ? r[mapping.estado_uf] : '',
+          regiao: mapping.regiao
+            ? String(r[mapping.regiao] || '')
+                .trim()
+                .toUpperCase()
+            : 'Sem Região',
+          vendedor: mapping.vendedor ? r[mapping.vendedor] : '',
+          segmento: mapping.segmento ? r[mapping.segmento] : '',
+          ultima_compra: mapping.ultima_compra ? r[mapping.ultima_compra] : '',
+          valor_ultima_compra: mapping.valor_ultima_compra ? r[mapping.valor_ultima_compra] : 0,
+          toneladas_historico: mapping.toneladas_historico
+            ? r[mapping.toneladas_historico]
+            : pesoNfVal || 0,
+          valor_historico: mapping.valor_historico ? r[mapping.valor_historico] : fat12mVal || 0,
+          compras_count: mapping.compras_count ? r[mapping.compras_count] : freqComprasVal || 1,
+          pedido: mapping.pedido ? r[mapping.pedido] : '',
+          dias_sem_faturar: mapping.dias_sem_faturar ? r[mapping.dias_sem_faturar] : '',
+          faixa: mapping.faixa ? r[mapping.faixa] : '',
+          canal: canalVal ? String(canalVal) : undefined,
+          margem_media_perc: margemMediaVal
+            ? Number(String(margemMediaVal).replace('%', '').replace(',', '.'))
+            : undefined,
+          margem_reais: margemReaisVal
+            ? Number(String(margemReaisVal).replace(',', '.'))
+            : undefined,
+          peso_nf_tonelagem: pesoNfVal ? Number(String(pesoNfVal).replace(',', '.')) : undefined,
+          fat_12m_reais: fat12mVal ? Number(String(fat12mVal).replace(',', '.')) : undefined,
+          frequencia_compras_12m: freqComprasVal ? Number(freqComprasVal) : undefined,
+          tipo_vendedor: tipoVendedorVal ? String(tipoVendedorVal) : undefined,
+        }
+      })
 
       const response = await processSpreadsheetRows({
         rows: mappedRows,

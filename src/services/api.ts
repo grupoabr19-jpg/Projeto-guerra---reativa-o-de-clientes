@@ -101,19 +101,38 @@ export async function createRegiao(data: Partial<Regiao>) {
 }
 
 // Queue API calls
-export async function reserveNextQueueClient() {
+export async function reserveNextQueueClient(options?: {
+  segmento?: string
+  ordenacao?: 'score' | 'antigos' | 'novos'
+}) {
   const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/queue/reserve-next`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: pb.authStore.token,
     },
+    body: JSON.stringify(options || {}),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.message || 'Falha ao reservar cliente na fila')
   }
   return res.json() as Promise<{ cliente: Cliente | null; ja_reservado: boolean; message: string }>
+}
+
+export async function fetchInteracoesByOperador(operadorId: string) {
+  return pb.collection('interacoes').getFullList<Interacao>({
+    filter: `operador = '${operadorId}'`,
+    sort: '-created',
+    expand: 'cliente',
+  })
+}
+
+export async function fetchClientesReagendadosOperador(operadorId: string) {
+  return pb.collection('clientes').getFullList<Cliente>({
+    filter: `reagendado_operador = '${operadorId}' && reagendado_para != ''`,
+    sort: 'reagendado_para',
+  })
 }
 
 export async function releaseQueueLock(clienteId: string, rascunho?: Record<string, unknown>) {

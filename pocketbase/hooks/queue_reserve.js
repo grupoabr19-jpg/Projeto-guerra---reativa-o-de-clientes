@@ -3,18 +3,26 @@ routerAdd(
   '/backend/v1/queue/reserve-next',
   (e) => {
     try {
-      const userId = e.auth?.id
-      if (!userId) return e.unauthorizedError('auth required')
+      const authRecord = e.get('authRecord')
+      if (!authRecord) {
+        return e.json(401, { error: 'Autenticação obrigatória' })
+      }
 
-      const user = $app.findRecordById('users', userId)
-      const userRole = user.getString('role') || 'operador'
-      const userRegioes = user.get('regioes') || []
+      let body = {}
+      try {
+        body = e.requestInfo().body || {}
+      } catch (_) {}
 
-      // Se já estiver com um cliente reservado ou em_atendimento há menos de 30 min, devolve esse mesmo
+      const filtroSegmento = body.segmento ? String(body.segmento).trim() : ''
+      const ordenacaoEscolhida = body.ordenacao ? String(body.ordenacao).trim() : 'score'
+
+      const userId = authRecord.id
+      const userRole = authRecord.getString('role')
+      const userRegioes = authRecord.get('regioes') || []
       const now = new Date()
-      const timeoutMinutos = 30
-      const cutoffTime = new Date(now.getTime() - timeoutMinutos * 60 * 1000).toISOString()
+      const cutoffTime = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
 
+      // Verifica se o operador já tem um cliente reservado ou em atendimento ativo (dentro do timeout de 30 min)
       const currentLocked = $app.findRecordsByFilter(
         'clientes',
         `operador = '${userId}' && (estado = 'reservado' || estado = 'em_atendimento') && lock_timestamp >= '${cutoffTime}'`,
@@ -40,10 +48,6 @@ routerAdd(
         if (cfgVal.modo_criterio) modoCriterio = cfgVal.modo_criterio
         if (cfgVal.bonus_faixa_90) bonusFaixa90 = cfgVal.bonus_faixa_90
       } catch (_) {}
-
-      // 1. Prioridade A: Reagendados vencidos do operador (ou de qualquer operador se vencido e sem lock)
-      // 2. Prioridade B: Reagendados de hoje
-      // 3. Prioridade C: Fila regional conforme Modo A, B ou C
 
       const todayStr = now.toISOString().slice(0, 10)
       const endOfToday = `${todayStr} 23:59:59.999Z`
@@ -72,41 +76,51 @@ routerAdd(
       }
       let cand = null
 
-      // A: Reagendados vencidos do operador ou da região
-      const reagFilter =
+      // A: Reagendados vencidos do operador ou da região (se não estiver filtrando estritamente por segmento incompatível)
+      let reagFilter =
         `estado = 'reagendado' && reagendado_para <= '${endOfToday}'` +
         (regiaoFilter ? ` && ${regiaoFilter}` : '')
-      const reagendados = $app.findRecordsByFilter('clientes', reagFilter, 'reagendado_para', 5, 0)
+      if (filtroSegmento && filtroSegmento !== 'todos') {
+        reagFilter += ` && segmento ~ '${filtroSegmento}'`
+      }
 
+      const reagendados = $app.findRecordsByFilter('clientes', reagFilter, 'reagendado_para', 5, 0)
       if (reagendados && reagendados.length > 0) {
         // Prioriza se for do próprio operador ou qualquer um da região
         const myReag = reagendados.find((r) => r.getString('reagendado_operador') === userId)
         cand = myReag || reagendados[0]
       }
 
-      // Se não achou reagendado, busca na base disponível (estado = 'na_base' ou lock expirado)
+      // Se não achou reagendado, busca na base disponível
       if (!cand) {
         let sortExpr = '-score'
-        if (modoCriterio === 'modo_a') {
+        if (ordenacaoEscolhida === 'antigos') {
           sortExpr = '-dias_sem_faturar'
-        } else if (modoCriterio === 'modo_b') {
+        } else if (ordenacaoEscolhida === 'novos') {
+          sortExpr = 'dias_sem_faturar'
+        } else if (ordenacaoEscolhida === 'score') {
           sortExpr = '-score'
+        } else if (modoCriterio === 'modo_a') {
+          sortExpr = '-dias_sem_faturar'
         } else {
-          sortExpr = '-score' // modo_c
+          sortExpr = '-score'
         }
 
         let baseFilter = `(estado = 'na_base' || ((estado = 'reservado' || estado = 'em_atendimento') && lock_timestamp < '${cutoffTime}'))`
         if (regiaoFilter) {
           baseFilter += ` && ${regiaoFilter}`
         }
+        if (filtroSegmento && filtroSegmento !== 'todos') {
+          baseFilter += ` && segmento ~ '${filtroSegmento}'`
+        }
 
         // Evita telefones marcados como inválidos
         baseFilter += ' && telefone_invalido != true'
 
-        const pool = $app.findRecordsByFilter('clientes', baseFilter, sortExpr, 20, 0)
+        const pool = $app.findRecordsByFilter('clientes', baseFilter, sortExpr, 50, 0)
         if (pool && pool.length > 0) {
-          if (modoCriterio === 'modo_c') {
-            // Ponderar bônus faixa 90+
+          if (ordenacaoEscolhida === 'score' && modoCriterio === 'modo_c') {
+            // Ponderar bônus faixa 90+ se ordenação por score
             pool.sort((a, b) => {
               const scoreA =
                 (a.getInt('score') || 0) + (a.getString('faixa') === '90_plus' ? bonusFaixa90 : 0)

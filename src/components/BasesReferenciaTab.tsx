@@ -15,6 +15,9 @@ import {
   Tag,
   AlertTriangle,
   FileCheck,
+  Sparkles,
+  Copy,
+  Check,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -335,8 +338,96 @@ export function BasesReferenciaTab() {
     }
   }
 
+  const [copiedPrompt, setCopiedPrompt] = useState(false)
+
+  const PROMPT_FILTRAGEM = `Você é um analista de dados do Projeto Guerra (reativação de clientes inativos do Varejo). Você receberá duas planilhas:
+1. MARGEM_GABR — use apenas a aba "BD" (dados brutos); ignore as abas de tabela dinâmica como "Resumo" e "Desvios".
+2. GESTÃO DA PRODUÇÃO — pedidos faturados.
+Objetivo: gerar uma ÚNICA planilha consolidada, uma linha por cliente, contendo apenas os dados que ajudam a decidir quem reativar e como abordar.
+Mantenha para cada cliente: Código do cliente (padrão CXXXXXX); Nome/Razão Social; Região (uma das 8: Bragança, Jundiaí, Varginha, Pouso Alegre, Poços de Caldas, Itajubá, Extrema, Cambuí); Vendedor; Segmento; Tipo de Vendedor; Última data de faturamento; Dias sem faturar; Faturamento total e médio dos últimos 12 meses (Fat R$); Tonelagem (Peso NF); Margem % e Margem R$ média; Frequência de compra (nº de pedidos nos últimos 12 meses); Nº e data do último pedido; Canal (manter VAREJO; se houver faturamento ATACADO, marcar em coluna própria).
+Filtre fora: clientes sem nenhum faturamento nos últimos 36 meses; linhas de total/subtotal; colunas administrativas sem valor de contato (dados fiscais, endereço completo, centros de custo, colunas de fórmula).
+Regras de saída: uma linha por código de cliente (se duplicado, mantenha a de maior faturamento); datas em AAAA-MM-DD; números com ponto decimal; cabeçalhos fixos em português sem acento (Cod Cliente, Nome, Regiao, Vendedor, Segmento, Tipo Vendedor, Ultima Venda, Dias Sem Faturar, Fat 12M R$, Peso NF, Margem Media %, Freq Compras 12M, Ultimo Pedido, Canal); ordene por Dias Sem Faturar crescente. Não invente dados: campo inexistente fica vazio.`
+
+  const handleCopyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(PROMPT_FILTRAGEM)
+      setCopiedPrompt(true)
+      setTimeout(() => setCopiedPrompt(false), 2500)
+    } catch (_) {
+      // Fallback
+      const textArea = document.createElement('textarea')
+      textArea.value = PROMPT_FILTRAGEM
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      setCopiedPrompt(true)
+      setTimeout(() => setCopiedPrompt(false), 2500)
+    }
+  }
+
   return (
     <div className="space-y-5">
+      {/* Card Fixo: Prompt de Filtragem de Planilhas (Entregável para o Thiago copiar) */}
+      <Card className="border-indigo-200 bg-gradient-to-br from-indigo-50/70 via-white to-blue-50/40 shadow-sm">
+        <CardHeader className="pb-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center space-x-2">
+                <div className="h-7 w-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-sm">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <CardTitle className="text-sm font-bold text-slate-900">
+                  Prompt de Filtragem de Planilhas
+                </CardTitle>
+                <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[10px]">
+                  Instruções para IA / GPT
+                </Badge>
+              </div>
+              <CardDescription className="text-xs text-slate-600">
+                Copie este prompt e cole no ChatGPT/Claude junto com as planilhas{' '}
+                <strong>MARGEM_GABR</strong> e <strong>GESTÃO DA PRODUÇÃO</strong> para gerar o
+                arquivo consolidado pronto para importação no Projeto Guerra.
+              </CardDescription>
+            </div>
+            <Button
+              size="sm"
+              onClick={handleCopyPrompt}
+              className={`h-8 px-3 text-xs font-semibold shadow-sm transition-all shrink-0 ${
+                copiedPrompt
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+              }`}
+            >
+              {copiedPrompt ? (
+                <>
+                  <Check className="h-3.5 w-3.5 mr-1.5" />
+                  Copiado com Sucesso!
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5 mr-1.5" />
+                  Copiar Prompt
+                </>
+              )}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="relative rounded-lg border border-indigo-100 bg-white/90 p-3.5 text-xs font-mono text-slate-700 leading-relaxed max-h-48 overflow-y-auto whitespace-pre-wrap select-all shadow-inner">
+            {PROMPT_FILTRAGEM}
+          </div>
+          <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-500">
+            <span>
+              💡 <strong>Dica:</strong> A planilha consolidada resultante já virá ordenada por menor
+              tempo sem faturar e com as colunas mapeadas automaticamente na tela de{' '}
+              <em>Importação</em>.
+            </span>
+            <span className="font-mono text-[10px] text-indigo-600">Formato: CXXXXXX • Varejo</span>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Informação contextual */}
       <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-950 flex items-start space-x-2.5">
         <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />

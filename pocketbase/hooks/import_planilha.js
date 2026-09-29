@@ -226,6 +226,34 @@ routerAdd(
         rec.set('dias_sem_faturar', diasSemFaturar)
         rec.set('faixa', faixa)
 
+        // Gatilhos de fechamento e cruzamento de dados
+        if (row.canal) rec.set('canal', String(row.canal).trim())
+        if (row.margem_media_perc !== undefined && row.margem_media_perc !== null) {
+          rec.set('margem_media_perc', Number(row.margem_media_perc))
+        }
+        if (row.margem_reais !== undefined && row.margem_reais !== null) {
+          rec.set('margem_reais', Number(row.margem_reais))
+        }
+        if (row.peso_nf_tonelagem !== undefined && row.peso_nf_tonelagem !== null) {
+          rec.set('peso_nf_tonelagem', Number(row.peso_nf_tonelagem))
+        }
+        if (row.fat_12m_reais !== undefined && row.fat_12m_reais !== null) {
+          rec.set('fat_12m_reais', Number(row.fat_12m_reais))
+        }
+        if (row.frequencia_compras_12m !== undefined && row.frequencia_compras_12m !== null) {
+          rec.set('frequencia_compras_12m', Number(row.frequencia_compras_12m))
+        }
+        if (row.tipo_vendedor) rec.set('tipo_vendedor', String(row.tipo_vendedor).trim())
+        if (row.ultimo_pedido_numero || row.pedido) {
+          rec.set('ultimo_pedido_numero', String(row.ultimo_pedido_numero || row.pedido).trim())
+        }
+        if (row.ultimo_pedido_data) {
+          rec.set('ultimo_pedido_data', String(row.ultimo_pedido_data).trim())
+        }
+        if (ultimaCompraDate) {
+          rec.set('ultimo_faturamento_data', ultimaCompraDate)
+        }
+
         // Desconto de penalidade de tentativas anteriores no score
         const tentativas = rec.getInt('tentativas_sem_contato') || 0
         const finalScore = Math.max(0, calcScore - tentativas * 5)

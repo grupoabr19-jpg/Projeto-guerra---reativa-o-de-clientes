@@ -24,11 +24,11 @@ export default function Index() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Se já autenticado, vai para a tela adequada
+  // Se já autenticado, vai para a tela adequada (operador vai direto para Meu Painel)
   React.useEffect(() => {
     if (user) {
       if (user.role === 'operador') {
-        navigate('/fila')
+        navigate('/meu-painel')
       } else {
         navigate('/dashboard')
       }

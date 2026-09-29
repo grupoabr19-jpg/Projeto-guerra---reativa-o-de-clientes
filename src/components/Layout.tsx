@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   XCircle,
   HelpCircle,
+  Activity,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -90,59 +91,76 @@ export default function Layout() {
     return null
   }
 
-  // Definição de permissões de menu
+  // Definição de permissões de menu conforme regra do usuário:
+  // Operador vê SOMENTE: "Meu Painel" e "Atendimento" (NÃO vê Fila nem lista de Clientes)
+  // Supervisor e Admin mantêm tudo que têm hoje (Dashboard, Fila gerencial, Atendimento, Clientes, Relatórios, etc.)
   const navItems = [
-    ...(hasRole(['supervisor', 'admin'])
+    ...(user.role === 'operador'
       ? [
           {
-            title: 'Dashboard',
-            href: '/dashboard',
-            icon: LayoutDashboard,
+            title: 'Meu Painel',
+            href: '/meu-painel',
+            icon: Activity,
           },
-        ]
-      : []),
-    ...(hasRole('admin')
-      ? [
           {
-            title: 'Importação',
-            href: '/importacao',
-            icon: FileSpreadsheet,
+            title: 'Atendimento',
+            href: '/atendimento',
+            icon: Headphones,
           },
         ]
-      : []),
-    {
-      title: 'Fila de Atendimento',
-      href: '/fila',
-      icon: ListOrdered,
-    },
-    {
-      title: 'Atendimento',
-      href: '/atendimento',
-      icon: Headphones,
-    },
-    {
-      title: 'Clientes',
-      href: '/clientes',
-      icon: Users,
-    },
-    ...(hasRole(['supervisor', 'admin'])
-      ? [
+      : [
+          ...(hasRole(['supervisor', 'admin'])
+            ? [
+                {
+                  title: 'Dashboard',
+                  href: '/dashboard',
+                  icon: LayoutDashboard,
+                },
+              ]
+            : []),
+          ...(hasRole('admin')
+            ? [
+                {
+                  title: 'Importação',
+                  href: '/importacao',
+                  icon: FileSpreadsheet,
+                },
+              ]
+            : []),
           {
-            title: 'Relatórios',
-            href: '/relatorios',
-            icon: BarChart3,
+            title: 'Fila de Atendimento',
+            href: '/fila',
+            icon: ListOrdered,
           },
-        ]
-      : []),
-    ...(hasRole('admin')
-      ? [
           {
-            title: 'Configurações',
-            href: '/configuracoes',
-            icon: Settings,
+            title: 'Atendimento',
+            href: '/atendimento',
+            icon: Headphones,
           },
-        ]
-      : []),
+          {
+            title: 'Clientes',
+            href: '/clientes',
+            icon: Users,
+          },
+          ...(hasRole(['supervisor', 'admin'])
+            ? [
+                {
+                  title: 'Relatórios',
+                  href: '/relatorios',
+                  icon: BarChart3,
+                },
+              ]
+            : []),
+          ...(hasRole('admin')
+            ? [
+                {
+                  title: 'Configurações',
+                  href: '/configuracoes',
+                  icon: Settings,
+                },
+              ]
+            : []),
+        ]),
   ]
 
   const SidebarContent = () => (

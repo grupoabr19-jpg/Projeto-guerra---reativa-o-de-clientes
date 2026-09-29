@@ -67,6 +67,18 @@ export interface Cliente {
   duplicado_de_codigo?: string
   notas?: string
   rascunho_respostas?: Record<string, unknown>
+  // Gatilhos de fechamento / cruzamento de planilhas
+  ultimo_faturamento_data?: string
+  fat_12m_reais?: number
+  peso_nf_tonelagem?: number
+  ultimo_pedido_numero?: string
+  ultimo_pedido_data?: string
+  canal?: string
+  margem_media_perc?: number
+  margem_reais?: number
+  frequencia_compras_12m?: number
+  tipo_vendedor?: string
+  gatilhos_fechamento?: Record<string, unknown>
   created: string
   updated: string
 }

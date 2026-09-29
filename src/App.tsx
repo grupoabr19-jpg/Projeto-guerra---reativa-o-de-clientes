@@ -15,6 +15,7 @@ import AtendimentoPage from '@/pages/Atendimento'
 import ClientesPage from '@/pages/Clientes'
 import RelatoriosPage from '@/pages/Relatorios'
 import ConfiguracoesPage from '@/pages/Configuracoes'
+import MeuPainelPage from '@/pages/MeuPainel'
 import { ForgotPassword, ResetPassword, VerifyEmail } from '@/pages/AuthPages'
 import NotFound from '@/pages/NotFound'
 
@@ -33,6 +34,7 @@ const App = () => (
             <Route path="/verify-email" element={<VerifyEmail />} />
 
             {/* Authenticated Operational Routes */}
+            <Route path="/meu-painel" element={<MeuPainelPage />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/importacao" element={<ImportacaoPage />} />
             <Route path="/fila" element={<FilaPage />} />

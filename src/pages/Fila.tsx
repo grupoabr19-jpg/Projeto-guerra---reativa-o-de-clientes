@@ -35,6 +35,12 @@ export default function FilaPage() {
   const { user, hasRole, hasRegiaoAccess } = useAuth()
   const navigate = useNavigate()
 
+  useEffect(() => {
+    if (user?.role === 'operador') {
+      navigate('/meu-painel', { replace: true })
+    }
+  }, [user?.role, navigate])
+
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [regioesList, setRegioesList] = useState<string[]>([...REGIOES_PADRAO])
   const [loading, setLoading] = useState(true)
