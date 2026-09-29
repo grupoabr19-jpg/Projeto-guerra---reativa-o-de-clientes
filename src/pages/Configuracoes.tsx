@@ -39,9 +39,13 @@ import {
   testKommoConnection,
   fetchConfiguracoes,
   updateConfiguracao,
+  fetchRegioes,
+  updateRegiao,
 } from '@/services/api'
 import pb from '@/lib/pocketbase/client'
-import type { User, Configuracao } from '@/types'
+import type { User, Configuracao, Regiao } from '@/types'
+import { REGIOES_PADRAO } from '@/types'
+import { MapPin, Info, Edit2, Check, AlertCircle } from 'lucide-react'
 
 export default function ConfiguracoesPage() {
   const [kommoStatus, setKommoStatus] = useState<{
@@ -77,6 +81,12 @@ export default function ConfiguracoesPage() {
     prazo_quarentena_dias: 90,
   })
 
+  // Regiões
+  const [regioes, setRegioes] = useState<Regiao[]>([])
+  const [loadingRegioes, setLoadingRegioes] = useState(false)
+  const [editingRegiao, setEditingRegiao] = useState<Regiao | null>(null)
+  const [savingRegiao, setSavingRegiao] = useState(false)
+
   // Usuários
   const [usersList, setUsersList] = useState<User[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
@@ -85,14 +95,20 @@ export default function ConfiguracoesPage() {
   const [novoEmail, setNovoEmail] = useState('')
   const [novoNome, setNovoNome] = useState('')
   const [novoRole, setNovoRole] = useState<'operador' | 'supervisor' | 'admin'>('operador')
-  const [novasRegioes, setNovasRegioes] = useState('Sudeste')
+  const [novasRegioesSelected, setNovasRegioesSelected] = useState<string[]>(['POÇOS DE CALDAS'])
   const [isCreatingUser, setIsCreatingUser] = useState(false)
+
+  // Edição de Regiões de Usuário existente
+  const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [editUserRegioes, setEditUserRegioes] = useState<string[]>([])
+  const [savingUserRegioes, setSavingUserRegioes] = useState(false)
 
   const [savingConfig, setSavingConfig] = useState(false)
 
   useEffect(() => {
     loadSettings()
     loadUsers()
+    loadRegioesData()
   }, [])
 
   const loadSettings = async () => {
@@ -112,6 +128,18 @@ export default function ConfiguracoesPage() {
       }
     } catch (err) {
       console.error('Erro ao carregar configurações:', err)
+    }
+  }
+
+  const loadRegioesData = async () => {
+    setLoadingRegioes(true)
+    try {
+      const data = await fetchRegioes()
+      setRegioes(data)
+    } catch (err) {
+      console.error('Erro ao carregar regiões:', err)
+    } finally {
+      setLoadingRegioes(false)
     }
   }
 
@@ -172,12 +200,13 @@ export default function ConfiguracoesPage() {
         passwordConfirm: 'Skip@Pass',
         name: novoNome,
         role: novoRole,
-        regioes: novasRegioes.split(',').map((r) => r.trim()),
+        regioes: novasRegioesSelected,
         emailVisibility: true,
       })
 
       setNovoEmail('')
       setNovoNome('')
+      setNovasRegioesSelected(['POÇOS DE CALDAS'])
       loadUsers()
       alert('Usuário criado com sucesso! Senha inicial: Skip@Pass')
     } catch (err: unknown) {
@@ -185,6 +214,68 @@ export default function ConfiguracoesPage() {
       alert(`Erro: ${msg}`)
     } finally {
       setIsCreatingUser(false)
+    }
+  }
+
+  const toggleRegiaoNovoUser = (regName: string) => {
+    setNovasRegioesSelected((prev) =>
+      prev.includes(regName) ? prev.filter((r) => r !== regName) : [...prev, regName],
+    )
+  }
+
+  const toggleRegiaoEditUser = (regName: string) => {
+    setEditUserRegioes((prev) =>
+      prev.includes(regName) ? prev.filter((r) => r !== regName) : [...prev, regName],
+    )
+  }
+
+  const handleOpenEditUser = (u: User) => {
+    setEditingUser(u)
+    setEditUserRegioes(u.regioes || [])
+  }
+
+  const handleSaveUserRegioes = async () => {
+    if (!editingUser) return
+    setSavingUserRegioes(true)
+    try {
+      await pb.collection('users').update(editingUser.id, {
+        regioes: editUserRegioes,
+      })
+      alert(`Regiões de ${editingUser.name} atualizadas!`)
+      setEditingUser(null)
+      loadUsers()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao atualizar regiões do usuário'
+      alert(`Erro: ${msg}`)
+    } finally {
+      setSavingUserRegioes(false)
+    }
+  }
+
+  const handleSaveRegiao = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingRegiao) return
+    setSavingRegiao(true)
+    try {
+      await updateRegiao(editingRegiao.id, {
+        nome: editingRegiao.nome,
+        vendedor_externo: editingRegiao.vendedor_externo,
+        especialista: editingRegiao.especialista,
+        corporativo: editingRegiao.corporativo,
+        construcao_civil: editingRegiao.construcao_civil,
+        cidades_rota: editingRegiao.cidades_rota,
+        municipios_potenciais: editingRegiao.municipios_potenciais,
+        observacao: editingRegiao.observacao,
+        ativo: editingRegiao.ativo,
+      })
+      alert(`Região ${editingRegiao.nome} salva com sucesso!`)
+      setEditingRegiao(null)
+      loadRegioesData()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao salvar região'
+      alert(`Erro: ${msg}`)
+    } finally {
+      setSavingRegiao(false)
     }
   }
 
@@ -203,6 +294,9 @@ export default function ConfiguracoesPage() {
 
       <Tabs defaultValue="kommo" className="space-y-4">
         <TabsList className="bg-slate-100 p-1">
+          <TabsTrigger value="regioes" className="text-xs font-medium">
+            Regiões & Equipes Varejo
+          </TabsTrigger>
           <TabsTrigger value="kommo" className="text-xs font-medium">
             Integração Kommo CRM
           </TabsTrigger>
@@ -210,9 +304,132 @@ export default function ConfiguracoesPage() {
             Pesos & Motor de Fila
           </TabsTrigger>
           <TabsTrigger value="usuarios" className="text-xs font-medium">
-            Usuários & Regiões
+            Usuários & Governança
           </TabsTrigger>
         </TabsList>
+
+        {/* TAB 0: REGIÕES & EQUIPES VAREJO */}
+        <TabsContent value="regioes" className="space-y-4">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-sm font-semibold text-slate-800 flex items-center space-x-2">
+                    <MapPin className="h-4 w-4 text-blue-600" />
+                    <span>Regiões de Atendimento, Rotas e Equipes do Varejo</span>
+                  </CardTitle>
+                  <CardDescription className="text-xs text-slate-500">
+                    Estrutura oficial de cobertura comercial do atacado/varejo: vendedor externo,
+                    especialista e corporativo
+                  </CardDescription>
+                </div>
+                <Badge
+                  variant="outline"
+                  className="border-blue-400 text-blue-700 bg-blue-50 text-[11px] font-mono"
+                >
+                  8 Regiões Oficiais
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* Observação oficial obrigatória */}
+              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start space-x-2.5">
+                <Info className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <strong className="font-semibold">Nota da Operação: </strong>
+                  &ldquo;as cidades do atacado são uma referência comercial das principais praças de
+                  cada DDD; a cobertura de cada DDD é mais ampla.&rdquo;
+                </div>
+              </div>
+
+              {/* Tabela de Regiões e Equipes */}
+              {loadingRegioes ? (
+                <div className="py-8 text-center text-xs text-slate-400">
+                  Carregando regiões e rotas...
+                </div>
+              ) : (
+                <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
+                      <tr>
+                        <th className="py-2.5 px-3">Região</th>
+                        <th className="py-2.5 px-3">Vendedor Externo</th>
+                        <th className="py-2.5 px-3">Especialista</th>
+                        <th className="py-2.5 px-3">Corporativo</th>
+                        <th className="py-2.5 px-3">Construção Civil</th>
+                        <th className="py-2.5 px-3">Cidades da Rota</th>
+                        <th className="py-2.5 px-3 text-right">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {regioes.map((r) => (
+                        <tr key={r.id} className="hover:bg-slate-50/80">
+                          <td className="py-2.5 px-3">
+                            <span className="font-bold text-slate-900">{r.nome}</span>
+                          </td>
+                          <td className="py-2.5 px-3 font-semibold text-blue-700 font-mono">
+                            {r.vendedor_externo || '—'}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-700 font-mono">
+                            {r.especialista || '—'}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-700 font-mono">
+                            {r.corporativo || '—'}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono">
+                            {r.construcao_civil ? (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] font-mono border-indigo-400 text-indigo-700 bg-indigo-50"
+                              >
+                                {r.construcao_civil}
+                              </Badge>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 max-w-xs">
+                            <div
+                              className="text-[11px] text-slate-600 truncate"
+                              title={(r.cidades_rota || []).join(', ')}
+                            >
+                              {(r.cidades_rota || []).join(', ')}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              {(r.cidades_rota || []).length} cidades na rota
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setEditingRegiao(r)}
+                              className="h-7 text-xs text-blue-600 hover:text-blue-700"
+                            >
+                              <Edit2 className="h-3 w-3 mr-1" />
+                              Editar
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Informação sobre Construção Civil ARIANE */}
+              <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-lg text-xs text-blue-900 flex items-start space-x-2">
+                <AlertCircle className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong>Construção Civil (ARIANE): </strong>
+                  Consta registrada na região de Cambuí por padrão conforme o layout original das
+                  colunas, mas com atribuição regional pendente de confirmação. Você pode clicar em
+                  &ldquo;Editar&rdquo; em qualquer região para realocar ou atualizar a vendedora.
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* TAB 1: KOMMO CRM */}
         <TabsContent value="kommo" className="space-y-4">
@@ -580,16 +797,30 @@ export default function ConfiguracoesPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-1 sm:col-span-2 md:col-span-4">
                     <Label className="text-xs text-slate-600">
-                      Regiões (Separadas por vírgula)
+                      Regiões Autorizadas (Selecione uma ou mais das 8 regiões oficiais)
                     </Label>
-                    <Input
-                      placeholder="Ex: Sudeste, Sul"
-                      value={novasRegioes}
-                      onChange={(e) => setNovasRegioes(e.target.value)}
-                      className="h-8 text-xs"
-                    />
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {REGIOES_PADRAO.map((r) => {
+                        const isSelected = novasRegioesSelected.includes(r)
+                        return (
+                          <button
+                            type="button"
+                            key={r}
+                            onClick={() => toggleRegiaoNovoUser(r)}
+                            className={`px-2.5 py-1 text-xs rounded-md border font-medium transition-colors ${
+                              isSelected
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            {isSelected && <Check className="inline h-3 w-3 mr-1" />}
+                            {r}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
                 </div>
                 <div className="flex justify-end pt-1">
@@ -614,6 +845,7 @@ export default function ConfiguracoesPage() {
                       <th className="py-2.5 px-3">E-mail</th>
                       <th className="py-2.5 px-3">Perfil</th>
                       <th className="py-2.5 px-3">Regiões Autorizadas</th>
+                      <th className="py-2.5 px-3 text-right">Ação</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -627,9 +859,32 @@ export default function ConfiguracoesPage() {
                           </Badge>
                         </td>
                         <td className="py-2.5 px-3 text-slate-600">
-                          {u.regioes && u.regioes.length > 0
-                            ? u.regioes.join(', ')
-                            : 'Todas / Geral'}
+                          {u.regioes && u.regioes.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {u.regioes.map((r) => (
+                                <Badge
+                                  key={r}
+                                  variant="secondary"
+                                  className="text-[10px] font-mono bg-slate-100 text-slate-700"
+                                >
+                                  {r}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 italic">Todas / Sem restrição</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleOpenEditUser(u)}
+                            className="h-7 text-xs text-blue-600 hover:text-blue-700"
+                          >
+                            <Edit2 className="h-3 w-3 mr-1" />
+                            Editar Regiões
+                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -640,6 +895,242 @@ export default function ConfiguracoesPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* MODAL / DIALOG DE EDIÇÃO DE REGIÃO */}
+      {editingRegiao && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 border border-slate-200">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
+                <MapPin className="h-4 w-4 text-blue-600" />
+                <span>Editar Região: {editingRegiao.nome}</span>
+              </h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditingRegiao(null)}
+                className="h-7 text-xs text-slate-500"
+              >
+                Fechar
+              </Button>
+            </div>
+
+            <form onSubmit={handleSaveRegiao} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-700">Nome da Região</Label>
+                  <Input
+                    value={editingRegiao.nome}
+                    onChange={(e) =>
+                      setEditingRegiao({ ...editingRegiao, nome: e.target.value.toUpperCase() })
+                    }
+                    className="h-8 text-xs font-bold"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-700">Vendedor Externo</Label>
+                  <Input
+                    value={editingRegiao.vendedor_externo || ''}
+                    onChange={(e) =>
+                      setEditingRegiao({
+                        ...editingRegiao,
+                        vendedor_externo: e.target.value.toUpperCase(),
+                      })
+                    }
+                    className="h-8 text-xs font-mono font-semibold"
+                    placeholder="Ex: ALESSANDRO"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-700">Especialista</Label>
+                  <Input
+                    value={editingRegiao.especialista || ''}
+                    onChange={(e) =>
+                      setEditingRegiao({
+                        ...editingRegiao,
+                        especialista: e.target.value.toUpperCase(),
+                      })
+                    }
+                    className="h-8 text-xs font-mono"
+                    placeholder="Ex: LEIZ"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-700">
+                    Corporativo (ind trans / ind man)
+                  </Label>
+                  <Input
+                    value={editingRegiao.corporativo || ''}
+                    onChange={(e) =>
+                      setEditingRegiao({
+                        ...editingRegiao,
+                        corporativo: e.target.value.toUpperCase(),
+                      })
+                    }
+                    className="h-8 text-xs font-mono"
+                    placeholder="Ex: HELOA"
+                  />
+                </div>
+
+                <div className="space-y-1 sm:col-span-2">
+                  <Label className="text-xs text-slate-700">
+                    Construção Civil (ex: ARIANE — deixe em branco se não aplicável nesta região)
+                  </Label>
+                  <Input
+                    value={editingRegiao.construcao_civil || ''}
+                    onChange={(e) =>
+                      setEditingRegiao({
+                        ...editingRegiao,
+                        construcao_civil: e.target.value.toUpperCase(),
+                      })
+                    }
+                    className="h-8 text-xs font-mono"
+                    placeholder="Ex: ARIANE"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-700">
+                  Cidades da Rota (separadas por vírgula)
+                </Label>
+                <textarea
+                  value={(editingRegiao.cidades_rota || []).join(', ')}
+                  onChange={(e) =>
+                    setEditingRegiao({
+                      ...editingRegiao,
+                      cidades_rota: e.target.value
+                        .split(',')
+                        .map((c) => c.trim().toUpperCase())
+                        .filter(Boolean),
+                    })
+                  }
+                  rows={3}
+                  className="w-full rounded-md border border-slate-300 p-2 text-xs font-mono"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-700">
+                  Municípios Potenciais (expansão até 100km e limítrofes)
+                </Label>
+                <textarea
+                  value={editingRegiao.municipios_potenciais || ''}
+                  onChange={(e) =>
+                    setEditingRegiao({
+                      ...editingRegiao,
+                      municipios_potenciais: e.target.value.toUpperCase(),
+                    })
+                  }
+                  rows={4}
+                  className="w-full rounded-md border border-slate-300 p-2 text-[11px] font-mono text-slate-700"
+                />
+                <span className="text-[10px] text-slate-400">
+                  Dica: mantenha o marcador &ldquo;— LIMÍTROFE —&rdquo; para cidades limítrofes
+                  entre rotas.
+                </span>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditingRegiao(null)}
+                  className="text-xs h-8"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={savingRegiao}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8 font-medium"
+                >
+                  <Save className="h-3.5 w-3.5 mr-1" />
+                  {savingRegiao ? 'Salvando...' : 'Salvar Alterações'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE EDIÇÃO DE REGIÕES DO USUÁRIO */}
+      {editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 border border-slate-200">
+            <div className="border-b pb-3">
+              <h3 className="text-sm font-bold text-slate-900">
+                Regiões Autorizadas — {editingUser.name}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {editingUser.email} ({editingUser.role})
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs text-slate-700">Selecione as regiões de atuação:</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {REGIOES_PADRAO.map((r) => {
+                  const isSelected = editUserRegioes.includes(r)
+                  return (
+                    <button
+                      type="button"
+                      key={r}
+                      onClick={() => toggleRegiaoEditUser(r)}
+                      className={`p-2 text-xs rounded-lg border text-left font-medium transition-colors flex items-center justify-between ${
+                        isSelected
+                          ? 'bg-blue-50 border-blue-500 text-blue-700'
+                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{r}</span>
+                      {isSelected && <Check className="h-3.5 w-3.5 text-blue-600" />}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center pt-3 border-t">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditUserRegioes([...REGIOES_PADRAO])}
+                className="text-[11px] text-slate-600"
+              >
+                Marcar Todas
+              </Button>
+              <div className="space-x-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditingUser(null)}
+                  className="text-xs h-8"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSaveUserRegioes}
+                  disabled={savingUserRegioes}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8 font-medium"
+                >
+                  {savingUserRegioes ? 'Salvando...' : 'Salvar'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

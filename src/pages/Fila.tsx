@@ -27,14 +27,16 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useAuth } from '@/contexts/AuthContext'
-import { fetchClientes, reserveNextQueueClient, updateCliente } from '@/services/api'
-import type { Cliente } from '@/types'
+import { fetchClientes, reserveNextQueueClient, updateCliente, fetchRegioes } from '@/services/api'
+import type { Cliente, Regiao } from '@/types'
+import { REGIOES_PADRAO } from '@/types'
 
 export default function FilaPage() {
   const { user, hasRole, hasRegiaoAccess } = useAuth()
   const navigate = useNavigate()
 
   const [clientes, setClientes] = useState<Cliente[]>([])
+  const [regioesList, setRegioesList] = useState<string[]>([...REGIOES_PADRAO])
   const [loading, setLoading] = useState(true)
   const [reserving, setReserving] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
@@ -48,8 +50,14 @@ export default function FilaPage() {
   const loadQueue = async () => {
     setLoading(true)
     try {
-      const res = await fetchClientes({ perPage: 100, sort: '-score' })
+      const [res, resRegioes] = await Promise.all([
+        fetchClientes({ perPage: 100, sort: '-score' }),
+        fetchRegioes().catch(() => [] as Regiao[]),
+      ])
       setClientes(res.items)
+      if (resRegioes.length > 0) {
+        setRegioesList(resRegioes.map((r) => r.nome))
+      }
     } catch (err) {
       console.error('Erro ao buscar fila:', err)
     } finally {
@@ -215,16 +223,16 @@ export default function FilaPage() {
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {/* Região */}
           <Select value={selectedRegiao} onValueChange={setSelectedRegiao}>
-            <SelectTrigger className="h-9 text-xs w-36">
+            <SelectTrigger className="h-9 text-xs w-44">
               <SelectValue placeholder="Região" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="todas">Todas as Regiões</SelectItem>
-              <SelectItem value="Sudeste">Sudeste</SelectItem>
-              <SelectItem value="Sul">Sul</SelectItem>
-              <SelectItem value="Norte">Norte</SelectItem>
-              <SelectItem value="Nordeste">Nordeste</SelectItem>
-              <SelectItem value="Centro-Oeste">Centro-Oeste</SelectItem>
+              {regioesList.map((reg) => (
+                <SelectItem key={reg} value={reg}>
+                  {reg}
+                </SelectItem>
+              ))}
               <SelectItem value="Sem Região">Sem Região</SelectItem>
             </SelectContent>
           </Select>

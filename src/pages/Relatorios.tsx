@@ -21,12 +21,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { fetchClientes, fetchImportacoes } from '@/services/api'
-import type { Cliente, Importacao } from '@/types'
+import { fetchClientes, fetchImportacoes, fetchRegioes } from '@/services/api'
+import type { Cliente, Importacao, Regiao } from '@/types'
+import { REGIOES_PADRAO } from '@/types'
 
 export default function RelatoriosPage() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [importacoes, setImportacoes] = useState<Importacao[]>([])
+  const [regioesList, setRegioesList] = useState<string[]>([...REGIOES_PADRAO])
   const [loading, setLoading] = useState(true)
   const [selectedRegiao, setSelectedRegiao] = useState<string>('todas')
 
@@ -37,10 +39,16 @@ export default function RelatoriosPage() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const resC = await fetchClientes({ perPage: 250 })
-      const resI = await fetchImportacoes()
+      const [resC, resI, resRegioes] = await Promise.all([
+        fetchClientes({ perPage: 250 }),
+        fetchImportacoes(),
+        fetchRegioes().catch(() => [] as Regiao[]),
+      ])
       setClientes(resC.items)
       setImportacoes(resI)
+      if (resRegioes.length > 0) {
+        setRegioesList(resRegioes.map((r) => r.nome))
+      }
     } catch (err) {
       console.error('Erro ao carregar relatórios:', err)
     } finally {
@@ -119,16 +127,17 @@ export default function RelatoriosPage() {
         </div>
         <div className="flex items-center space-x-2">
           <Select value={selectedRegiao} onValueChange={setSelectedRegiao}>
-            <SelectTrigger className="h-8 text-xs w-36">
+            <SelectTrigger className="h-8 text-xs w-44">
               <SelectValue placeholder="Região" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="todas">Todas as Regiões</SelectItem>
-              <SelectItem value="Sudeste">Sudeste</SelectItem>
-              <SelectItem value="Sul">Sul</SelectItem>
-              <SelectItem value="Norte">Norte</SelectItem>
-              <SelectItem value="Nordeste">Nordeste</SelectItem>
-              <SelectItem value="Centro-Oeste">Centro-Oeste</SelectItem>
+              {regioesList.map((reg) => (
+                <SelectItem key={reg} value={reg}>
+                  {reg}
+                </SelectItem>
+              ))}
+              <SelectItem value="Sem Região">Sem Região</SelectItem>
             </SelectContent>
           </Select>
           <Button

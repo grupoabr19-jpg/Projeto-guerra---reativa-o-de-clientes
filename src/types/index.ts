@@ -138,3 +138,30 @@ export interface Configuracao {
   created: string
   updated: string
 }
+
+export interface Regiao {
+  id: string
+  nome: string
+  ordem?: number
+  ativo?: boolean
+  vendedor_externo?: string
+  especialista?: string
+  corporativo?: string
+  construcao_civil?: string
+  cidades_rota?: string[]
+  municipios_potenciais?: string
+  observacao?: string
+  created: string
+  updated: string
+}
+
+export const REGIOES_PADRAO: readonly string[] = [
+  'BRAGANÇA',
+  'JUNDIAÍ',
+  'VARGINHA',
+  'POUSO ALEGRE',
+  'POÇOS DE CALDAS',
+  'ITAJUBÁ',
+  'EXTREMA',
+  'CAMBUÍ',
+] as const

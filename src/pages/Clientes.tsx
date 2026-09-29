@@ -31,15 +31,22 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { fetchClientes, updateCliente, fetchInteracoesByCliente } from '@/services/api'
+import {
+  fetchClientes,
+  updateCliente,
+  fetchInteracoesByCliente,
+  fetchRegioes,
+} from '@/services/api'
 import { useAuth } from '@/contexts/AuthContext'
-import type { Cliente, Interacao } from '@/types'
+import type { Cliente, Interacao, Regiao } from '@/types'
+import { REGIOES_PADRAO } from '@/types'
 
 export default function ClientesPage() {
   const { user, hasRole, hasRegiaoAccess } = useAuth()
   const navigate = useNavigate()
 
   const [clientes, setClientes] = useState<Cliente[]>([])
+  const [regioesList, setRegioesList] = useState<string[]>([...REGIOES_PADRAO])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRegiao, setSelectedRegiao] = useState<string>('todas')
@@ -57,8 +64,14 @@ export default function ClientesPage() {
   const loadClientes = async () => {
     setLoading(true)
     try {
-      const res = await fetchClientes({ perPage: 150 })
+      const [res, resRegioes] = await Promise.all([
+        fetchClientes({ perPage: 150 }),
+        fetchRegioes().catch(() => [] as Regiao[]),
+      ])
       setClientes(res.items)
+      if (resRegioes.length > 0) {
+        setRegioesList(resRegioes.map((r) => r.nome))
+      }
     } catch (err) {
       console.error('Falha ao buscar clientes:', err)
     } finally {
@@ -144,16 +157,16 @@ export default function ClientesPage() {
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {/* Região */}
           <Select value={selectedRegiao} onValueChange={setSelectedRegiao}>
-            <SelectTrigger className="h-9 text-xs w-36">
+            <SelectTrigger className="h-9 text-xs w-44">
               <SelectValue placeholder="Região" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="todas">Todas Regiões</SelectItem>
-              <SelectItem value="Sudeste">Sudeste</SelectItem>
-              <SelectItem value="Sul">Sul</SelectItem>
-              <SelectItem value="Norte">Norte</SelectItem>
-              <SelectItem value="Nordeste">Nordeste</SelectItem>
-              <SelectItem value="Centro-Oeste">Centro-Oeste</SelectItem>
+              <SelectItem value="todas">Todas as Regiões</SelectItem>
+              {regioesList.map((reg) => (
+                <SelectItem key={reg} value={reg}>
+                  {reg}
+                </SelectItem>
+              ))}
               <SelectItem value="Sem Região">Sem Região</SelectItem>
             </SelectContent>
           </Select>

@@ -89,19 +89,49 @@ routerAdd(
 
       // 2. Se não tiver Lead no funil "Reativação", cria
       if (!kommoLeadId && kommoId) {
+        // Obter vendedor externo de referência da região
+        let vendedorRef = cliente.getString('vendedor') || ''
+        const clienteRegiao = cliente.getString('regiao')
+        if (!vendedorRef && clienteRegiao) {
+          try {
+            const regRecord = $app.findFirstRecordByData('regioes', 'nome', clienteRegiao)
+            if (regRecord) {
+              vendedorRef = regRecord.getString('vendedor_externo') || ''
+            }
+          } catch (_) {}
+        }
+
+        const leadPayload = {
+          name: `Reativação: [${cliente.getString('codigo')}] ${cliente.getString('nome')}`,
+          price: cliente.getInt('valor_ultima_compra') || 0,
+          _embedded: {
+            contacts: [{ id: parseInt(kommoId, 10) }],
+          },
+          custom_fields_values: [
+            ...(clienteRegiao
+              ? [
+                  {
+                    field_name: 'Região',
+                    values: [{ value: clienteRegiao }],
+                  },
+                ]
+              : []),
+            ...(vendedorRef
+              ? [
+                  {
+                    field_name: 'Vendedor Externo',
+                    values: [{ value: vendedorRef }],
+                  },
+                ]
+              : []),
+          ],
+        }
+
         const createLeadRes = $http.send({
           url: `https://${subdomain}.kommo.com/api/v4/leads`,
           method: 'POST',
           headers: headers,
-          body: JSON.stringify([
-            {
-              name: `Reativação: [${cliente.getString('codigo')}] ${cliente.getString('nome')}`,
-              price: cliente.getInt('valor_ultima_compra') || 0,
-              _embedded: {
-                contacts: [{ id: parseInt(kommoId, 10) }],
-              },
-            },
-          ]),
+          body: JSON.stringify([leadPayload]),
           timeout: 10,
         })
         if (createLeadRes.statusCode >= 200 && createLeadRes.statusCode < 300) {
@@ -109,7 +139,6 @@ routerAdd(
           if (createdLead) kommoLeadId = String(createdLead.id)
         }
       }
-
       // 3. Gravar nota no lead com resumo do atendimento se foi finalização
       if (action === 'finalize' && kommoLeadId) {
         $http.send({

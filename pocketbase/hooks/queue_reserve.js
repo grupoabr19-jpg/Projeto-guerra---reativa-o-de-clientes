@@ -52,19 +52,24 @@ routerAdd(
       let regiaoFilter = ''
       if (userRole === 'operador') {
         if (Array.isArray(userRegioes) && userRegioes.length > 0) {
-          const parts = userRegioes.map((r) => `regiao = '${r}'`)
+          const parts = userRegioes.map((r) => {
+            const upper = String(r).trim().toUpperCase()
+            return `regiao = '${upper}'`
+          })
           regiaoFilter = `(${parts.join(' || ')})`
         } else {
-          regiaoFilter = "regiao = 'Sem Regiao'"
+          regiaoFilter = "regiao = 'Sem Regiao' || regiao = 'Sem Região'"
         }
       } else {
         // Supervisor ou admin: se tiver regiões cadastradas filtra, senão todas
         if (Array.isArray(userRegioes) && userRegioes.length > 0) {
-          const parts = userRegioes.map((r) => `regiao = '${r}'`)
+          const parts = userRegioes.map((r) => {
+            const upper = String(r).trim().toUpperCase()
+            return `regiao = '${upper}'`
+          })
           regiaoFilter = `(${parts.join(' || ')})`
         }
       }
-
       let cand = null
 
       // A: Reagendados vencidos do operador ou da região

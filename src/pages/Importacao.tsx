@@ -225,7 +225,11 @@ export default function ImportacaoPage() {
         telefone: mapping.telefone ? r[mapping.telefone] : '',
         whatsapp: mapping.whatsapp ? r[mapping.whatsapp] : '',
         email: mapping.email ? r[mapping.email] : '',
-        regiao: mapping.regiao ? r[mapping.regiao] : 'Sem Região',
+        regiao: mapping.regiao
+          ? String(r[mapping.regiao] || '')
+              .trim()
+              .toUpperCase()
+          : 'Sem Região',
         vendedor: mapping.vendedor ? r[mapping.vendedor] : '',
         segmento: mapping.segmento ? r[mapping.segmento] : '',
         ultima_compra: mapping.ultima_compra ? r[mapping.ultima_compra] : '',
@@ -256,9 +260,9 @@ export default function ImportacaoPage() {
   const downloadSampleTemplate = () => {
     const csvContent =
       'codigo;nome;telefone;whatsapp;email;regiao;vendedor;segmento;ultima_compra;valor_ultima_compra;toneladas_historico;valor_historico;compras_count\n' +
-      'C009001;Metalúrgica Vanguarda SA;11988880000;11988880000;compras@vanguarda.ind.br;Sudeste;Carla Esteves;Metalurgia;2024-06-10;45000.00;30.5;180000.00;6\n' +
-      'C009002;Obras & Fundações Triângulo;31977771111;31977771111;diretoria@trianguloobras.com;Sudeste;Marcos Paulo;Construção;2024-08-20;62000.00;45.0;250000.00;8\n' +
-      'C009003;Mineração Rio Verde;41999992222;41999992222;suprimentos@rioverde.com;Sul;Rodrigo Faro;Mineração;2024-05-15;88000.00;70.0;380000.00;12'
+      'C009001;Metalúrgica Vanguarda SA;11988880000;11988880000;compras@vanguarda.ind.br;POÇOS DE CALDAS;JOSÉ FELIPE;Metalurgia;2024-06-10;45000.00;30.5;180000.00;6\n' +
+      'C009002;Obras & Fundações Triângulo;31977771111;31977771111;diretoria@trianguloobras.com;POUSO ALEGRE;PAOLA;Construção;2024-08-20;62000.00;45.0;250000.00;8\n' +
+      'C009003;Mineração Rio Verde;41999992222;41999992222;suprimentos@rioverde.com;BRAGANÇA;ALESSANDRO;Mineração;2024-05-15;88000.00;70.0;380000.00;12'
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')

@@ -62,9 +62,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hasRegiaoAccess = (regiao?: string): boolean => {
     if (!user) return false
     if (user.role === 'admin') return true
-    if (!regiao || regiao === 'Sem Região') return user.role === 'supervisor'
+    if (!regiao || regiao === 'Sem Região' || regiao === 'Sem Regiao') {
+      return user.role === 'supervisor'
+    }
     if (!user.regioes || user.regioes.length === 0) return true
-    return user.regioes.includes(regiao)
+    // Normalizar maiúsculas/minúsculas para evitar disparidades
+    const upperReg = regiao.trim().toUpperCase()
+    return user.regioes.some((r) => r.trim().toUpperCase() === upperReg)
   }
 
   return (

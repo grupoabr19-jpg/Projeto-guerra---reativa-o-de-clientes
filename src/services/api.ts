@@ -1,5 +1,12 @@
 import pb from '@/lib/pocketbase/client'
-import type { Cliente, Interacao, RespostaFormulario, Importacao, Configuracao } from '@/types'
+import type {
+  Cliente,
+  Interacao,
+  RespostaFormulario,
+  Importacao,
+  Configuracao,
+  Regiao,
+} from '@/types'
 
 export async function fetchClientes(params?: {
   page?: number
@@ -76,6 +83,21 @@ export async function updateConfiguracao(chave: string, valor: Record<string, un
     .collection('configuracoes')
     .getFirstListItem<Configuracao>(`chave = '${chave}'`)
   return pb.collection('configuracoes').update<Configuracao>(existing.id, { valor })
+}
+
+// Regiões de Atendimento
+export async function fetchRegioes() {
+  return pb.collection('regioes').getFullList<Regiao>({
+    sort: 'ordem',
+  })
+}
+
+export async function updateRegiao(id: string, data: Partial<Regiao>) {
+  return pb.collection('regioes').update<Regiao>(id, data)
+}
+
+export async function createRegiao(data: Partial<Regiao>) {
+  return pb.collection('regioes').create<Regiao>(data)
 }
 
 // Queue API calls

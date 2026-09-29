@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-29T17:26:21.817Z",
+  "generatedAt": "2026-09-29T18:15:19.707Z",
   "collections": [
     {
       "name": "users",
@@ -714,6 +714,97 @@
         }
       ],
       "indexes": ["CREATE UNIQUE INDEX idx_config_chave ON configuracoes (chave)"]
+    },
+    {
+      "name": "regioes",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != \"\"",
+        "view": "@request.auth.id != \"\"",
+        "create": "@request.auth.role = \"admin\" || @request.auth.role = \"supervisor\"",
+        "update": "@request.auth.role = \"admin\" || @request.auth.role = \"supervisor\"",
+        "delete": "@request.auth.role = \"admin\""
+      },
+      "fields": [
+        {
+          "name": "nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "ordem",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ativo",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vendedor_externo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "especialista",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "corporativo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "construcao_civil",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cidades_rota",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "municipios_potenciais",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_regioes_nome ON regioes (nome)",
+        "CREATE INDEX idx_regioes_ordem ON regioes (ordem)"
+      ]
     }
   ]
 }

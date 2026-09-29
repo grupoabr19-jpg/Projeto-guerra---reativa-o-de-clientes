@@ -164,8 +164,21 @@ routerAdd(
         if (row.telefone) rec.set('telefone', String(row.telefone).replace(/\D/g, ''))
         if (row.whatsapp) rec.set('whatsapp', String(row.whatsapp).replace(/\D/g, ''))
         if (row.email) rec.set('email', String(row.email).trim())
-        rec.set('regiao', String(row.regiao || 'Sem Região').trim())
-        if (row.vendedor) rec.set('vendedor', String(row.vendedor).trim())
+        const rawReg = String(row.regiao || '').trim()
+        let parsedReg = rawReg ? rawReg.toUpperCase() : 'Sem Região'
+        rec.set('regiao', parsedReg)
+
+        let vendedorRow = String(row.vendedor || '').trim()
+        if (!vendedorRow && parsedReg !== 'Sem Região') {
+          try {
+            const regRec = $app.findFirstRecordByData('regioes', 'nome', parsedReg)
+            if (regRec) {
+              const vExt = regRec.getString('vendedor_externo')
+              if (vExt) vendedorRow = vExt
+            }
+          } catch (_) {}
+        }
+        if (vendedorRow) rec.set('vendedor', vendedorRow)
         if (row.segmento) rec.set('segmento', String(row.segmento).trim())
         if (row.endereco) rec.set('endereco', String(row.endereco).trim())
 

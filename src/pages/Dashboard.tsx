@@ -23,12 +23,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { fetchClientes, fetchImportacoes } from '@/services/api'
-import type { Cliente, Importacao } from '@/types'
+import { fetchClientes, fetchImportacoes, fetchRegioes } from '@/services/api'
+import type { Cliente, Importacao, Regiao } from '@/types'
+import { REGIOES_PADRAO } from '@/types'
 
 export default function Dashboard() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [importacoes, setImportacoes] = useState<Importacao[]>([])
+  const [regioesList, setRegioesList] = useState<string[]>([...REGIOES_PADRAO])
   const [loading, setLoading] = useState(true)
   const [selectedRegion, setSelectedRegion] = useState<string>('todas')
 
@@ -39,10 +41,16 @@ export default function Dashboard() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const resClientes = await fetchClientes({ perPage: 200 })
-      const resImp = await fetchImportacoes()
+      const [resClientes, resImp, resRegioes] = await Promise.all([
+        fetchClientes({ perPage: 200 }),
+        fetchImportacoes(),
+        fetchRegioes().catch(() => [] as Regiao[]),
+      ])
       setClientes(resClientes.items)
       setImportacoes(resImp)
+      if (resRegioes.length > 0) {
+        setRegioesList(resRegioes.map((r) => r.nome))
+      }
     } catch (err) {
       console.error('Erro ao carregar métricas:', err)
     } finally {
@@ -114,16 +122,17 @@ export default function Dashboard() {
             <Filter className="h-3.5 w-3.5 text-slate-400" />
             <span className="text-xs text-slate-500 font-medium">Região:</span>
             <Select value={selectedRegion} onValueChange={setSelectedRegion}>
-              <SelectTrigger className="h-7 text-xs border-0 bg-transparent focus:ring-0 w-32">
+              <SelectTrigger className="h-7 text-xs border-0 bg-transparent focus:ring-0 w-36">
                 <SelectValue placeholder="Todas" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todas">Todas as Regiões</SelectItem>
-                <SelectItem value="Sudeste">Sudeste</SelectItem>
-                <SelectItem value="Sul">Sul</SelectItem>
-                <SelectItem value="Norte">Norte</SelectItem>
-                <SelectItem value="Nordeste">Nordeste</SelectItem>
-                <SelectItem value="Centro-Oeste">Centro-Oeste</SelectItem>
+                {regioesList.map((reg) => (
+                  <SelectItem key={reg} value={reg}>
+                    {reg}
+                  </SelectItem>
+                ))}
+                <SelectItem value="Sem Região">Sem Região</SelectItem>
               </SelectContent>
             </Select>
           </div>
