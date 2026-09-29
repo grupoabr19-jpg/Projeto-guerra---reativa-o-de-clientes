@@ -52,7 +52,7 @@ import {
 } from '@/services/api'
 import pb from '@/lib/pocketbase/client'
 import type { User, Configuracao, Regiao } from '@/types'
-import { REGIOES_PADRAO } from '@/types'
+import { REGIOES_PADRAO, TODAS_REGIOES_FILTRO } from '@/types'
 import { MapPin, Info, Edit2, Check, AlertCircle } from 'lucide-react'
 import { BasesReferenciaTab } from '@/components/BasesReferenciaTab'
 
@@ -436,56 +436,58 @@ export default function ConfiguracoesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {regioes.map((r) => (
-                        <tr key={r.id} className="hover:bg-slate-50/80">
-                          <td className="py-2.5 px-3">
-                            <span className="font-bold text-slate-900">{r.nome}</span>
-                          </td>
-                          <td className="py-2.5 px-3 font-semibold text-blue-700 font-mono">
-                            {r.vendedor_externo || '—'}
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-700 font-mono">
-                            {r.especialista || '—'}
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-700 font-mono">
-                            {r.corporativo || '—'}
-                          </td>
-                          <td className="py-2.5 px-3 font-mono">
-                            {r.construcao_civil ? (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] font-mono border-indigo-400 text-indigo-700 bg-indigo-50"
+                      {regioes
+                        .filter((r) => r.tipo !== 'repescagem' && r.nome !== 'REPESCAGEM')
+                        .map((r) => (
+                          <tr key={r.id} className="hover:bg-slate-50/80">
+                            <td className="py-2.5 px-3">
+                              <span className="font-bold text-slate-900">{r.nome}</span>
+                            </td>
+                            <td className="py-2.5 px-3 font-semibold text-blue-700 font-mono">
+                              {r.vendedor_externo || '—'}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-700 font-mono">
+                              {r.especialista || '—'}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-700 font-mono">
+                              {r.corporativo || '—'}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono">
+                              {r.construcao_civil ? (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] font-mono border-indigo-400 text-indigo-700 bg-indigo-50"
+                                >
+                                  {r.construcao_civil}
+                                </Badge>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 max-w-xs">
+                              <div
+                                className="text-[11px] text-slate-600 truncate"
+                                title={(r.cidades_rota || []).join(', ')}
                               >
-                                {r.construcao_civil}
-                              </Badge>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 max-w-xs">
-                            <div
-                              className="text-[11px] text-slate-600 truncate"
-                              title={(r.cidades_rota || []).join(', ')}
-                            >
-                              {(r.cidades_rota || []).join(', ')}
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              {(r.cidades_rota || []).length} cidades na rota
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-3 text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setEditingRegiao(r)}
-                              className="h-7 text-xs text-blue-600 hover:text-blue-700"
-                            >
-                              <Edit2 className="h-3 w-3 mr-1" />
-                              Editar
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
+                                {(r.cidades_rota || []).join(', ')}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                {(r.cidades_rota || []).length} cidades na rota
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setEditingRegiao(r)}
+                                className="h-7 text-xs text-blue-600 hover:text-blue-700"
+                              >
+                                <Edit2 className="h-3 w-3 mr-1" />
+                                Editar
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
                     </tbody>
                   </table>
                 </div>
@@ -1063,10 +1065,10 @@ export default function ConfiguracoesPage() {
                   </div>
                   <div className="space-y-1 sm:col-span-2 md:col-span-4">
                     <Label className="text-xs text-slate-600">
-                      Regiões Autorizadas (Selecione uma ou mais das 8 regiões oficiais)
+                      Regiões Autorizadas (Rotas Comerciais ou Repescagem Especial)
                     </Label>
                     <div className="flex flex-wrap gap-1.5 pt-1">
-                      {REGIOES_PADRAO.map((r) => {
+                      {TODAS_REGIOES_FILTRO.map((r) => {
                         const isSelected = novasRegioesSelected.includes(r)
                         return (
                           <button
@@ -1340,7 +1342,7 @@ export default function ConfiguracoesPage() {
             <div className="space-y-2">
               <Label className="text-xs text-slate-700">Selecione as regiões de atuação:</Label>
               <div className="grid grid-cols-2 gap-2">
-                {REGIOES_PADRAO.map((r) => {
+                {TODAS_REGIOES_FILTRO.map((r) => {
                   const isSelected = editUserRegioes.includes(r)
                   return (
                     <button
@@ -1369,7 +1371,7 @@ export default function ConfiguracoesPage() {
                 onClick={() => setEditUserRegioes([...REGIOES_PADRAO])}
                 className="text-[11px] text-slate-600"
               >
-                Marcar Todas
+                Marcar 8 Rotas
               </Button>
               <div className="space-x-2">
                 <Button

@@ -49,7 +49,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useAuth } from '@/contexts/AuthContext'
-import { REGIOES_PADRAO } from '@/types'
+import { TODAS_REGIOES_FILTRO } from '@/types'
 import type {
   TituloCatalogo,
   ConcursoSazonal,
@@ -367,7 +367,7 @@ export function RankingPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="todas">Todas as 8 Regiões</SelectItem>
-              {REGIOES_PADRAO.map((r) => (
+              {TODAS_REGIOES_FILTRO.map((r) => (
                 <SelectItem key={r} value={r}>
                   {r}
                 </SelectItem>

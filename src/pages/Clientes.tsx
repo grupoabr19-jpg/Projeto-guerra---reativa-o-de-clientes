@@ -39,14 +39,14 @@ import {
 } from '@/services/api'
 import { useAuth } from '@/contexts/AuthContext'
 import type { Cliente, Interacao, Regiao } from '@/types'
-import { REGIOES_PADRAO } from '@/types'
+import { TODAS_REGIOES_FILTRO } from '@/types'
 
 export default function ClientesPage() {
   const { user, hasRole, hasRegiaoAccess } = useAuth()
   const navigate = useNavigate()
 
   const [clientes, setClientes] = useState<Cliente[]>([])
-  const [regioesList, setRegioesList] = useState<string[]>([...REGIOES_PADRAO])
+  const [regioesList, setRegioesList] = useState<string[]>([...TODAS_REGIOES_FILTRO])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRegiao, setSelectedRegiao] = useState<string>('todas')

@@ -151,11 +151,14 @@ export interface Configuracao {
   updated: string
 }
 
+export type RegiaoTipo = 'comercial' | 'repescagem'
+
 export interface Regiao {
   id: string
   nome: string
   ordem?: number
   ativo?: boolean
+  tipo?: RegiaoTipo
   vendedor_externo?: string
   especialista?: string
   corporativo?: string
@@ -208,6 +211,8 @@ export const REGIOES_PADRAO: readonly string[] = [
   'EXTREMA',
   'CAMBUÍ',
 ] as const
+
+export const TODAS_REGIOES_FILTRO: readonly string[] = [...REGIOES_PADRAO, 'REPESCAGEM'] as const
 
 export type TituloNivel = 'bronze' | 'prata' | 'ouro' | 'platina' | 'diamante'
 

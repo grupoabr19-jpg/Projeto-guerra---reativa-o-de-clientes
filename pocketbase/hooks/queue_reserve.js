@@ -22,6 +22,14 @@ routerAdd(
       const now = new Date()
       const cutoffTime = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
 
+      // Verifica se o operador pertence à rota transversal "Repescagem"
+      const isRepescagem =
+        Array.isArray(userRegioes) &&
+        userRegioes.some((r) => {
+          const upper = String(r).trim().toUpperCase()
+          return upper === 'REPESCAGEM'
+        })
+
       // Verifica se o operador já tem um cliente reservado ou em atendimento ativo (dentro do timeout de 30 min)
       const currentLocked = $app.findRecordsByFilter(
         'clientes',
@@ -54,7 +62,10 @@ routerAdd(
 
       // Constrói filtro de regiões
       let regiaoFilter = ''
-      if (userRole === 'operador') {
+      if (isRepescagem) {
+        // Rota Repescagem é transversal: ignora restrição de uma única região (busca em todas as regiões)
+        regiaoFilter = ''
+      } else if (userRole === 'operador') {
         if (Array.isArray(userRegioes) && userRegioes.length > 0) {
           const parts = userRegioes.map((r) => {
             const upper = String(r).trim().toUpperCase()
@@ -74,21 +85,114 @@ routerAdd(
           regiaoFilter = `(${parts.join(' || ')})`
         }
       }
+
+      // Função auxiliar inline para verificar se o cliente já foi contatado pelo vendedor original da rota
+      // Regra da Repescagem: clientes já contatados pelo vendedor original NÃO entram na Repescagem.
+      const jaContatadoPeloVendedorOriginal = (clienteRec) => {
+        const cId = clienteRec.id
+        const vendedorOriginal = clienteRec.getString('vendedor').trim().toUpperCase()
+
+        // Também busca o vendedor_externo da região se não estiver no cliente
+        let vendedorRegiao = ''
+        const regNome = clienteRec.getString('regiao').trim().toUpperCase()
+        if (regNome) {
+          try {
+            const rRec = $app.findFirstRecordByData('regioes', 'nome', regNome)
+            if (rRec) {
+              vendedorRegiao = rRec.getString('vendedor_externo').trim().toUpperCase()
+            }
+          } catch (_) {}
+        }
+
+        // Busca histórico de interações do cliente
+        const interacoes = $app.findRecordsByFilter(
+          'interacoes',
+          `cliente = '${cId}'`,
+          '-created',
+          50,
+          0,
+        )
+
+        if (!interacoes || interacoes.length === 0) {
+          return false
+        }
+
+        for (let i = 0; i < interacoes.length; i++) {
+          const it = interacoes[i]
+          const opId = it.getString('operador')
+          if (!opId) continue
+
+          try {
+            const opUser = $app.findRecordById('_pb_users_auth_', opId)
+            if (opUser) {
+              const opNome = opUser.getString('name').trim().toUpperCase()
+              const opEmail = opUser.getString('email').trim().toUpperCase()
+
+              // Compara com o vendedor original registrado ou da região
+              if (vendedorOriginal) {
+                if (
+                  opNome === vendedorOriginal ||
+                  opNome.includes(vendedorOriginal) ||
+                  vendedorOriginal.includes(opNome) ||
+                  opEmail.includes(vendedorOriginal)
+                ) {
+                  return true
+                }
+              }
+
+              if (vendedorRegiao) {
+                if (
+                  opNome === vendedorRegiao ||
+                  opNome.includes(vendedorRegiao) ||
+                  vendedorRegiao.includes(opNome) ||
+                  opEmail.includes(vendedorRegiao)
+                ) {
+                  return true
+                }
+              }
+            }
+          } catch (_) {}
+        }
+
+        return false
+      }
+
       let cand = null
 
-      // A: Reagendados vencidos do operador ou da região (se não estiver filtrando estritamente por segmento incompatível)
-      let reagFilter =
-        `estado = 'reagendado' && reagendado_para <= '${endOfToday}'` +
-        (regiaoFilter ? ` && ${regiaoFilter}` : '')
+      // A: Reagendados vencidos do operador ou da região
+      let reagFilter = `estado = 'reagendado' && reagendado_para <= '${endOfToday}'`
+      if (regiaoFilter) {
+        reagFilter += ` && ${regiaoFilter}`
+      }
+      if (isRepescagem) {
+        // Repescagem só atende clientes com mais de 90 dias sem faturar (faixa 90_plus ou dias_sem_faturar >= 90)
+        reagFilter += " && (faixa = '90_plus' || dias_sem_faturar >= 90)"
+      }
       if (filtroSegmento && filtroSegmento !== 'todos') {
         reagFilter += ` && segmento ~ '${filtroSegmento}'`
       }
 
-      const reagendados = $app.findRecordsByFilter('clientes', reagFilter, 'reagendado_para', 5, 0)
+      const reagendados = $app.findRecordsByFilter('clientes', reagFilter, 'reagendado_para', 50, 0)
       if (reagendados && reagendados.length > 0) {
-        // Prioriza se for do próprio operador ou qualquer um da região
+        // Prioriza se for do próprio operador
         const myReag = reagendados.find((r) => r.getString('reagendado_operador') === userId)
-        cand = myReag || reagendados[0]
+        if (myReag) {
+          cand = myReag
+        } else {
+          // Filtra se for Repescagem: exclui os contatados pelo vendedor original da rota
+          for (let k = 0; k < reagendados.length; k++) {
+            const rCand = reagendados[k]
+            if (isRepescagem) {
+              if (!jaContatadoPeloVendedorOriginal(rCand)) {
+                cand = rCand
+                break
+              }
+            } else {
+              cand = rCand
+              break
+            }
+          }
+        }
       }
 
       // Se não achou reagendado, busca na base disponível
@@ -110,6 +214,10 @@ routerAdd(
         if (regiaoFilter) {
           baseFilter += ` && ${regiaoFilter}`
         }
+        if (isRepescagem) {
+          // Repescagem: somente mais de 90 dias sem faturar
+          baseFilter += " && (faixa = '90_plus' || dias_sem_faturar >= 90)"
+        }
         if (filtroSegmento && filtroSegmento !== 'todos') {
           baseFilter += ` && segmento ~ '${filtroSegmento}'`
         }
@@ -117,7 +225,7 @@ routerAdd(
         // Evita telefones marcados como inválidos
         baseFilter += ' && telefone_invalido != true'
 
-        const pool = $app.findRecordsByFilter('clientes', baseFilter, sortExpr, 50, 0)
+        const pool = $app.findRecordsByFilter('clientes', baseFilter, sortExpr, 100, 0)
         if (pool && pool.length > 0) {
           if (ordenacaoEscolhida === 'score' && modoCriterio === 'modo_c') {
             // Ponderar bônus faixa 90+ se ordenação por score
@@ -129,14 +237,28 @@ routerAdd(
               return scoreB - scoreA
             })
           }
-          cand = pool[0]
+
+          // Se for operador Repescagem, percorre e escolhe o primeiro que NÃO tenha contato do vendedor original
+          if (isRepescagem) {
+            for (let m = 0; m < pool.length; m++) {
+              const item = pool[m]
+              if (!jaContatadoPeloVendedorOriginal(item)) {
+                cand = item
+                break
+              }
+            }
+          } else {
+            cand = pool[0]
+          }
         }
       }
 
       if (!cand) {
         return e.json(200, {
           cliente: null,
-          message: 'Fila de atendimento vazia para as regiões atribuídas no momento.',
+          message: isRepescagem
+            ? 'Nenhum cliente disponível na fila da Repescagem (90+ dias sem contato prévio do vendedor) no momento.'
+            : 'Fila de atendimento vazia para as regiões atribuídas no momento.',
         })
       }
 
@@ -152,11 +274,14 @@ routerAdd(
         const ev = new Record(colEv)
         ev.set('cliente', cand.id)
         ev.set('usuario', userId)
-        ev.set('acao', 'lock_reservado')
+        ev.set('acao', isRepescagem ? 'lock_reservado_repescagem' : 'lock_reservado')
         ev.set('detalhes', {
           codigo: cand.getString('codigo'),
           regiao: cand.getString('regiao'),
           score: cand.getInt('score'),
+          faixa: cand.getString('faixa'),
+          dias_sem_faturar: cand.getInt('dias_sem_faturar'),
+          repescagem: isRepescagem,
         })
         $app.save(ev)
       } catch (_) {}

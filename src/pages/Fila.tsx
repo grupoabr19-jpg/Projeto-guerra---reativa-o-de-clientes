@@ -29,14 +29,14 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import { fetchClientes, reserveNextQueueClient, updateCliente, fetchRegioes } from '@/services/api'
 import type { Cliente, Regiao } from '@/types'
-import { REGIOES_PADRAO } from '@/types'
+import { TODAS_REGIOES_FILTRO } from '@/types'
 
 export default function FilaPage() {
   const { user, hasRole, hasRegiaoAccess } = useAuth()
   const navigate = useNavigate()
 
   const [clientes, setClientes] = useState<Cliente[]>([])
-  const [regioesList, setRegioesList] = useState<string[]>([...REGIOES_PADRAO])
+  const [regioesList, setRegioesList] = useState<string[]>([...TODAS_REGIOES_FILTRO])
   const [loading, setLoading] = useState(true)
   const [reserving, setReserving] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')

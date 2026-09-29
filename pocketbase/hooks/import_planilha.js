@@ -215,7 +215,90 @@ routerAdd(
           } catch (_) {}
         }
         if (vendedorRow) rec.set('vendedor', vendedorRow)
-        if (row.segmento) rec.set('segmento', String(row.segmento).trim())
+        if (row.segmento) {
+          // Normalização no backend para garantir os 14 segmentos oficiais
+          const segRaw = String(row.segmento).trim()
+          const segNorm = segRaw
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[._\-\/\\,;:]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+
+          let finalSeg = segRaw
+          if (
+            segNorm.includes('ind trans') ||
+            segNorm.includes('industria de transf') ||
+            segNorm.includes('transformacao') ||
+            segNorm.includes('ind man') ||
+            segNorm.includes('metalurg') ||
+            segNorm.includes('industrial') ||
+            segNorm.includes('manufat')
+          ) {
+            finalSeg = 'Indústria de transformação'
+          } else if (
+            segNorm === 'lmc' ||
+            segNorm === 'l m c' ||
+            segNorm.includes('loja de mat') ||
+            segNorm.includes('loja mat') ||
+            segNorm.includes('material de const') ||
+            segNorm.includes('mat construcao') ||
+            segNorm.includes('materiais de const')
+          ) {
+            finalSeg = 'Loja de Material de Construção'
+          } else if (
+            segNorm.includes('deposito') ||
+            segNorm.includes('armador') ||
+            segNorm.includes('corte e dobra') ||
+            segNorm.includes('corte dobra')
+          ) {
+            finalSeg = 'Depósito (armadores)'
+          } else if (segNorm.includes('estrutur') || segNorm.includes('estrutura metal')) {
+            finalSeg = 'Estruturista'
+          } else if (segNorm.includes('calheir') || segNorm.includes('calha')) {
+            finalSeg = 'Calheiros'
+          } else if (
+            segNorm.includes('construt') ||
+            segNorm.includes('engenh') ||
+            segNorm.includes('obra')
+          ) {
+            finalSeg = 'Construtora'
+          } else if (segNorm.includes('distrib')) {
+            finalSeg = 'Distribuidor'
+          } else if (segNorm.includes('investid') || segNorm.includes('incorporad')) {
+            finalSeg = 'Investidor'
+          } else if (
+            segNorm.includes('laje') ||
+            segNorm.includes('pre mold') ||
+            segNorm.includes('premold')
+          ) {
+            finalSeg = 'Lajeiro'
+          } else if (segNorm.includes('pedreir') || segNorm.includes('mestre de obra')) {
+            finalSeg = 'Pedreiro'
+          } else if (
+            segNorm.includes('rural') ||
+            segNorm.includes('agric') ||
+            segNorm.includes('agro') ||
+            segNorm.includes('produtor') ||
+            segNorm.includes('fazend')
+          ) {
+            finalSeg = 'Produtor rural'
+          } else if (segNorm.includes('revend') || segNorm.includes('comercio varej')) {
+            finalSeg = 'Revenda'
+          } else if (segNorm.includes('serralh') || segNorm.includes('ferrag')) {
+            finalSeg = 'Serralheiro'
+          } else if (
+            segNorm.includes('cliente final') ||
+            segNorm.includes('consumidor final') ||
+            segNorm.includes('pessoa fisica') ||
+            segNorm.includes('consumidor') ||
+            segNorm === 'final'
+          ) {
+            finalSeg = 'Cliente final'
+          }
+          rec.set('segmento', finalSeg)
+        }
         if (row.endereco) rec.set('endereco', String(row.endereco).trim())
 
         if (ultimaCompraDate) rec.set('ultima_compra', ultimaCompraDate)

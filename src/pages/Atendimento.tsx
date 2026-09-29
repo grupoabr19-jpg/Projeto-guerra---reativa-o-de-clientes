@@ -55,6 +55,7 @@ import {
 } from '@/services/api'
 import { useAuth } from '@/contexts/AuthContext'
 import type { Cliente, Interacao, ClienteEstado } from '@/types'
+import { SEGMENTOS_OFICIAIS } from '@/lib/segmentos'
 
 export default function AtendimentoPage() {
   const { clientId } = useParams<{ clientId?: string }>()
@@ -68,7 +69,6 @@ export default function AtendimentoPage() {
   // Filtros da nova experiência do Operador
   const [filtroSegmento, setFiltroSegmento] = useState<string>('todos')
   const [filtroOrdenacao, setFiltroOrdenacao] = useState<'score' | 'antigos' | 'novos'>('score')
-  const [segmentosDisponiveis, setSegmentosDisponiveis] = useState<string[]>([])
   const [reservandoNovo, setReservandoNovo] = useState(false)
   const [showQuestionarioModal, setShowQuestionarioModal] = useState(false)
 
@@ -91,25 +91,6 @@ export default function AtendimentoPage() {
   const [savingNota, setSavingNota] = useState(false)
 
   useEffect(() => {
-    // Carregar segmentos reais da base de clientes
-    import('@/lib/pocketbase/client').then((module) => {
-      const pocketbaseClient = module.default
-      pocketbaseClient
-        .collection('clientes')
-        .getFullList<{ segmento?: string }>({ fields: 'segmento' })
-        .then((records) => {
-          const segs = Array.from(
-            new Set(
-              records
-                .map((r) => r.segmento?.trim())
-                .filter((s): s is string => typeof s === 'string' && s.length > 0),
-            ),
-          ).sort()
-          setSegmentosDisponiveis(segs as string[])
-        })
-        .catch(() => {})
-    })
-
     if (clientId) {
       loadCliente(clientId)
     } else {
@@ -401,9 +382,9 @@ export default function AtendimentoPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos" className="text-xs">
-                    Todos os Segmentos ({segmentosDisponiveis.length})
+                    Todos os Segmentos ({SEGMENTOS_OFICIAIS.length})
                   </SelectItem>
-                  {segmentosDisponiveis.map((seg) => (
+                  {SEGMENTOS_OFICIAIS.map((seg) => (
                     <SelectItem key={seg} value={seg} className="text-xs">
                       {seg}
                     </SelectItem>
@@ -463,9 +444,9 @@ export default function AtendimentoPage() {
             </div>
             <h3 className="text-base font-bold text-slate-800">Pronto para Iniciar Contatos</h3>
             <p className="text-xs text-slate-500 max-w-md">
-              Selecione o segmento desejado e a ordenação acima e clique no botão{' '}
-              <strong>"Novo Atendimento"</strong>. O sistema reservará atomicamente o melhor cliente
-              da sua rota já com o cadastro pré-preenchido com os dados cruzados das planilhas.
+              {user?.regioes?.includes('REPESCAGEM')
+                ? 'Operador da fila transversal Repescagem: o sistema buscará clientes com 90+ dias sem faturar de qualquer região, exceto os contatados pelo vendedor original da rota.'
+                : 'Selecione o segmento desejado e a ordenação acima e clique no botão "Novo Atendimento". O sistema reservará atomicamente o melhor cliente da sua rota já com o cadastro pré-preenchido.'}
             </p>
             <Button
               onClick={handlePuxarNovoAtendimento}
@@ -473,7 +454,9 @@ export default function AtendimentoPage() {
               className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold mt-2"
             >
               <PhoneCall className="h-3.5 w-3.5 mr-1.5" />
-              Puxar Próximo Cliente da Minha Rota
+              {user?.regioes?.includes('REPESCAGEM')
+                ? 'Puxar Próximo Cliente Repescagem (90+ dias)'
+                : 'Puxar Próximo Cliente da Minha Rota'}
             </Button>
           </CardContent>
         </Card>

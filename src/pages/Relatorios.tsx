@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select'
 import { fetchClientes, fetchImportacoes, fetchRegioes } from '@/services/api'
 import type { Cliente, Importacao, Regiao } from '@/types'
-import { REGIOES_PADRAO } from '@/types'
+import { TODAS_REGIOES_FILTRO } from '@/types'
 
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
@@ -34,7 +34,7 @@ export default function RelatoriosPage() {
 
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [importacoes, setImportacoes] = useState<Importacao[]>([])
-  const [regioesList, setRegioesList] = useState<string[]>([...REGIOES_PADRAO])
+  const [regioesList, setRegioesList] = useState<string[]>([...TODAS_REGIOES_FILTRO])
   const [loading, setLoading] = useState(true)
   const [selectedRegiao, setSelectedRegiao] = useState<string>('todas')
 

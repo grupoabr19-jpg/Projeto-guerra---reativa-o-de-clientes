@@ -35,6 +35,7 @@ import {
 import { fetchImportacoes, processSpreadsheetRows, fetchConfiguracoes } from '@/services/api'
 import { loadSheetJS } from '@/lib/sheetParser'
 import type { Importacao } from '@/types'
+import { normalizarSegmento } from '@/lib/segmentos'
 
 // Normaliza strings para comparação case/espaço/acento insensitive
 function normalizeHeader(str: string): string {
@@ -511,7 +512,7 @@ export default function ImportacaoPage() {
                 .toUpperCase()
             : 'Sem Região',
           vendedor: mapping.vendedor ? r[mapping.vendedor] : '',
-          segmento: mapping.segmento ? r[mapping.segmento] : '',
+          segmento: mapping.segmento ? normalizarSegmento(String(r[mapping.segmento] || '')) : '',
           ultima_compra: mapping.ultima_compra ? r[mapping.ultima_compra] : '',
           valor_ultima_compra: mapping.valor_ultima_compra ? r[mapping.valor_ultima_compra] : 0,
           toneladas_historico: mapping.toneladas_historico
