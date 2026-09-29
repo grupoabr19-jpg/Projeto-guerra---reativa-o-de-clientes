@@ -155,6 +155,23 @@ export interface Regiao {
   updated: string
 }
 
+export interface BaseReferencia {
+  id: string
+  nome_arquivo: string
+  arquivo?: string
+  enviado_por?: string
+  expand?: {
+    enviado_por?: User
+  }
+  total_linhas: number
+  colunas_detectadas: string[]
+  amostra_linhas: Record<string, unknown>[]
+  status: 'aguardando_analise' | 'em_analise' | 'mapeado' | 'arquivado'
+  notas?: string
+  created: string
+  updated: string
+}
+
 export const REGIOES_PADRAO: readonly string[] = [
   'BRAGANÇA',
   'JUNDIAÍ',

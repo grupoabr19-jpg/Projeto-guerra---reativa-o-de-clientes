@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-29T18:26:37.350Z",
+  "generatedAt": "2026-09-29T18:32:26.823Z",
   "collections": [
     {
       "name": "users",
@@ -804,6 +804,87 @@
       "indexes": [
         "CREATE UNIQUE INDEX idx_regioes_nome ON regioes (nome)",
         "CREATE INDEX idx_regioes_ordem ON regioes (ordem)"
+      ]
+    },
+    {
+      "name": "bases_referencia",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.role = 'admin'",
+        "view": "@request.auth.role = 'admin'",
+        "create": "@request.auth.role = 'admin'",
+        "update": "@request.auth.role = 'admin'",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "nome_arquivo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "arquivo",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "enviado_por",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "total_linhas",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "colunas_detectadas",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "amostra_linhas",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["aguardando_analise", "em_analise", "mapeado", "arquivado"]
+        },
+        {
+          "name": "notas",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_bases_referencia_created ON bases_referencia (created DESC)",
+        "CREATE INDEX idx_bases_referencia_status ON bases_referencia (status)"
       ]
     }
   ]

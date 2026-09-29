@@ -46,6 +46,7 @@ import pb from '@/lib/pocketbase/client'
 import type { User, Configuracao, Regiao } from '@/types'
 import { REGIOES_PADRAO } from '@/types'
 import { MapPin, Info, Edit2, Check, AlertCircle } from 'lucide-react'
+import { BasesReferenciaTab } from '@/components/BasesReferenciaTab'
 
 export default function ConfiguracoesPage() {
   const [kommoStatus, setKommoStatus] = useState<{
@@ -104,6 +105,9 @@ export default function ConfiguracoesPage() {
   const [savingUserRegioes, setSavingUserRegioes] = useState(false)
 
   const [savingConfig, setSavingConfig] = useState(false)
+
+  // Aba ativa nas Configurações
+  const [activeTab, setActiveTab] = useState('bases')
 
   useEffect(() => {
     loadSettings()
@@ -292,21 +296,37 @@ export default function ConfiguracoesPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="kommo" className="space-y-4">
-        <TabsList className="bg-slate-100 p-1">
-          <TabsTrigger value="regioes" className="text-xs font-medium">
-            Regiões & Equipes Varejo
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="bg-slate-100 p-1 flex-wrap h-auto gap-1">
+          <TabsTrigger value="bases" className="text-xs font-medium flex items-center gap-1.5">
+            <Database className="h-3.5 w-3.5 text-blue-600" />
+            <span>Bases de Referência</span>
+            <Badge variant="secondary" className="text-[9px] px-1.5 py-0 bg-blue-100 text-blue-700">
+              Admin
+            </Badge>
           </TabsTrigger>
-          <TabsTrigger value="kommo" className="text-xs font-medium">
-            Integração Kommo CRM
+          <TabsTrigger value="regioes" className="text-xs font-medium flex items-center gap-1.5">
+            <MapPin className="h-3.5 w-3.5" />
+            <span>Regiões & Equipes Varejo</span>
           </TabsTrigger>
-          <TabsTrigger value="motor" className="text-xs font-medium">
-            Pesos & Motor de Fila
+          <TabsTrigger value="usuarios" className="text-xs font-medium flex items-center gap-1.5">
+            <Users className="h-3.5 w-3.5" />
+            <span>Usuários & Atribuição de Regiões</span>
           </TabsTrigger>
-          <TabsTrigger value="usuarios" className="text-xs font-medium">
-            Usuários & Governança
+          <TabsTrigger value="kommo" className="text-xs font-medium flex items-center gap-1.5">
+            <Key className="h-3.5 w-3.5" />
+            <span>Integração Kommo CRM</span>
+          </TabsTrigger>
+          <TabsTrigger value="motor" className="text-xs font-medium flex items-center gap-1.5">
+            <Sliders className="h-3.5 w-3.5" />
+            <span>Pesos & Motor de Fila</span>
           </TabsTrigger>
         </TabsList>
+
+        {/* TAB NOVO: BASES DE REFERÊNCIA */}
+        <TabsContent value="bases" className="space-y-4">
+          <BasesReferenciaTab />
+        </TabsContent>
 
         {/* TAB 0: REGIÕES & EQUIPES VAREJO */}
         <TabsContent value="regioes" className="space-y-4">
@@ -319,8 +339,8 @@ export default function ConfiguracoesPage() {
                     <span>Regiões de Atendimento, Rotas e Equipes do Varejo</span>
                   </CardTitle>
                   <CardDescription className="text-xs text-slate-500">
-                    Estrutura oficial de cobertura comercial do atacado/varejo: vendedor externo,
-                    especialista e corporativo
+                    Estrutura oficial de cobertura comercial do atacado/varejo: cadastro de novos
+                    vendedores externos, especialistas e corporativo
                   </CardDescription>
                 </div>
                 <Badge
@@ -754,13 +774,37 @@ export default function ConfiguracoesPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* Card de Atalhos Rápidos para o Administrador */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-blue-50/50 border border-blue-100 rounded-lg text-xs">
+                <div>
+                  <span className="font-semibold text-blue-900 block">Atribuição de Regiões</span>
+                  <p className="text-slate-500 text-[11px]">
+                    Defina abaixo ou clique em &ldquo;Editar Regiões&rdquo; em qualquer colaborador
+                    da tabela.
+                  </p>
+                </div>
+                <div>
+                  <span className="font-semibold text-blue-900 block">Vendedores e Equipes</span>
+                  <p className="text-slate-500 text-[11px]">
+                    Alocação por praça/rota na aba &ldquo;Regiões & Equipes Varejo&rdquo;.
+                  </p>
+                </div>
+                <div>
+                  <span className="font-semibold text-blue-900 block">Upload de Base do ERP</span>
+                  <p className="text-slate-500 text-[11px]">
+                    Disponível no menu lateral &ldquo;Importação&rdquo; e na aba &ldquo;Bases de
+                    Referência&rdquo;.
+                  </p>
+                </div>
+              </div>
+
               {/* Formulário Novo Usuário */}
               <form
                 onSubmit={handleCreateUser}
                 className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3"
               >
                 <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                  Cadastrar Novo Membro da Equipe
+                  Cadastrar Novo Membro da Equipe / Vendedor
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="space-y-1">

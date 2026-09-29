@@ -196,3 +196,21 @@ export async function processSpreadsheetRows(data: {
   }
   return res.json()
 }
+
+// Bases de Referência (armzenamento de planilhas cruas para definição do mapeamento do banco)
+export async function fetchBasesReferencia() {
+  return pb.collection('bases_referencia').getFullList<import('@/types').BaseReferencia>({
+    sort: '-created',
+    expand: 'enviado_por',
+  })
+}
+
+export async function createBaseReferencia(formData: FormData) {
+  return pb.collection('bases_referencia').create<import('@/types').BaseReferencia>(formData, {
+    expand: 'enviado_por',
+  })
+}
+
+export async function deleteBaseReferencia(id: string) {
+  return pb.collection('bases_referencia').delete(id)
+}
