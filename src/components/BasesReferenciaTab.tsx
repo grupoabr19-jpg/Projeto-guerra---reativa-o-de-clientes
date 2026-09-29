@@ -97,10 +97,17 @@ export function BasesReferenciaTab() {
     if (!file) return
 
     const fileSizeMb = file.size / (1024 * 1024)
-    if (fileSizeMb > 200) {
-      alert(`O arquivo possui ${fileSizeMb.toFixed(1)} MB. O limite máximo suportado é de 200 MB.`)
+    if (fileSizeMb > 250) {
+      alert(
+        `O arquivo possui ${fileSizeMb.toFixed(1)} MB. O limite máximo absoluto suportado é de 250 MB.`,
+      )
       return
     }
+
+    // Limiar inteligente: arquivos acima de 60 MB não são enviados como anexo bruto multipart
+    // para evitar estouro de timeout do servidor ou limite de payload HTTP.
+    // O parsing completo roda localmente no navegador (Web Worker) e salvamos metadados + contagem + amostra.
+    const isLargeFileWithoutAttachment = fileSizeMb >= 60
 
     setUploading(true)
     setUploadProgress({
@@ -124,17 +131,21 @@ export function BasesReferenciaTab() {
         }))
       })
 
-      // 2. Envio do arquivo original e dos metadados extraídos para o backend
+      // 2. Envio para o backend
       setUploadProgress((prev) => ({
         ...prev,
         percent: 88,
-        message: 'Enviando arquivo original e metadados ao servidor...',
+        message: isLargeFileWithoutAttachment
+          ? 'Gravando metadados, estrutura e amostra no servidor (modo arquivo grande)...'
+          : 'Enviando arquivo original e metadados ao servidor...',
         stage: 'uploading',
         processedRows: parsed.totalLinhas,
       }))
 
       const formData = new FormData()
-      formData.append('arquivo', file)
+      if (!isLargeFileWithoutAttachment) {
+        formData.append('arquivo', file)
+      }
       formData.append('nome_arquivo', file.name)
       if (user?.id) {
         formData.append('enviado_por', user.id)
@@ -145,16 +156,23 @@ export function BasesReferenciaTab() {
       formData.append('status', 'aguardando_analise')
       formData.append('classificacao', selectedClassification)
       formData.append('tamanho_bytes', String(file.size))
+
+      const notaGrande = isLargeFileWithoutAttachment
+        ? ` [Arquivo grande: ${fileSizeMb.toFixed(1)} MB - Análise realizada via Web Worker local sem anexo bruto no servidor para evitar timeout]`
+        : ''
+
       formData.append(
         'notas',
-        `Arquivo de referência (${selectedClassification.toUpperCase()}) - ${parsed.sheetNames.length > 1 ? `Abas: ${parsed.sheetNames.join(', ')}` : 'Planilha única'}.`,
+        `Arquivo de referência (${selectedClassification.toUpperCase()}) - ${parsed.sheetNames.length > 1 ? `Abas: ${parsed.sheetNames.join(', ')}` : 'Planilha única'}.${notaGrande}`,
       )
 
       await createBaseReferencia(formData)
 
       setUploadProgress({
         percent: 100,
-        message: 'Planilha processada e salva com sucesso!',
+        message: isLargeFileWithoutAttachment
+          ? 'Estrutura, contagem e amostra da planilha grande gravadas com sucesso!'
+          : 'Planilha processada e salva com sucesso!',
         stage: 'complete',
         fileName: file.name,
         fileSizeStr: formatBytes(file.size),
@@ -164,8 +182,30 @@ export function BasesReferenciaTab() {
       loadBases()
     } catch (err: unknown) {
       console.error('Falha no upload da base de referência:', err)
-      const msg = err instanceof Error ? err.message : 'Erro desconhecido ao processar planilha'
-      alert(`Erro no processamento da planilha: ${msg}`)
+      let userFriendlyMessage = 'Não foi possível salvar o registro da planilha no servidor.'
+
+      if (err instanceof Error) {
+        const rawMsg = err.message.toLowerCase()
+        if (
+          rawMsg.includes('failed to fetch') ||
+          rawMsg.includes('network') ||
+          rawMsg.includes('timeout') ||
+          rawMsg.includes('abort')
+        ) {
+          userFriendlyMessage = `Tempo limite esgotado ou falha de conexão durante o envio (${formatBytes(file.size)}). Para arquivos grandes, a extração no navegador funcionou, mas o gateway do servidor recusou o volume ou demorou além do limite.`
+        } else if (
+          rawMsg.includes('413') ||
+          rawMsg.includes('too large') ||
+          rawMsg.includes('payload')
+        ) {
+          userFriendlyMessage = `O arquivo (${formatBytes(file.size)}) excedeu o limite máximo de corpo de requisição do servidor HTTP. O sistema salvará apenas a amostra estrutural e metadados.`
+        } else {
+          userFriendlyMessage = `Erro: ${err.message}`
+        }
+      }
+      alert(
+        `Falha no upload:\n${userFriendlyMessage}\n\nRecomendação: certifique-se de que a conexão esteja estável. O sistema agora isola planilhas acima de 60 MB automaticamente para garantir que sejam lidas sem estourar o servidor.`,
+      )
     } finally {
       // Pequeno delay para usuário ver o 100% concluído
       setTimeout(() => {
@@ -229,6 +269,12 @@ export function BasesReferenciaTab() {
         return (
           <Badge className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 text-[10px] font-mono">
             Clientes
+          </Badge>
+        )
+      case 'faturamento':
+        return (
+          <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 text-[10px] font-mono">
+            Faturamento
           </Badge>
         )
       case 'outra':
@@ -338,6 +384,9 @@ export function BasesReferenciaTab() {
                   </SelectItem>
                   <SelectItem value="clientes" className="text-xs">
                     👥 Clientes
+                  </SelectItem>
+                  <SelectItem value="faturamento" className="text-xs">
+                    💰 Faturamento
                   </SelectItem>
                   <SelectItem value="outra" className="text-xs">
                     📁 Outra
@@ -466,6 +515,9 @@ export function BasesReferenciaTab() {
                   <SelectItem value="clientes" className="text-xs">
                     Clientes
                   </SelectItem>
+                  <SelectItem value="faturamento" className="text-xs">
+                    Faturamento
+                  </SelectItem>
                   <SelectItem value="outra" className="text-xs">
                     Outra
                   </SelectItem>
@@ -551,7 +603,17 @@ export function BasesReferenciaTab() {
                         </td>
                         <td className="py-2.5 px-3">{getClassificacaoBadge(b.classificacao)}</td>
                         <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">
-                          {formatBytes(b.tamanho_bytes)}
+                          <div className="flex flex-col">
+                            <span>{formatBytes(b.tamanho_bytes)}</span>
+                            {!b.arquivo && (
+                              <span
+                                className="text-[9px] text-amber-600 font-sans font-medium"
+                                title="Metadados e amostra gravados sem retenção do binário pesado"
+                              >
+                                sem anexo
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2.5 px-3 text-slate-500 whitespace-nowrap font-mono text-[11px]">
                           {b.created ? new Date(b.created).toLocaleString('pt-BR') : '—'}
@@ -627,10 +689,27 @@ export function BasesReferenciaTab() {
                         <span className="font-mono">{formatBytes(previewBase.tamanho_bytes)}</span>
                       </>
                     ) : null}
+                    {!previewBase.arquivo && (
+                      <>
+                        <span>•</span>
+                        <span className="text-amber-600 font-semibold bg-amber-50 px-1.5 py-0.5 rounded text-[10px]">
+                          Arquivo grande — análise sem anexo bruto
+                        </span>
+                      </>
+                    )}
                   </DialogDescription>
                 </div>
                 <div>{getStatusBadge(previewBase.status)}</div>
               </div>
+              {previewBase.notas && (
+                <div className="mt-2.5 p-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-700 whitespace-pre-line leading-relaxed">
+                  <div className="font-semibold text-slate-800 text-[11px] uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <Info className="h-3.5 w-3.5 text-blue-600" />
+                    Mapeamento & Notas do Layout:
+                  </div>
+                  {previewBase.notas}
+                </div>
+              )}
             </DialogHeader>
 
             <Tabs
@@ -657,10 +736,15 @@ export function BasesReferenciaTab() {
                   </TabsTrigger>
                 </TabsList>
 
-                {previewBase.arquivo && (
+                {previewBase.arquivo ? (
                   <div className="text-[11px] text-slate-500 flex items-center gap-1">
                     <HardDrive className="h-3.5 w-3.5 text-slate-400" />
                     <span>Arquivo original arquivado com segurança no backend</span>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-amber-700 flex items-center gap-1 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                    <span>Arquivo grande gravado sem o arquivo bruto para análise estrutural</span>
                   </div>
                 )}
               </div>

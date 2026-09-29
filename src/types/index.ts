@@ -155,7 +155,7 @@ export interface Regiao {
   updated: string
 }
 
-export type BaseClassificacao = 'margem' | 'clientes' | 'outra'
+export type BaseClassificacao = 'margem' | 'clientes' | 'faturamento' | 'outra'
 
 export interface BaseReferencia {
   id: string

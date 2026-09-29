@@ -102,10 +102,20 @@ routerAdd(
               ) || 0
         const comprasCount = parseInt(row.compras_count || 1, 10) || 1
 
-        // Calcular dias sem faturar
+        // Calcular dias sem faturar e faixa
         let ultimaCompraDate = null
         let diasSemFaturar = 90
-        if (row.ultima_compra) {
+
+        // Se veio campo explícito de dias_sem_faturar (ex: "Menor dias última venda")
+        const rawDiasSemFaturar = String(row.dias_sem_faturar || '').trim()
+        if (rawDiasSemFaturar) {
+          const numDias = parseInt(rawDiasSemFaturar.replace(/\D/g, ''), 10)
+          if (!isNaN(numDias)) {
+            diasSemFaturar = numDias
+          } else if (/novo|sem venda/i.test(rawDiasSemFaturar)) {
+            diasSemFaturar = 180 // Cliente PN NOVO ou sem histórico
+          }
+        } else if (row.ultima_compra) {
           const parsed = new Date(row.ultima_compra)
           if (!isNaN(parsed.getTime())) {
             ultimaCompraDate = parsed.toISOString()
@@ -115,13 +125,30 @@ routerAdd(
         }
 
         // Determinar faixa: recente (< 60), 60_89 (60-89 dias), 90_plus (90+ dias)
+        // Se a planilha enviou texto de faixa (ex: "Faixa última compra")
+        const rawFaixa = String(row.faixa || '')
+          .toLowerCase()
+          .trim()
         let faixa = '90_plus'
-        if (diasSemFaturar < 60) {
-          faixa = 'recente'
-        } else if (diasSemFaturar >= 60 && diasSemFaturar <= 89) {
+        if (rawFaixa.includes('60') && rawFaixa.includes('89')) {
           faixa = '60_89'
-        } else {
+        } else if (rawFaixa.includes('90') || rawFaixa.includes('sem venda')) {
           faixa = '90_plus'
+        } else if (
+          rawFaixa.includes('recente') ||
+          rawFaixa.includes('30') ||
+          rawFaixa.includes('menor que 60')
+        ) {
+          faixa = 'recente'
+        } else {
+          // Baseado em dias calculados
+          if (diasSemFaturar < 60) {
+            faixa = 'recente'
+          } else if (diasSemFaturar >= 60 && diasSemFaturar <= 89) {
+            faixa = '60_89'
+          } else {
+            faixa = '90_plus'
+          }
         }
 
         // Cálculo de score ponderado
@@ -164,6 +191,15 @@ routerAdd(
         if (row.telefone) rec.set('telefone', String(row.telefone).replace(/\D/g, ''))
         if (row.whatsapp) rec.set('whatsapp', String(row.whatsapp).replace(/\D/g, ''))
         if (row.email) rec.set('email', String(row.email).trim())
+
+        // Montar endereço/localização se cidade e estado forem informados
+        const cidade = String(row.cidade || '').trim()
+        const estadoUf = String(row.estado || row.uf || '').trim()
+        if (cidade || estadoUf) {
+          const locStr = [cidade, estadoUf].filter(Boolean).join(' - ')
+          rec.set('endereco', locStr)
+        }
+
         const rawReg = String(row.regiao || '').trim()
         let parsedReg = rawReg ? rawReg.toUpperCase() : 'Sem Região'
         rec.set('regiao', parsedReg)

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-29T18:40:51.434Z",
+  "generatedAt": "2026-09-29T18:55:38.318Z",
   "collections": [
     {
       "name": "users",
@@ -886,7 +886,7 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["margem", "clientes", "outra"]
+          "selectValues": ["margem", "clientes", "faturamento", "outra"]
         },
         {
           "name": "tamanho_bytes",

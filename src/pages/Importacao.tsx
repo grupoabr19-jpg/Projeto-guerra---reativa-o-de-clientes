@@ -9,6 +9,8 @@ import {
   HelpCircle,
   Download,
   AlertTriangle,
+  Sparkles,
+  Layers,
 } from 'lucide-react'
 import {
   Card,
@@ -30,8 +32,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { fetchImportacoes, processSpreadsheetRows } from '@/services/api'
+import { fetchImportacoes, processSpreadsheetRows, fetchConfiguracoes } from '@/services/api'
+import { loadSheetJS } from '@/lib/sheetParser'
 import type { Importacao } from '@/types'
+
+// Normaliza strings para comparação case/espaço/acento insensitive
+function normalizeHeader(str: string): string {
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove diacríticos (acentos)
+    .replace(/[^a-z0-9]/g, ' ') // substitui pontuação por espaço
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
 // Mapeamento padrão esperado das colunas
 interface ColumnMapping {
@@ -40,6 +54,8 @@ interface ColumnMapping {
   telefone: string
   whatsapp: string
   email: string
+  cidade: string
+  estado_uf: string
   regiao: string
   vendedor: string
   segmento: string
@@ -49,6 +65,8 @@ interface ColumnMapping {
   valor_historico: string
   compras_count: string
   pedido: string
+  dias_sem_faturar: string
+  faixa: string
 }
 
 export default function ImportacaoPage() {
@@ -59,12 +77,21 @@ export default function ImportacaoPage() {
   const [file, setFile] = useState<File | null>(null)
   const [rawRows, setRawRows] = useState<Record<string, unknown>[]>([])
   const [headers, setHeaders] = useState<string[]>([])
+  const [detectedLayout, setDetectedLayout] = useState<{
+    nome: string
+    tipo_base: string
+    descricao: string
+  } | null>(null)
+  const [templatesConfig, setTemplatesConfig] = useState<any[]>([])
+
   const [mapping, setMapping] = useState<ColumnMapping>({
     codigo: '',
     nome: '',
     telefone: '',
     whatsapp: '',
     email: '',
+    cidade: '',
+    estado_uf: '',
     regiao: '',
     vendedor: '',
     segmento: '',
@@ -74,6 +101,8 @@ export default function ImportacaoPage() {
     valor_historico: '',
     compras_count: '',
     pedido: '',
+    dias_sem_faturar: '',
+    faixa: '',
   })
   const [substituicaoTotal, setSubstituicaoTotal] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -96,7 +125,20 @@ export default function ImportacaoPage() {
 
   useEffect(() => {
     loadHistory()
+    loadTemplates()
   }, [])
+
+  const loadTemplates = async () => {
+    try {
+      const configs = await fetchConfiguracoes()
+      const tplCfg = configs.find((c) => c.chave === 'templates_mapeamento_importacao')
+      if (tplCfg && Array.isArray(tplCfg.valor)) {
+        setTemplatesConfig(tplCfg.valor)
+      }
+    } catch (err) {
+      console.error('Falha ao carregar templates de mapeamento:', err)
+    }
+  }
 
   const loadHistory = async () => {
     setLoadingHistory(true)
@@ -124,28 +166,191 @@ export default function ImportacaoPage() {
     parseFile(dropped)
   }
 
+  const matchTemplate = (rawHeaders: string[]) => {
+    const normalizedHeaders = rawHeaders.map((h) => ({
+      original: h,
+      norm: normalizeHeader(h),
+    }))
+
+    // Template 1: Clientes Inativos
+    // Assinatura: 'cod cliente', 'nome do cliente', 'menor dias ultima venda', 'faixa ultima compra'
+    const hasCodCliente = normalizedHeaders.some(
+      (h) => h.norm.includes('cod') && h.norm.includes('cliente'),
+    )
+    const hasNomeCliente = normalizedHeaders.some(
+      (h) => h.norm.includes('nome') && h.norm.includes('cliente'),
+    )
+    const hasMenorDias = normalizedHeaders.some(
+      (h) => h.norm.includes('menor dias') || (h.norm.includes('dias') && h.norm.includes('venda')),
+    )
+    const hasFaixaCompra = normalizedHeaders.some(
+      (h) => h.norm.includes('faixa') && h.norm.includes('compra'),
+    )
+
+    if (hasCodCliente && (hasNomeCliente || hasMenorDias || hasFaixaCompra)) {
+      setDetectedLayout({
+        nome: 'Clientes Inativos',
+        tipo_base: 'clientes',
+        descricao:
+          'Layout de clientes inativos detectado automaticamente: Cód. Cliente como chave única, Menor dias última venda, Celular e Região pré-configurados.',
+      })
+
+      const findHeader = (predicate: (norm: string) => boolean) =>
+        normalizedHeaders.find((h) => predicate(h.norm))?.original || ''
+
+      return {
+        codigo: findHeader((n) => n.includes('cod') && n.includes('cliente')),
+        nome: findHeader(
+          (n) => n.includes('nome do cliente') || (n.includes('nome') && !n.includes('vendedor')),
+        ),
+        telefone: findHeader((n) => n.includes('celular') || n.includes('telefone')),
+        whatsapp: findHeader((n) => n.includes('celular') || n.includes('whatsapp')),
+        email: findHeader((n) => n.includes('mail')),
+        cidade: findHeader((n) => n === 'cidade' || n.includes('cidade')),
+        estado_uf: findHeader((n) => n === 'estado' || n === 'uf'),
+        regiao: findHeader(
+          (n) => n === 'regiao' || (n.includes('regiao') && !n.includes('codigo')),
+        ),
+        vendedor: findHeader(
+          (n) => n === 'vendedor' || (n.includes('vendedor') && !n.includes('tipo')),
+        ),
+        segmento: findHeader((n) => n.includes('segmento')),
+        ultima_compra: findHeader(
+          (n) =>
+            n.includes('criacao pn') || n.includes('ultima venda') || n.includes('ultima compra'),
+        ),
+        valor_ultima_compra: findHeader((n) => n.includes('limite') && n.includes('credito')),
+        toneladas_historico: '',
+        valor_historico: '',
+        compras_count: '',
+        pedido: '',
+        dias_sem_faturar: findHeader((n) => n.includes('menor dias')),
+        faixa: findHeader((n) => n.includes('faixa') && n.includes('compra')),
+      }
+    }
+
+    // Template 2: Gestão da Produção — Faturamento
+    // Assinatura: 'pedido', 'fat r', 'data nota fiscal', 'canal'
+    const hasPedido = normalizedHeaders.some(
+      (h) => h.norm === 'pedido' || h.norm.includes('pedido'),
+    )
+    const hasFat = normalizedHeaders.some(
+      (h) => h.norm.includes('fat r') || h.norm.includes('faturamento'),
+    )
+    const hasNF = normalizedHeaders.some((h) => h.norm === 'nf' || h.norm.includes('nota fiscal'))
+    const hasCanal = normalizedHeaders.some((h) => h.norm === 'canal' || h.norm.includes('canal'))
+
+    if (hasFat || (hasPedido && (hasNF || hasCanal))) {
+      setDetectedLayout({
+        nome: 'Gestão da Produção — Faturamento',
+        tipo_base: 'faturamento',
+        descricao:
+          'Layout de faturamento e notas fiscais detectado: reconciliação de pedidos, clientes faturados e valores de faturamento.',
+      })
+
+      const findHeader = (predicate: (norm: string) => boolean) =>
+        normalizedHeaders.find((h) => predicate(h.norm))?.original || ''
+
+      return {
+        codigo: '',
+        nome: findHeader((n) => n === 'cliente' || n.includes('cliente')),
+        telefone: '',
+        whatsapp: '',
+        email: '',
+        cidade: findHeader((n) => n === 'cidade'),
+        estado_uf: findHeader((n) => n === 'uf' || n === 'estado'),
+        regiao: findHeader((n) => n === 'regiao'),
+        vendedor: findHeader((n) => n === 'vendedor'),
+        segmento: findHeader((n) => n === 'familia' || n.includes('familia')),
+        ultima_compra: findHeader(
+          (n) => n.includes('data nota fiscal') || n.includes('data entrega romaneio'),
+        ),
+        valor_ultima_compra: findHeader((n) => n.includes('fat r') || n === 'total'),
+        toneladas_historico: findHeader((n) => n.includes('peso nf') || n === 'peso'),
+        valor_historico: findHeader((n) => n === 'total'),
+        compras_count: '',
+        pedido: findHeader((n) => n === 'pedido'),
+        dias_sem_faturar: '',
+        faixa: '',
+      }
+    }
+
+    // Fallback genérico inteligente
+    setDetectedLayout(null)
+    const findHeader = (regex: RegExp) => rawHeaders.find((h) => regex.test(h)) || ''
+    return {
+      codigo: findHeader(/c[oó]d|id|cliente/i),
+      nome: findHeader(/nome|raz[aã]o|empresa/i),
+      telefone: findHeader(/tel|fone/i),
+      whatsapp: findHeader(/whats|celular|wpp/i),
+      email: findHeader(/mail/i),
+      cidade: findHeader(/cidade|munic[ií]pio/i),
+      estado_uf: findHeader(/^uf$|^estado$/i),
+      regiao: findHeader(/regi[aã]o|territ[oó]rio/i),
+      vendedor: findHeader(/vendedor|consultor|rep/i),
+      segmento: findHeader(/segmento|setor|ramo/i),
+      ultima_compra: findHeader(/[uú]ltim.*(compra|fatur|venda)/i),
+      valor_ultima_compra: findHeader(/valor.*[uú]ltim|r\$|ticket/i),
+      toneladas_historico: findHeader(/ton|peso|volume/i),
+      valor_historico: findHeader(/valor.*hist|total.*comp/i),
+      compras_count: findHeader(/freq|compras|qtd/i),
+      pedido: findHeader(/pedido|nf|fatura/i),
+      dias_sem_faturar: findHeader(/dias.*sem|menor.*dias/i),
+      faixa: findHeader(/faixa/i),
+    }
+  }
+
   const parseFile = async (f: File) => {
     setFile(f)
     setImportResult(null)
+    setDetectedLayout(null)
 
-    // Se for CSV ou arquivo texto delimitado:
+    const isXlsx = /\.xlsx?$|\.xls$/i.test(f.name)
+
+    if (isXlsx) {
+      try {
+        const XLSX = await loadSheetJS()
+        const arrayBuffer = await f.arrayBuffer()
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+        const firstSheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[firstSheetName]
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+          defval: '',
+        }) as Record<string, unknown>[]
+
+        if (jsonData.length === 0) {
+          alert('A planilha selecionada está vazia.')
+          return
+        }
+
+        const rawHeaders = Object.keys(jsonData[0])
+        setHeaders(rawHeaders)
+        setRawRows(jsonData)
+        const autoMap = matchTemplate(rawHeaders)
+        setMapping(autoMap)
+        return
+      } catch (err) {
+        console.error('Erro ao ler XLSX via SheetJS:', err)
+        alert('Falha ao processar arquivo Excel. Tente converter para CSV se o erro persistir.')
+        return
+      }
+    }
+
+    // Processamento de CSV / TXT
     const reader = new FileReader()
     reader.onload = (evt) => {
       const content = evt.target?.result as string
       if (!content) return
 
-      // Trata CSV com delimitador vírgula ou ponto-e-vírgula
       const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0)
       if (lines.length < 2) {
         alert('O arquivo não contém linhas de dados válidas.')
         return
       }
 
-      // Descobre delimitador
       const firstLine = lines[0]
       const delimiter = firstLine.includes(';') ? ';' : ','
 
-      // Split com suporte a aspas
       const parseCSVLine = (line: string) => {
         const result = []
         let current = ''
@@ -180,29 +385,11 @@ export default function ImportacaoPage() {
       }
 
       setRawRows(parsedRows)
-
-      // Auto-detect mappings baseado nos nomes das colunas
-      const autoMap: ColumnMapping = {
-        codigo: rawHeaders.find((h) => /c[oó]d|id|cliente/i.test(h)) || '',
-        nome: rawHeaders.find((h) => /nome|raz[aã]o|empresa/i.test(h)) || '',
-        telefone: rawHeaders.find((h) => /tel|fone/i.test(h) && !/whats/i.test(h)) || '',
-        whatsapp: rawHeaders.find((h) => /whats|celular|wpp/i.test(h)) || '',
-        email: rawHeaders.find((h) => /mail/i.test(h)) || '',
-        regiao: rawHeaders.find((h) => /regi[aã]o|uf|estado|territ[oó]rio/i.test(h)) || '',
-        vendedor: rawHeaders.find((h) => /vendedor|consultor|rep/i.test(h)) || '',
-        segmento: rawHeaders.find((h) => /segmento|setor|ramo/i.test(h)) || '',
-        ultima_compra: rawHeaders.find((h) => /[uú]ltim.*(compra|fatur)/i.test(h)) || '',
-        valor_ultima_compra: rawHeaders.find((h) => /valor.*[uú]ltim|r\$|ticket/i.test(h)) || '',
-        toneladas_historico: rawHeaders.find((h) => /ton|peso|volume/i.test(h)) || '',
-        valor_historico: rawHeaders.find((h) => /valor.*hist|total.*comp/i.test(h)) || '',
-        compras_count: rawHeaders.find((h) => /freq|compras|qtd/i.test(h)) || '',
-        pedido: rawHeaders.find((h) => /pedido|nf|fatura/i.test(h)) || '',
-      }
-
+      const autoMap = matchTemplate(rawHeaders)
       setMapping(autoMap)
     }
 
-    reader.readAsText(f, 'ISO-8859-1') // Suporta acentos típicos de planilhas exportadas de ERPs brasileiros
+    reader.readAsText(f, 'ISO-8859-1')
   }
 
   // Enviar para o backend com processamento atômico e upsert por código CXXXXXX
@@ -225,6 +412,8 @@ export default function ImportacaoPage() {
         telefone: mapping.telefone ? r[mapping.telefone] : '',
         whatsapp: mapping.whatsapp ? r[mapping.whatsapp] : '',
         email: mapping.email ? r[mapping.email] : '',
+        cidade: mapping.cidade ? r[mapping.cidade] : '',
+        estado: mapping.estado_uf ? r[mapping.estado_uf] : '',
         regiao: mapping.regiao
           ? String(r[mapping.regiao] || '')
               .trim()
@@ -238,6 +427,8 @@ export default function ImportacaoPage() {
         valor_historico: mapping.valor_historico ? r[mapping.valor_historico] : 0,
         compras_count: mapping.compras_count ? r[mapping.compras_count] : 1,
         pedido: mapping.pedido ? r[mapping.pedido] : '',
+        dias_sem_faturar: mapping.dias_sem_faturar ? r[mapping.dias_sem_faturar] : '',
+        faixa: mapping.faixa ? r[mapping.faixa] : '',
       }))
 
       const response = await processSpreadsheetRows({
@@ -318,7 +509,7 @@ export default function ImportacaoPage() {
             <input
               id="file-upload-input"
               type="file"
-              accept=".csv,.txt"
+              accept=".xlsx,.xls,.csv,.txt"
               className="hidden"
               onChange={handleFileChange}
             />
@@ -329,17 +520,18 @@ export default function ImportacaoPage() {
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-slate-800">{file.name}</p>
                 <p className="text-xs text-slate-500">
-                  {rawRows.length} linhas detectadas no arquivo. Pronto para mapear e processar.
+                  {rawRows.length.toLocaleString('pt-BR')} linhas detectadas no arquivo. Pronto para
+                  mapear e processar.
                 </p>
               </div>
             ) : (
               <div className="space-y-1">
                 <p className="text-sm font-medium text-slate-700">
-                  Clique para selecionar ou arraste o arquivo CSV/XLSX aqui
+                  Clique para selecionar ou arraste o arquivo .XLSX ou .CSV aqui
                 </p>
                 <p className="text-xs text-slate-400">
-                  Suporta arquivos delimitados por vírgula ou ponto-e-vírgula com codificação padrão
-                  brasileira.
+                  Suporte nativo a planilhas Excel (.xlsx / .xls) e arquivos CSV com reconhecimento
+                  automático de layouts.
                 </p>
               </div>
             )}
@@ -367,13 +559,39 @@ export default function ImportacaoPage() {
             </div>
           </div>
 
+          {/* Alerta de Layout Detectado Automaticamente */}
+          {detectedLayout && (
+            <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-lg flex items-start space-x-3 text-xs text-blue-900">
+              <Sparkles className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <span className="font-semibold text-blue-950">
+                    Layout detectado: {detectedLayout.nome}
+                  </span>
+                  <Badge className="bg-blue-600 text-white text-[10px]">Auto-Mapeado</Badge>
+                </div>
+                <p className="text-[11px] text-blue-800 leading-relaxed">
+                  {detectedLayout.descricao} Todos os campos abaixo já foram vinculados às colunas
+                  originais e permanecem editáveis manualmente.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Mapeamento de Colunas */}
           {headers.length > 0 && (
             <div className="space-y-3 pt-2 border-t border-slate-200">
               <div className="flex items-center justify-between">
-                <h4 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">
-                  Mapeamento de Colunas Detectadas
-                </h4>
+                <div className="flex items-center space-x-2">
+                  <h4 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">
+                    Mapeamento de Colunas Detectadas ({headers.length} encontradas)
+                  </h4>
+                  {detectedLayout && (
+                    <span className="text-[11px] font-mono text-emerald-600 font-medium">
+                      ✓ Layout compatível: {detectedLayout.nome}
+                    </span>
+                  )}
+                </div>
                 <span className="text-[11px] text-slate-400">
                   Ajuste os vínculos caso as colunas da sua planilha tenham nomes diferentes.
                 </span>
@@ -508,7 +726,9 @@ export default function ImportacaoPage() {
 
                 {/* Data Última Compra */}
                 <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700">Último Faturamento</Label>
+                  <Label className="text-xs font-medium text-slate-700">
+                    Último Faturamento / Data
+                  </Label>
                   <Select
                     value={mapping.ultima_compra}
                     onValueChange={(val) => setMapping({ ...mapping, ultima_compra: val })}
@@ -526,14 +746,118 @@ export default function ImportacaoPage() {
                   </Select>
                 </div>
 
-                {/* Valor R$ / Toneladas */}
+                {/* Valor R$ / Limite */}
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-slate-700">
-                    Valor R$ Última Compra
+                    Valor R$ / Faturamento / Limite
                   </Label>
                   <Select
                     value={mapping.valor_ultima_compra}
                     onValueChange={(val) => setMapping({ ...mapping, valor_ultima_compra: val })}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Selecione..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {headers.map((h) => (
+                        <SelectItem key={h} value={h} className="text-xs">
+                          {h}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Cidade */}
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-slate-700">Cidade</Label>
+                  <Select
+                    value={mapping.cidade}
+                    onValueChange={(val) => setMapping({ ...mapping, cidade: val })}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Selecione..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {headers.map((h) => (
+                        <SelectItem key={h} value={h} className="text-xs">
+                          {h}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Estado / UF */}
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-slate-700">Estado / UF</Label>
+                  <Select
+                    value={mapping.estado_uf}
+                    onValueChange={(val) => setMapping({ ...mapping, estado_uf: val })}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Selecione..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {headers.map((h) => (
+                        <SelectItem key={h} value={h} className="text-xs">
+                          {h}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Dias Sem Faturar */}
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-slate-700">
+                    Dias Sem Faturar (Recência)
+                  </Label>
+                  <Select
+                    value={mapping.dias_sem_faturar}
+                    onValueChange={(val) => setMapping({ ...mapping, dias_sem_faturar: val })}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Selecione..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {headers.map((h) => (
+                        <SelectItem key={h} value={h} className="text-xs">
+                          {h}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Faixa Última Compra */}
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-slate-700">Faixa de Inatividade</Label>
+                  <Select
+                    value={mapping.faixa}
+                    onValueChange={(val) => setMapping({ ...mapping, faixa: val })}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Selecione..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {headers.map((h) => (
+                        <SelectItem key={h} value={h} className="text-xs">
+                          {h}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Pedido */}
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-slate-700">
+                    Número do Pedido (Reconciliação)
+                  </Label>
+                  <Select
+                    value={mapping.pedido}
+                    onValueChange={(val) => setMapping({ ...mapping, pedido: val })}
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
