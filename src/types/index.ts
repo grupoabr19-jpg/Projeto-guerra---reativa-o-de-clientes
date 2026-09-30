@@ -300,3 +300,39 @@ export interface RankingUserRow {
   totalTitulosDesbloqueados: number
   isCurrentUser: boolean
 }
+
+export type PeriodoAtendimentoFiltro = 'hoje' | '7dias' | '30dias' | 'total'
+
+export interface MetricasAtendimentoOperador {
+  operadorId: string
+  operadorNome: string
+  operadorEmail: string
+  regiao: string
+  role: UserRole
+  atendimentos: number
+  ligacoes: number
+  conversoes: number
+  reagendamentos: number
+  followUpsHoje: number
+  vendasPerdidas: number
+  taxaConversao: number
+  pontosGamificacao: number
+  tituloGamificacao?: {
+    nome: string
+    emoji: string
+  }
+}
+
+export interface MetricasAtendimentosDashboard {
+  gerais: {
+    totalAtendimentos: number
+    ligacoesFeitas: number
+    conversoes: number
+    reagendamentos: number
+    followUpsHoje: number
+    followUpsPendentes: number
+    vendasPerdidas: number
+    taxaConversao: number
+  }
+  operadores: MetricasAtendimentoOperador[]
+}

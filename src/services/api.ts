@@ -1,4 +1,5 @@
 import pb from '@/lib/pocketbase/client'
+import { calculateRankingData } from './gamificacao'
 import type {
   Cliente,
   Interacao,
@@ -281,6 +282,294 @@ export async function updateBaseReferencia(
 
 export async function deleteBaseReferencia(id: string) {
   return pb.collection('bases_referencia').delete(id)
+}
+
+/**
+ * Agrega métricas de atendimentos gerais e por operador para o Dashboard.
+ * Utiliza EXATAMENTE as mesmas definições de MeuPainel e da Gamificação,
+ * aplicando os filtros de período e região selecionados pelo usuário.
+ */
+export async function fetchMetricasAtendimentosDashboard(options?: {
+  periodo?: import('@/types').PeriodoAtendimentoFiltro
+  regiao?: string
+}): Promise<import('@/types').MetricasAtendimentosDashboard> {
+  const periodo = options?.periodo || 'hoje'
+  const regiaoFiltro = options?.regiao && options.regiao !== 'todas' ? options.regiao : null
+
+  // Construir janelas de data
+  const now = new Date()
+  const hojeStr = now.toISOString().slice(0, 10)
+
+  // Filtro de data PocketBase para interações
+  let pbInteracoesFilter = ''
+  if (periodo === 'hoje') {
+    // Interações criadas a partir do início de hoje UTC
+    pbInteracoesFilter = `created >= '${hojeStr} 00:00:00'`
+  } else if (periodo === '7dias') {
+    const seteDiasAtras = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    pbInteracoesFilter = `created >= '${seteDiasAtras.toISOString().slice(0, 10)} 00:00:00'`
+  } else if (periodo === '30dias') {
+    const trintaDiasAtras = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    pbInteracoesFilter = `created >= '${trintaDiasAtras.toISOString().slice(0, 10)} 00:00:00'`
+  }
+
+  // Buscar em paralelo: usuários, interações do período (com expand cliente) e clientes reagendados
+  const [users, interacoes, reagendados, rankingData] = await Promise.all([
+    pb.collection('users').getFullList<import('@/types').User>({ sort: 'name' }),
+    pb.collection('interacoes').getFullList<Interacao>({
+      filter: pbInteracoesFilter || undefined,
+      sort: '-created',
+      expand: 'cliente,operador',
+    }),
+    pb.collection('clientes').getFullList<Cliente>({
+      filter: "reagendado_para != '' || estado = 'reagendado'",
+    }),
+    calculateRankingData({ periodo, regiao: regiaoFiltro || undefined }).catch(() => null),
+  ])
+
+  // Mapa de operadores e usuários
+  const usersMap = new Map<string, import('@/types').User>()
+  for (const u of users) {
+    usersMap.set(u.id, u)
+  }
+
+  // Filtrar usuários por região se selecionado
+  const filteredUsers = users.filter((u) => {
+    if (!regiaoFiltro) return true
+    if (u.regioes && u.regioes.length > 0) {
+      return u.regioes.some(
+        (r) =>
+          r.trim().toUpperCase() === regiaoFiltro.trim().toUpperCase() ||
+          r.includes(regiaoFiltro) ||
+          regiaoFiltro.includes(r),
+      )
+    }
+    // Administrador ou usuário sem região definida
+    return u.role === 'admin'
+  })
+
+  // Operadores e supervisores que participam do atendimento
+  const operadoresList = filteredUsers.filter(
+    (u) => u.role === 'operador' || u.role === 'supervisor',
+  )
+
+  // Mapa de pontos de gamificação e títulos indexados por usuário
+  const gamificacaoPorUsuario = new Map<
+    string,
+    { pontos: number; titulo?: { nome: string; emoji: string } }
+  >()
+  if (rankingData?.ranking) {
+    for (const r of rankingData.ranking) {
+      gamificacaoPorUsuario.set(r.usuario.id, {
+        pontos: r.pontos,
+        titulo: r.tituloAtual
+          ? { nome: r.tituloAtual.nome, emoji: r.tituloAtual.emoji }
+          : undefined,
+      })
+    }
+  }
+
+  // Filtragem de interações por região (se região informada, verificar cliente da interação ou região do operador)
+  const isInteracaoMatchingRegion = (it: Interacao): boolean => {
+    if (!regiaoFiltro) return true
+    const clienteRegiao = it.expand?.cliente?.regiao
+    if (clienteRegiao) {
+      return (
+        clienteRegiao.trim().toUpperCase() === regiaoFiltro.trim().toUpperCase() ||
+        clienteRegiao.includes(regiaoFiltro)
+      )
+    }
+    // Se não tiver região no cliente, checar regiões do operador
+    const op = it.operador ? usersMap.get(it.operador) : undefined
+    if (op?.regioes && op.regioes.length > 0) {
+      return op.regioes.some(
+        (r) =>
+          r.trim().toUpperCase() === regiaoFiltro.trim().toUpperCase() || r.includes(regiaoFiltro),
+      )
+    }
+    return false
+  }
+
+  const interacoesValidas = interacoes.filter(isInteracaoMatchingRegion)
+
+  // Follow-ups no período e reagendados
+  const isReagendadoMatchingRegion = (c: Cliente): boolean => {
+    if (!regiaoFiltro) return true
+    if (c.regiao) {
+      return (
+        c.regiao.trim().toUpperCase() === regiaoFiltro.trim().toUpperCase() ||
+        c.regiao.includes(regiaoFiltro)
+      )
+    }
+    return false
+  }
+
+  const reagendadosValidos = reagendados.filter(isReagendadoMatchingRegion)
+
+  // Follow-ups do dia (reagendados para HOJE)
+  const followUpsHojeList = reagendadosValidos.filter((c) => {
+    if (!c.reagendado_para) return false
+    return c.reagendado_para.slice(0, 10) === hojeStr
+  })
+
+  // Follow-ups pendentes (reagendados com data <= hoje que continuam em estado reagendado)
+  const followUpsPendentesList = reagendadosValidos.filter((c) => {
+    if (!c.reagendado_para) return false
+    return c.reagendado_para.slice(0, 10) <= hojeStr
+  })
+
+  // Cálculo por operador
+  const opMetricsMap = new Map<
+    string,
+    {
+      atendimentos: number
+      ligacoes: number
+      conversoes: number
+      reagendamentos: number
+      followUpsHoje: number
+      vendasPerdidas: number
+    }
+  >()
+
+  // Inicializar todos os operadores da lista
+  for (const op of operadoresList) {
+    opMetricsMap.set(op.id, {
+      atendimentos: 0,
+      ligacoes: 0,
+      conversoes: 0,
+      reagendamentos: 0,
+      followUpsHoje: 0,
+      vendasPerdidas: 0,
+    })
+  }
+
+  // Preencher follow-ups de hoje por operador
+  for (const c of followUpsHojeList) {
+    const opId = c.reagendado_operador || c.operador
+    if (opId && opMetricsMap.has(opId)) {
+      opMetricsMap.get(opId)!.followUpsHoje += 1
+    }
+  }
+
+  // Processar interações
+  for (const it of interacoesValidas) {
+    const opId = it.operador
+    let m = opId ? opMetricsMap.get(opId) : undefined
+
+    if (!m && opId && usersMap.has(opId)) {
+      // Se não estava no filtro de operador mas a interação pertence a um usuário válido
+      m = {
+        atendimentos: 0,
+        ligacoes: 0,
+        conversoes: 0,
+        reagendamentos: 0,
+        followUpsHoje: 0,
+        vendasPerdidas: 0,
+      }
+      opMetricsMap.set(opId, m)
+    }
+
+    const isLigacao = it.tipo === 'ligacao' || it.tipo === 'formulario' || Boolean(it.desfecho)
+    const isConversao =
+      it.desfecho === 'reativado' ||
+      it.desfecho === 'reativado_com_pedido' ||
+      it.desfecho === 'fechou_pedido' ||
+      Boolean(it.numero_pedido)
+    const isReagendamento = it.desfecho === 'reagendado' || Boolean(it.reagendado_para)
+    const isVendaPerdida =
+      it.desfecho === 'compra_terceiros' ||
+      it.desfecho === 'nao_quer_negociar' ||
+      it.desfecho === 'sem_contato'
+
+    if (m) {
+      m.atendimentos += 1
+      if (isLigacao) m.ligacoes += 1
+      if (isConversao) m.conversoes += 1
+      if (isReagendamento) m.reagendamentos += 1
+      if (isVendaPerdida) m.vendasPerdidas += 1
+    }
+  }
+
+  // Montar lista de operadores
+  const operadoresResumo: import('@/types').MetricasAtendimentoOperador[] = []
+
+  for (const op of operadoresList) {
+    const m = opMetricsMap.get(op.id) || {
+      atendimentos: 0,
+      ligacoes: 0,
+      conversoes: 0,
+      reagendamentos: 0,
+      followUpsHoje: 0,
+      vendasPerdidas: 0,
+    }
+
+    const taxa = m.ligacoes > 0 ? Math.round((m.conversoes / m.ligacoes) * 100) : 0
+    const gam = gamificacaoPorUsuario.get(op.id)
+
+    const regioesStr =
+      op.regioes && op.regioes.length > 0 ? op.regioes.join(', ') : 'Sem Região Atribuída'
+
+    operadoresResumo.push({
+      operadorId: op.id,
+      operadorNome: op.name || op.email,
+      operadorEmail: op.email,
+      regiao: regioesStr,
+      role: op.role,
+      atendimentos: m.atendimentos,
+      ligacoes: m.ligacoes,
+      conversoes: m.conversoes,
+      reagendamentos: m.reagendamentos,
+      followUpsHoje: m.followUpsHoje,
+      vendasPerdidas: m.vendasPerdidas,
+      taxaConversao: taxa,
+      pontosGamificacao: gam?.pontos || 0,
+      tituloGamificacao: gam?.titulo,
+    })
+  }
+
+  // Ordenação padrão: por conversões desc, depois por atendimentos desc
+  operadoresResumo.sort((a, b) => {
+    if (b.conversoes !== a.conversoes) return b.conversoes - a.conversoes
+    return b.atendimentos - a.atendimentos
+  })
+
+  // Totais Gerais (Nível 1)
+  const totalGeralAtendimentos = interacoesValidas.length
+  const totalGeralLigacoes = interacoesValidas.filter(
+    (i) => i.tipo === 'ligacao' || i.tipo === 'formulario' || Boolean(i.desfecho),
+  ).length
+  const totalGeralConversoes = interacoesValidas.filter(
+    (i) =>
+      i.desfecho === 'reativado' ||
+      i.desfecho === 'reativado_com_pedido' ||
+      i.desfecho === 'fechou_pedido' ||
+      Boolean(i.numero_pedido),
+  ).length
+  const totalGeralReagendamentos = interacoesValidas.filter(
+    (i) => i.desfecho === 'reagendado' || Boolean(i.reagendado_para),
+  ).length
+  const totalGeralVendasPerdidas = interacoesValidas.filter(
+    (i) =>
+      i.desfecho === 'compra_terceiros' ||
+      i.desfecho === 'nao_quer_negociar' ||
+      i.desfecho === 'sem_contato',
+  ).length
+  const taxaGeral =
+    totalGeralLigacoes > 0 ? Math.round((totalGeralConversoes / totalGeralLigacoes) * 100) : 0
+
+  return {
+    gerais: {
+      totalAtendimentos: totalGeralAtendimentos,
+      ligacoesFeitas: totalGeralLigacoes,
+      conversoes: totalGeralConversoes,
+      reagendamentos: totalGeralReagendamentos,
+      followUpsHoje: followUpsHojeList.length,
+      followUpsPendentes: followUpsPendentesList.length,
+      vendasPerdidas: totalGeralVendasPerdidas,
+      taxaConversao: taxaGeral,
+    },
+    operadores: operadoresResumo,
+  }
 }
 
 // Re-export gamificação APIs
