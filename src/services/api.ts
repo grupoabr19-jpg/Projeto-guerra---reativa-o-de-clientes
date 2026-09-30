@@ -387,22 +387,67 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
     usersMap.set(u.id, u)
   }
 
+  const normalizarNomeRegiao = (nome?: string | null): string => {
+    if (!nome) return ''
+    const upper = nome.trim().toUpperCase()
+    if (
+      upper === 'BRAGANÇA' ||
+      upper === 'BRAGANCA' ||
+      upper === 'BRAGANÇA PAULISTA' ||
+      upper === 'BRAGANCA PAULISTA'
+    )
+      return 'BRAGANÇA'
+    if (upper === 'JUNDIAÍ' || upper === 'JUNDIAI') return 'JUNDIAÍ'
+    if (upper === 'VARGINHA') return 'VARGINHA'
+    if (upper === 'POUSO ALEGRE') return 'POUSO ALEGRE'
+    if (
+      upper === 'POÇOS DE CALDAS' ||
+      upper === 'POCOS DE CALDAS' ||
+      upper === 'POÇOS CALDAS' ||
+      upper === 'POCOS CALDAS'
+    )
+      return 'POÇOS DE CALDAS'
+    if (upper === 'ITAJUBÁ' || upper === 'ITAJUBA') return 'ITAJUBÁ'
+    if (upper === 'EXTREMA') return 'EXTREMA'
+    if (
+      upper === 'CAMBUÍ' ||
+      upper === 'CAMBUI' ||
+      upper === 'MICRO-REGIÃO' ||
+      upper === 'MICRO REGIAO'
+    )
+      return 'CAMBUÍ'
+    if (upper === 'ATACADO') return 'ATACADO'
+    if (upper === 'REPESCAGEM') return 'REPESCAGEM'
+    if (upper === 'SEM REGIÃO' || upper === 'SEM REGIAO') return 'Sem Região'
+    return nome.trim()
+  }
+
+  // Normalizador de região para comparação segura
+  const matchRegiao = (r1?: string | null, r2?: string | null): boolean => {
+    if (!r1 || !r2) return false
+    const n1 = normalizarNomeRegiao(r1).toUpperCase()
+    const n2 = normalizarNomeRegiao(r2).toUpperCase()
+    if (n1 === n2) return true
+    if (n1.includes(n2) || n2.includes(n1)) return true
+    return false
+  }
+
   // Filtrar usuários por região se selecionado
   const filteredUsers = users.filter((u) => {
-    if (!regiaoFiltro) return true
+    if (!regiaoFiltro || regiaoFiltro === 'todas') return true
     if (u.regioes && u.regioes.length > 0) {
-      return u.regioes.some(
-        (r) =>
-          r.trim().toUpperCase() === regiaoFiltro.trim().toUpperCase() ||
-          r.includes(regiaoFiltro) ||
-          regiaoFiltro.includes(r),
-      )
+      return u.regioes.some((r) => matchRegiao(r, regiaoFiltro))
     }
-    // Administrador ou usuário sem região definida
-    return u.role === 'admin'
+    // Usuário sem região atribuída (só inclui se filtro for 'Sem Região')
+    const filtroUpper = regiaoFiltro.trim().toUpperCase()
+    if (filtroUpper === 'SEM REGIÃO' || filtroUpper === 'SEM REGIAO') {
+      return true
+    }
+    return false
   })
 
   // Operadores, supervisores e líderes que participam do atendimento
+  // (e qualquer usuário que tenha atendimentos computados)
   const operadoresList = filteredUsers.filter(
     (u) => u.role === 'operador' || u.role === 'supervisor' || u.role === 'lider',
   )
@@ -425,21 +470,19 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
 
   // Filtragem de interações por região (se região informada, verificar cliente da interação ou região do operador)
   const isInteracaoMatchingRegion = (it: Interacao): boolean => {
-    if (!regiaoFiltro) return true
+    if (!regiaoFiltro || regiaoFiltro === 'todas') return true
     const clienteRegiao = it.expand?.cliente?.regiao
     if (clienteRegiao) {
-      return (
-        clienteRegiao.trim().toUpperCase() === regiaoFiltro.trim().toUpperCase() ||
-        clienteRegiao.includes(regiaoFiltro)
-      )
+      return matchRegiao(clienteRegiao, regiaoFiltro)
     }
     // Se não tiver região no cliente, checar regiões do operador
     const op = it.operador ? usersMap.get(it.operador) : undefined
     if (op?.regioes && op.regioes.length > 0) {
-      return op.regioes.some(
-        (r) =>
-          r.trim().toUpperCase() === regiaoFiltro.trim().toUpperCase() || r.includes(regiaoFiltro),
-      )
+      return op.regioes.some((r) => matchRegiao(r, regiaoFiltro))
+    }
+    const filtroUpper = regiaoFiltro.trim().toUpperCase()
+    if (filtroUpper === 'SEM REGIÃO' || filtroUpper === 'SEM REGIAO') {
+      return !clienteRegiao && (!op?.regioes || op.regioes.length === 0)
     }
     return false
   }
@@ -448,12 +491,13 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
 
   // Follow-ups no período e reagendados
   const isReagendadoMatchingRegion = (c: Cliente): boolean => {
-    if (!regiaoFiltro) return true
+    if (!regiaoFiltro || regiaoFiltro === 'todas') return true
     if (c.regiao) {
-      return (
-        c.regiao.trim().toUpperCase() === regiaoFiltro.trim().toUpperCase() ||
-        c.regiao.includes(regiaoFiltro)
-      )
+      return matchRegiao(c.regiao, regiaoFiltro)
+    }
+    const filtroUpper = regiaoFiltro.trim().toUpperCase()
+    if (filtroUpper === 'SEM REGIÃO' || filtroUpper === 'SEM REGIAO') {
+      return !c.regiao || c.regiao.trim() === ''
     }
     return false
   }
@@ -673,14 +717,8 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
     if (clientesIdsProcessados.has(c.id)) continue
 
     // Checar filtro de região
-    if (regiaoFiltro) {
-      const regUpper = (c.regiao || '').trim().toUpperCase()
-      const filtroUpper = regiaoFiltro.trim().toUpperCase()
-      if (
-        regUpper !== filtroUpper &&
-        !regUpper.includes(filtroUpper) &&
-        !filtroUpper.includes(regUpper)
-      ) {
+    if (regiaoFiltro && regiaoFiltro !== 'todas') {
+      if (!matchRegiao(c.regiao, regiaoFiltro)) {
         continue
       }
     }

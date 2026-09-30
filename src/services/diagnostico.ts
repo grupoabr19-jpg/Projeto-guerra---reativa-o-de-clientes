@@ -363,6 +363,50 @@ export async function fetchRelatorioDiagnostico(options?: {
   let total30Dias = 0
   let totalGeral = 0
 
+  const normalizarNomeRegiao = (nome?: string | null): string => {
+    if (!nome) return ''
+    const upper = nome.trim().toUpperCase()
+    if (
+      upper === 'BRAGANÇA' ||
+      upper === 'BRAGANCA' ||
+      upper === 'BRAGANÇA PAULISTA' ||
+      upper === 'BRAGANCA PAULISTA'
+    )
+      return 'BRAGANÇA'
+    if (upper === 'JUNDIAÍ' || upper === 'JUNDIAI') return 'JUNDIAÍ'
+    if (upper === 'VARGINHA') return 'VARGINHA'
+    if (upper === 'POUSO ALEGRE') return 'POUSO ALEGRE'
+    if (
+      upper === 'POÇOS DE CALDAS' ||
+      upper === 'POCOS DE CALDAS' ||
+      upper === 'POÇOS CALDAS' ||
+      upper === 'POCOS CALDAS'
+    )
+      return 'POÇOS DE CALDAS'
+    if (upper === 'ITAJUBÁ' || upper === 'ITAJUBA') return 'ITAJUBÁ'
+    if (upper === 'EXTREMA') return 'EXTREMA'
+    if (
+      upper === 'CAMBUÍ' ||
+      upper === 'CAMBUI' ||
+      upper === 'MICRO-REGIÃO' ||
+      upper === 'MICRO REGIAO'
+    )
+      return 'CAMBUÍ'
+    if (upper === 'ATACADO') return 'ATACADO'
+    if (upper === 'REPESCAGEM') return 'REPESCAGEM'
+    if (upper === 'SEM REGIÃO' || upper === 'SEM REGIAO') return 'Sem Região'
+    return nome.trim()
+  }
+
+  const matchRegiao = (r1?: string | null, r2?: string | null): boolean => {
+    if (!r1 || !r2) return false
+    const n1 = normalizarNomeRegiao(r1).toUpperCase()
+    const n2 = normalizarNomeRegiao(r2).toUpperCase()
+    if (n1 === n2) return true
+    if (n1.includes(n2) || n2.includes(n1)) return true
+    return false
+  }
+
   // Função auxiliar de checagem de filtros de período e região
   const matchesFilter = (
     dataStr: string,
@@ -370,10 +414,15 @@ export async function fetchRelatorioDiagnostico(options?: {
     regiaoOperador?: string,
   ): boolean => {
     // Filtro de Região
-    if (regiaoFiltro) {
-      const reg = (regiaoCliente || regiaoOperador || '').trim().toUpperCase()
-      const f = regiaoFiltro.trim().toUpperCase()
-      if (reg !== f && !reg.includes(f) && !f.includes(reg)) {
+    if (regiaoFiltro && regiaoFiltro !== 'todas') {
+      const matchCli = regiaoCliente ? matchRegiao(regiaoCliente, regiaoFiltro) : false
+      const matchOp = regiaoOperador ? matchRegiao(regiaoOperador, regiaoFiltro) : false
+      const filtroUpper = regiaoFiltro.trim().toUpperCase()
+      const isSemRegiao = filtroUpper === 'SEM REGIÃO' || filtroUpper === 'SEM REGIAO'
+
+      if (isSemRegiao) {
+        if (regiaoCliente && regiaoCliente.trim() !== '') return false
+      } else if (!matchCli && !matchOp) {
         return false
       }
     }

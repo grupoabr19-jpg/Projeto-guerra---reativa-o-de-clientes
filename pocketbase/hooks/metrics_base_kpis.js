@@ -18,15 +18,25 @@ routerAdd(
       let regiaoCondition = ''
       const params = {}
 
-      if (regiao && regiao !== 'todas') {
+      if (regiao && regiao.toLowerCase() !== 'todas') {
         const upper = regiao.toUpperCase()
         if (upper === 'SEM REGIÃO' || upper === 'SEM REGIAO') {
           regiaoCondition =
             " AND (regiao = '' OR regiao IS NULL OR UPPER(TRIM(regiao)) = 'SEM REGIÃO' OR UPPER(TRIM(regiao)) = 'SEM REGIAO')"
-        } else if (upper === 'BRAGANÇA' || upper === 'BRAGANCA') {
+        } else if (
+          upper === 'BRAGANÇA' ||
+          upper === 'BRAGANCA' ||
+          upper === 'BRAGANÇA PAULISTA' ||
+          upper === 'BRAGANCA PAULISTA'
+        ) {
           regiaoCondition =
             " AND (UPPER(TRIM(regiao)) = 'BRAGANÇA' OR UPPER(TRIM(regiao)) = 'BRAGANCA' OR UPPER(TRIM(regiao)) = 'BRAGANÇA PAULISTA' OR UPPER(TRIM(regiao)) = 'BRAGANCA PAULISTA')"
-        } else if (upper === 'CAMBUÍ' || upper === 'CAMBUI') {
+        } else if (
+          upper === 'CAMBUÍ' ||
+          upper === 'CAMBUI' ||
+          upper === 'MICRO-REGIÃO' ||
+          upper === 'MICRO REGIAO'
+        ) {
           regiaoCondition =
             " AND (UPPER(TRIM(regiao)) = 'CAMBUÍ' OR UPPER(TRIM(regiao)) = 'CAMBUI' OR UPPER(TRIM(regiao)) = 'MICRO-REGIÃO' OR UPPER(TRIM(regiao)) = 'MICRO REGIAO')"
         } else if (
@@ -43,11 +53,21 @@ routerAdd(
         } else if (upper === 'ITAJUBÁ' || upper === 'ITAJUBA') {
           regiaoCondition =
             " AND (UPPER(TRIM(regiao)) = 'ITAJUBÁ' OR UPPER(TRIM(regiao)) = 'ITAJUBA')"
+        } else if (upper === 'VARGINHA') {
+          regiaoCondition = " AND UPPER(TRIM(regiao)) = 'VARGINHA'"
+        } else if (upper === 'POUSO ALEGRE') {
+          regiaoCondition = " AND UPPER(TRIM(regiao)) = 'POUSO ALEGRE'"
+        } else if (upper === 'EXTREMA') {
+          regiaoCondition = " AND UPPER(TRIM(regiao)) = 'EXTREMA'"
         } else if (upper === 'ATACADO') {
           regiaoCondition = " AND UPPER(TRIM(regiao)) = 'ATACADO'"
+        } else if (upper === 'REPESCAGEM') {
+          regiaoCondition = " AND UPPER(TRIM(regiao)) = 'REPESCAGEM'"
         } else {
-          regiaoCondition = ' AND UPPER(TRIM(regiao)) = {:regiaoParam}'
+          regiaoCondition =
+            ' AND (UPPER(TRIM(regiao)) = {:regiaoParam} OR UPPER(TRIM(regiao)) LIKE {:regiaoLike})'
           params.regiaoParam = upper
+          params.regiaoLike = '%' + upper + '%'
         }
       }
 
@@ -77,13 +97,21 @@ routerAdd(
       let kpiRow = {}
       try {
         const queryBuilder = $app.db().newQuery(kpisQuery)
-        for (const k in params) {
-          queryBuilder.bind({ [k]: params[k] })
+        if (params && Object.keys(params).length > 0) {
+          queryBuilder.bind(params)
         }
-        kpiRow = queryBuilder.one() || {}
+        const rows = queryBuilder.all() || []
+        kpiRow = rows.length > 0 ? rows[0] : {}
       } catch (dbErr) {
-        console.log('[metrics_base_kpis] Erro na query de KPIs: ' + dbErr.message)
-        return e.json(500, { error: dbErr.message })
+        console.log(
+          '[metrics_base_kpis] Erro na query de KPIs: ' +
+            (dbErr && dbErr.message ? dbErr.message : String(dbErr)),
+        )
+        return e.json(500, {
+          error:
+            'Erro ao calcular KPIs de base: ' +
+            (dbErr && dbErr.message ? dbErr.message : String(dbErr)),
+        })
       }
 
       const totalBase = Number(kpiRow.total_base || 0)
@@ -166,7 +194,14 @@ routerAdd(
         regioesMap: regioesMap,
       })
     } catch (err) {
-      return e.json(500, { error: err.message })
+      console.log(
+        '[metrics_base_kpis] Erro geral: ' + (err && err.message ? err.message : String(err)),
+      )
+      return e.json(500, {
+        error:
+          'Erro interno ao processar base-kpis: ' +
+          (err && err.message ? err.message : String(err)),
+      })
     }
   },
   $apis.requireAuth(),

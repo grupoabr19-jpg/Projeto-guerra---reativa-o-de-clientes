@@ -124,10 +124,13 @@ export default function RelatoriosPage() {
     }
   }, [isLider, rotaLider])
 
-  // Carga inicial
+  // Estado de erro explícito
+  const [erroCarregamento, setErroCarregamento] = useState<string | null>(null)
+
+  // Carga inicial de metadados (apenas lista de regiões e importações)
   useEffect(() => {
     if (user && user.role !== 'operador') {
-      loadBaseData()
+      loadMetadata()
     }
   }, [user])
 
@@ -142,23 +145,18 @@ export default function RelatoriosPage() {
     return null
   }
 
-  const loadBaseData = async () => {
-    setLoadingGeral(true)
+  const loadMetadata = async () => {
     try {
-      const [resKpis, resI, resRegioes] = await Promise.all([
-        fetchMetricasBaseKpis({ regiao: selectedRegiao }),
+      const [resI, resRegioes] = await Promise.all([
         fetchImportacoes().catch(() => [] as Importacao[]),
         fetchRegioes().catch(() => [] as Regiao[]),
       ])
-      setBaseKpis(resKpis)
       setImportacoes(resI)
       if (resRegioes.length > 0) {
         setRegioesList(resRegioes.map((r) => r.nome))
       }
     } catch (err) {
-      console.error('Erro ao carregar dados de base para relatórios:', err)
-    } finally {
-      setLoadingGeral(false)
+      console.warn('Erro ao carregar metadados auxiliares para relatórios:', err)
     }
   }
 
@@ -167,26 +165,56 @@ export default function RelatoriosPage() {
     setLoadingAtendimentos(true)
     setLoadingDiagnostico(true)
     setLoadingGeral(true)
+    setErroCarregamento(null)
+
+    const errosEncontrados: string[] = []
+
+    // Executar chamadas com tratamento individual de erro para não derrubar o painel todo
+    const promessaAtendimentos = fetchMetricasAtendimentosDashboard({
+      periodo: selectedPeriodo,
+      regiao: regiaoParam,
+    }).catch((err) => {
+      console.error('Falha em fetchMetricasAtendimentosDashboard:', err)
+      errosEncontrados.push('Atividades de atendimento')
+      return null
+    })
+
+    const promessaDiagnostico = fetchRelatorioDiagnostico({
+      periodo: selectedPeriodo,
+      regiao: regiaoParam,
+    }).catch((err) => {
+      console.error('Falha em fetchRelatorioDiagnostico:', err)
+      errosEncontrados.push('Diagnóstico comercial')
+      return null
+    })
+
+    const promessaBaseKpis = fetchMetricasBaseKpis({
+      regiao: selectedRegiao,
+    }).catch((err) => {
+      console.error('Falha em fetchMetricasBaseKpis:', err)
+      errosEncontrados.push('KPIs agregados da base')
+      return null
+    })
 
     try {
       const [dadosAtendimento, dadosDiagnostico, dadosBase] = await Promise.all([
-        fetchMetricasAtendimentosDashboard({
-          periodo: selectedPeriodo,
-          regiao: regiaoParam,
-        }),
-        fetchRelatorioDiagnostico({
-          periodo: selectedPeriodo,
-          regiao: regiaoParam,
-        }),
-        fetchMetricasBaseKpis({
-          regiao: selectedRegiao,
-        }),
+        promessaAtendimentos,
+        promessaDiagnostico,
+        promessaBaseKpis,
       ])
-      setMetricasAtendimento(dadosAtendimento)
-      setDiagnostico(dadosDiagnostico)
-      setBaseKpis(dadosBase)
-    } catch (err) {
+
+      if (dadosAtendimento) setMetricasAtendimento(dadosAtendimento)
+      if (dadosDiagnostico) setDiagnostico(dadosDiagnostico)
+      if (dadosBase) setBaseKpis(dadosBase)
+
+      if (errosEncontrados.length > 0) {
+        setErroCarregamento(
+          `Não foi possível carregar completamente os seguintes módulos: ${errosEncontrados.join(', ')}. Verifique a conexão com o servidor.`,
+        )
+      }
+    } catch (err: any) {
       console.error('Erro ao processar relatórios gerenciais:', err)
+      setErroCarregamento(err?.message || 'Não foi possível carregar as métricas dos relatórios.')
     } finally {
       setLoadingAtendimentos(false)
       setLoadingDiagnostico(false)
@@ -298,6 +326,34 @@ export default function RelatoriosPage() {
 
   return (
     <div className="space-y-8 pb-12">
+      {/* BANNER DE ERRO COM BOTÃO DE TENTAR NOVAMENTE */}
+      {erroCarregamento && (
+        <div className="rounded-xl border border-rose-300 bg-rose-50 p-4 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center space-x-3">
+              <div className="p-2 bg-rose-100 rounded-lg text-rose-700 shrink-0 mt-0.5 sm:mt-0">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-rose-900">
+                  Não foi possível carregar as métricas
+                </h3>
+                <p className="text-xs text-rose-700 mt-0.5">{erroCarregamento}</p>
+              </div>
+            </div>
+            <Button
+              onClick={loadRelatorios}
+              size="sm"
+              variant="default"
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shrink-0"
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              Tentar novamente
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* HEADER DA PÁGINA COM FILTROS E STATUS EXPEDIENTE */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
