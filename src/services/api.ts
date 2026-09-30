@@ -834,9 +834,11 @@ export async function fetchMetricasBaseKpis(options?: {
   const queryStr = params.toString()
   const url = `${basePbUrl}/backend/v1/metrics/base-kpis${queryStr ? `?${queryStr}` : ''}`
 
+  // Garantir token atualizado da authStore (e headers compatíveis com PocketBase)
+  const token = pb.authStore.token || ''
   const headers: Record<string, string> = {}
-  if (pb.authStore.token) {
-    headers['Authorization'] = pb.authStore.token
+  if (token) {
+    headers['Authorization'] = token
   }
 
   const res = await fetch(url, {
@@ -846,7 +848,13 @@ export async function fetchMetricasBaseKpis(options?: {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || err.message || 'Falha ao buscar KPIs de base no servidor')
+    const statusMsg = res.status === 401 ? 'Não autenticado no servidor (sessão expirada)' : ''
+    throw new Error(
+      err.error ||
+        err.message ||
+        statusMsg ||
+        `Falha ao buscar KPIs de base no servidor (${res.status})`,
+    )
   }
 
   const data = await res.json()

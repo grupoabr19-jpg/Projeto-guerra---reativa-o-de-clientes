@@ -24,6 +24,7 @@ import {
   UserX,
   FileText,
   ShieldCheck,
+  AlertTriangle,
   CheckCircle,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -69,6 +70,7 @@ export default function Dashboard() {
   const [metricasAtendimento, setMetricasAtendimento] =
     useState<MetricasAtendimentosDashboard | null>(null)
   const [baseKpisData, setBaseKpisData] = useState<MetricasBaseKpisResponse | null>(null)
+  const [erroBaseKpis, setErroBaseKpis] = useState<string | null>(null)
 
   // Ordenação da tabela por operador
   const [sortField, setSortField] = useState<
@@ -106,10 +108,11 @@ export default function Dashboard() {
 
   const loadDataBase = async () => {
     setLoading(true)
+    setErroBaseKpis(null)
     try {
       const [resKpis, resImp, resRegioes] = await Promise.all([
         fetchMetricasBaseKpis({ regiao: selectedRegion }),
-        fetchImportacoes(),
+        fetchImportacoes().catch(() => [] as Importacao[]),
         fetchRegioes().catch(() => [] as Regiao[]),
       ])
       setBaseKpisData(resKpis)
@@ -117,8 +120,9 @@ export default function Dashboard() {
       if (resRegioes.length > 0) {
         setRegioesList(resRegioes.map((r) => r.nome))
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao carregar métricas de base:', err)
+      setErroBaseKpis(err?.message || 'Falha ao carregar KPIs da base')
     } finally {
       setLoading(false)
     }
@@ -848,7 +852,24 @@ export default function Dashboard() {
       )}
 
       {/* SEÇÃO DA BASE DE CLIENTES E INATIVOS (KPIS ORIGINAIS DA CARTEIRA) */}
-      <div className="pt-2">
+      <div className="pt-2 space-y-3">
+        {erroBaseKpis && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 flex items-center justify-between text-xs text-amber-900 shadow-2xs">
+            <div className="flex items-center space-x-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+              <span>Não foi possível atualizar os KPIs da base ({erroBaseKpis}).</span>
+            </div>
+            <Button
+              onClick={loadDataBase}
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs bg-white text-amber-900 border-amber-300 hover:bg-amber-100"
+            >
+              <RefreshCw className="h-3 w-3 mr-1" />
+              Tentar novamente
+            </Button>
+          </div>
+        )}
         <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3">
           Métricas de Carteira e Recuperação da Base
         </h3>

@@ -134,7 +134,7 @@ export default function RelatoriosPage() {
     }
   }, [user])
 
-  // Recarrega relatórios quando filtros mudam
+  // Recarrega relatórios quando filtros mudam ou quando autenticação é restabelecida
   useEffect(() => {
     if (user && user.role !== 'operador') {
       loadRelatorios()
@@ -192,7 +192,7 @@ export default function RelatoriosPage() {
       regiao: selectedRegiao,
     }).catch((err) => {
       console.error('Falha em fetchMetricasBaseKpis:', err)
-      errosEncontrados.push('KPIs agregados da base')
+      errosEncontrados.push('KPIs da base')
       return null
     })
 
