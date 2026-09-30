@@ -340,4 +340,24 @@ export interface MetricasAtendimentosDashboard {
     taxaConversao: number
   }
   operadores: MetricasAtendimentoOperador[]
+  ativosRemovidos?: MetricasAtivosRemovidos
+}
+
+export interface ClienteAtivoRemovidoItem {
+  id: string
+  codigo: string
+  nome: string
+  regiao: string
+  motivo_completo: string
+  motivo_categoria: string
+  observacao: string
+  operador_nome: string
+  operador_id?: string
+  data_remocao: string
+}
+
+export interface MetricasAtivosRemovidos {
+  total: number
+  breakdown: Record<string, number>
+  itens: ClienteAtivoRemovidoItem[]
 }

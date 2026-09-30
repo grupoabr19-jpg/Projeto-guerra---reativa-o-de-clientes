@@ -51,7 +51,7 @@ import {
   updateRegiao,
 } from '@/services/api'
 import pb from '@/lib/pocketbase/client'
-import type { User, Configuracao, Regiao } from '@/types'
+import type { User, UserRole, Configuracao, Regiao } from '@/types'
 import { REGIOES_PADRAO, TODAS_REGIOES_FILTRO } from '@/types'
 import { MapPin, Info, Edit2, Check, AlertCircle, ShieldCheck, Trash2 } from 'lucide-react'
 import {

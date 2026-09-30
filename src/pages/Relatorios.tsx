@@ -21,9 +21,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { fetchClientes, fetchImportacoes, fetchRegioes } from '@/services/api'
-import type { Cliente, Importacao, Regiao } from '@/types'
+import {
+  fetchClientes,
+  fetchImportacoes,
+  fetchRegioes,
+  fetchClientesAtivosRemovidos,
+} from '@/services/api'
+import type {
+  Cliente,
+  Importacao,
+  Regiao,
+  PeriodoAtendimentoFiltro,
+  MetricasAtivosRemovidos,
+} from '@/types'
 import { TODAS_REGIOES_FILTRO } from '@/types'
+import { ShieldCheck, Calendar, Search } from 'lucide-react'
 
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
@@ -37,6 +49,15 @@ export default function RelatoriosPage() {
   const [regioesList, setRegioesList] = useState<string[]>([...TODAS_REGIOES_FILTRO])
   const [loading, setLoading] = useState(true)
   const [selectedRegiao, setSelectedRegiao] = useState<string>('todas')
+  const [selectedPeriodo, setSelectedPeriodo] = useState<PeriodoAtendimentoFiltro>('total')
+  const [ativosRemovidos, setAtivosRemovidos] = useState<MetricasAtivosRemovidos>({
+    total: 0,
+    breakdown: {},
+    itens: [],
+  })
+  const [loadingAtivos, setLoadingAtivos] = useState(false)
+  const [buscaAtivos, setBuscaAtivos] = useState('')
+  const [filtroMotivoAtivos, setFiltroMotivoAtivos] = useState<string>('todos')
 
   useEffect(() => {
     if (user && (user.role === 'operador' || user.role === 'lider')) {
@@ -47,8 +68,30 @@ export default function RelatoriosPage() {
   useEffect(() => {
     if (user && user.role !== 'operador' && user.role !== 'lider') {
       loadData()
+      loadAtivosRemovidos()
     }
   }, [user])
+
+  useEffect(() => {
+    if (user && user.role !== 'operador' && user.role !== 'lider') {
+      loadAtivosRemovidos()
+    }
+  }, [selectedRegiao, selectedPeriodo])
+
+  const loadAtivosRemovidos = async () => {
+    setLoadingAtivos(true)
+    try {
+      const res = await fetchClientesAtivosRemovidos({
+        regiao: selectedRegiao !== 'todas' ? selectedRegiao : undefined,
+        periodo: selectedPeriodo,
+      })
+      setAtivosRemovidos(res)
+    } catch (err) {
+      console.error('Erro ao carregar clientes ativos removidos:', err)
+    } finally {
+      setLoadingAtivos(false)
+    }
+  }
 
   if (user?.role === 'operador' || user?.role === 'lider') {
     return null

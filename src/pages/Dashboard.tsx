@@ -21,6 +21,10 @@ import {
   RefreshCw,
   Headphones,
   Award,
+  UserX,
+  FileText,
+  ShieldCheck,
+  CheckCircle,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -177,6 +181,12 @@ export default function Dashboard() {
     regioesMap[r].total += 1
     regioesMap[r].scoreSum += c.score || 0
   })
+
+  const ativosRemovidosData = metricasAtendimento?.ativosRemovidos || {
+    total: 0,
+    breakdown: {},
+    itens: [],
+  }
 
   return (
     <div className="space-y-6">
@@ -837,7 +847,7 @@ export default function Dashboard() {
         <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3">
           Métricas de Carteira e Recuperação da Base
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <Card className="border-slate-200 shadow-sm hover:shadow transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -908,7 +918,200 @@ export default function Dashboard() {
               </p>
             </CardContent>
           </Card>
+
+          {/* NOVO CARD: Clientes Ativos Removidos da Base */}
+          <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50/70 via-white to-teal-50/40 shadow-sm hover:border-emerald-400 transition-colors">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <div>
+                <CardTitle className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>Ativos Fora da Base</span>
+                  <Badge className="bg-emerald-600 text-white text-[9px] px-1 py-0">
+                    Limpeza
+                  </Badge>
+                </CardTitle>
+                <span className="text-[10px] text-emerald-700 block">
+                  Clientes ativos removidos da esteira
+                </span>
+              </div>
+              <div className="h-8 w-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0 shadow-2xs">
+                <ShieldCheck className="h-4 w-4" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-baseline justify-between">
+                <div className="text-2xl font-black text-emerald-700 tabular-nums font-mono">
+                  {loadingAtendimentos ? '—' : ativosRemovidosData.total}
+                </div>
+                <Link
+                  to="/relatorios"
+                  className="text-[11px] font-semibold text-emerald-800 hover:text-emerald-950 hover:underline flex items-center"
+                >
+                  Ver no Relatório &rarr;
+                </Link>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1">
+                {selectedPeriodo === 'hoje'
+                  ? 'Removidos hoje'
+                  : selectedPeriodo === '7dias'
+                    ? 'Últimos 7 dias'
+                    : selectedPeriodo === '30dias'
+                      ? 'Últimos 30 dias'
+                      : 'Acumulado total'}
+                {selectedRegion !== 'todas' ? ` • ${selectedRegion}` : ' • Todas rotas'}
+              </p>
+            </CardContent>
+          </Card>
         </div>
+      </div>
+
+      {/* BLOCO DE AUDITORIA: CLIENTES ATIVOS REMOVIDOS DA BASE COM BREAKDOWN POR MOTIVO */}
+      <div className="space-y-3">
+        <Card className="border-emerald-200/80 bg-white shadow-sm overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-emerald-50/60 via-teal-50/30 to-white pb-3 border-b border-emerald-100">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center space-x-2">
+                <div className="h-8 w-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                  <ShieldCheck className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <CardTitle className="text-sm font-bold text-slate-900">
+                      Clientes Ativos Removidos da Base — Auditoria de Limpeza
+                    </CardTitle>
+                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-mono text-xs">
+                      {loadingAtendimentos ? '—' : ativosRemovidosData.total} registros
+                    </Badge>
+                  </div>
+                  <CardDescription className="text-xs text-slate-500">
+                    Cadastros que constavam na base de inativos mas continuam faturando (CPF/CNPJ terceiro ou acompanhamento periódico do vendedor).
+                  </CardDescription>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className="bg-white text-slate-600 border-slate-300 text-[10px] font-mono"
+                >
+                  {selectedPeriodo === 'hoje'
+                    ? 'Filtro: Hoje'
+                    : selectedPeriodo === '7dias'
+                      ? 'Filtro: 7 Dias'
+                      : selectedPeriodo === '30dias'
+                        ? 'Filtro: 30 Dias'
+                        : 'Filtro: Total'}
+                </Badge>
+                {selectedRegion !== 'todas' && (
+                  <Badge
+                    variant="outline"
+                    className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]"
+                  >
+                    {selectedRegion}
+                  </Badge>
+                )}
+                <Link to="/relatorios">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200"
+                  >
+                    Ver Tabela Completa em Relatórios
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 space-y-4">
+            {/* Grid com o Breakdown por Motivo */}
+            <div>
+              <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-2.5">
+                Breakdown por Motivo de Exclusão da Fila
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {Object.entries(ativosRemovidosData.breakdown).map(([motivo, count]) => {
+                  const perc =
+                    ativosRemovidosData.total > 0
+                      ? Math.round((count / ativosRemovidosData.total) * 100)
+                      : 0
+                  return (
+                    <div
+                      key={motivo}
+                      className="p-3 rounded-lg border border-slate-200 bg-slate-50/50 hover:bg-emerald-50/40 transition-colors space-y-1.5"
+                    >
+                      <div className="flex items-start justify-between gap-1">
+                        <span className="text-xs font-semibold text-slate-800 leading-tight">
+                          {motivo}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className="bg-white border-emerald-300 text-emerald-800 font-mono font-bold text-xs shrink-0"
+                        >
+                          {count}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>Frequência:</span>
+                        <span className="font-mono font-semibold text-slate-700">{perc}%</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-500 rounded-full transition-all"
+                          style={{ width: `${Math.max(perc, count > 0 ? 5 : 0)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Amostra rápida dos últimos clientes ativos removidos no filtro */}
+            {ativosRemovidosData.itens.length > 0 && (
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="font-semibold text-slate-700">
+                    Últimas Remoções no Período (mostrando até 5 de {ativosRemovidosData.total}):
+                  </span>
+                  <Link
+                    to="/relatorios"
+                    className="text-emerald-700 hover:text-emerald-900 font-semibold text-[11px]"
+                  >
+                    Abrir auditoria detalhada &rarr;
+                  </Link>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {ativosRemovidosData.itens.slice(0, 5).map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-2.5 rounded-lg border border-slate-200 bg-white text-xs space-y-1 hover:border-emerald-300 transition-colors shadow-2xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-bold text-blue-700">{item.codigo}</span>
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] bg-emerald-50 text-emerald-800 border-emerald-200"
+                        >
+                          {item.regiao}
+                        </Badge>
+                      </div>
+                      <p className="font-semibold text-slate-800 truncate" title={item.nome}>
+                        {item.nome}
+                      </p>
+                      <p className="text-[11px] text-emerald-800 font-medium truncate" title={item.motivo_completo}>
+                        {item.motivo_categoria}
+                      </p>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5">
+                        <span className="truncate max-w-[120px]">Por: {item.operador_nome}</span>
+                        <span className="font-mono">
+                          {new Date(item.data_remocao).toLocaleDateString('pt-BR')}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Grid Charts & Status */}

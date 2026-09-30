@@ -8,6 +8,8 @@ import type {
   Configuracao,
   Regiao,
   User,
+  MetricasAtivosRemovidos,
+  ClienteAtivoRemovidoItem,
 } from '@/types'
 
 export async function fetchClientes(params?: {
@@ -350,8 +352,8 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
     pbInteracoesFilter = `created >= '${trintaDiasAtras.toISOString().slice(0, 10)} 00:00:00'`
   }
 
-  // Buscar em paralelo: usuários, interações do período (com expand cliente) e clientes reagendados
-  const [users, interacoes, reagendados, rankingData] = await Promise.all([
+  // Buscar em paralelo: usuários, interações do período (com expand cliente), clientes reagendados e clientes marcados como ativo_fora_base
+  const [users, interacoes, reagendados, rankingData, clientesAtivosRemovidos] = await Promise.all([
     pb.collection('users').getFullList<import('@/types').User>({ sort: 'name' }),
     pb.collection('interacoes').getFullList<Interacao>({
       filter: pbInteracoesFilter || undefined,
@@ -362,6 +364,10 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
       filter: "reagendado_para != '' || estado = 'reagendado'",
     }),
     calculateRankingData({ periodo, regiao: regiaoFiltro || undefined }).catch(() => null),
+    pb.collection('clientes').getFullList<Cliente>({
+      filter: "ativo_fora_base = true || estado = 'ativo_fora_base'",
+      sort: '-updated',
+    }).catch(() => [] as Cliente[]),
   ])
 
   // Mapa de operadores e usuários
@@ -594,6 +600,132 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
   const taxaGeral =
     totalGeralLigacoes > 0 ? Math.round((totalGeralConversoes / totalGeralLigacoes) * 100) : 0
 
+  // ==========================================
+  // AGREGADOR: CLIENTES ATIVOS REMOVIDOS DA BASE
+  // ==========================================
+  // Encontrar todas as interações de desfecho 'ativo_fora_base' (completas do banco ou do período)
+  // Mapeamos a última interação por cliente para capturar o operador que registrou, observação e data exata
+  const interacoesAtivoForaBase = await pb
+    .collection('interacoes')
+    .getFullList<Interacao>({
+      filter: "desfecho = 'ativo_fora_base'",
+      sort: '-created',
+      expand: 'cliente,operador',
+    })
+    .catch(() => [] as Interacao[])
+
+  // Mapa clienteId -> última interação de ativo_fora_base
+  const mapInteracaoPorCliente = new Map<string, Interacao>()
+  for (const it of interacoesAtivoForaBase) {
+    const cId = it.cliente || it.expand?.cliente?.id
+    if (cId && !mapInteracaoPorCliente.has(cId)) {
+      mapInteracaoPorCliente.set(cId, it)
+    }
+  }
+
+  // Filtrar clientes ativos removidos pelo filtro de região e de período
+  const ativosRemovidosFiltrados: ClienteAtivoRemovidoItem[] = []
+  const breakdownMotivos: Record<string, number> = {
+    'Compra por CPF de terceiro': 0,
+    'Compra por CNPJ de terceiro / coligada': 0,
+    'Acompanhamento periódico do vendedor': 0,
+    'Cliente ativo em outro cadastro/filial': 0,
+    'Outros motivos': 0,
+  }
+
+  // Função auxiliar de normalização de categoria de motivo
+  const categorizarMotivo = (motivoRaw?: string): string => {
+    if (!motivoRaw) return 'Outros motivos'
+    const lower = motivoRaw.toLowerCase()
+    if (lower.includes('cpf')) return 'Compra por CPF de terceiro'
+    if (lower.includes('cnpj') || lower.includes('coligada'))
+      return 'Compra por CNPJ de terceiro / coligada'
+    if (lower.includes('acompanhamento') || lower.includes('vendedor'))
+      return 'Acompanhamento periódico do vendedor'
+    if (lower.includes('faturando') || lower.includes('filial') || lower.includes('outro cadastro'))
+      return 'Cliente ativo em outro cadastro/filial'
+    return 'Outros motivos'
+  }
+
+  // Juntar clientes com flag ativo_fora_base e os que têm interação ativo_fora_base
+  const clientesIdsProcessados = new Set<string>()
+
+  // Lista combinada de clientes
+  const listaCandidatosAtivos = [...clientesAtivosRemovidos]
+  for (const it of interacoesAtivoForaBase) {
+    if (it.expand?.cliente && !listaCandidatosAtivos.some((c) => c.id === it.expand!.cliente!.id)) {
+      listaCandidatosAtivos.push(it.expand.cliente)
+    }
+  }
+
+  for (const c of listaCandidatosAtivos) {
+    if (clientesIdsProcessados.has(c.id)) continue
+
+    // Checar filtro de região
+    if (regiaoFiltro) {
+      const regUpper = (c.regiao || '').trim().toUpperCase()
+      const filtroUpper = regiaoFiltro.trim().toUpperCase()
+      if (regUpper !== filtroUpper && !regUpper.includes(filtroUpper) && !filtroUpper.includes(regUpper)) {
+        continue
+      }
+    }
+
+    const it = mapInteracaoPorCliente.get(c.id)
+    const dataRemocao = it?.created || c.updated || c.created
+
+    // Checar filtro de período com base na data de remoção
+    if (periodo === 'hoje') {
+      if (dataRemocao.slice(0, 10) !== hojeStr) continue
+    } else if (periodo === '7dias') {
+      const seteDiasAtrasStr = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
+      if (dataRemocao < seteDiasAtrasStr) continue
+    } else if (periodo === '30dias') {
+      const trintaDiasAtrasStr = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      if (dataRemocao < trintaDiasAtrasStr) continue
+    }
+
+    clientesIdsProcessados.add(c.id)
+
+    // Extrair motivo e observação
+    const motivoBruto = c.motivo_ativo_fora_base || it?.motivo || it?.conteudo || 'Motivo não informado'
+    let motivoPrincipal = motivoBruto
+    let observacaoExtra = ''
+
+    if (motivoBruto.includes(' — ')) {
+      const parts = motivoBruto.split(' — ')
+      motivoPrincipal = parts[0].trim()
+      observacaoExtra = parts.slice(1).join(' — ').trim()
+    }
+
+    const categoria = categorizarMotivo(motivoPrincipal)
+    breakdownMotivos[categoria] = (breakdownMotivos[categoria] || 0) + 1
+
+    const opUser = it?.expand?.operador || (c.operador ? usersMap.get(c.operador) : undefined)
+    const operadorNome = opUser?.name || opUser?.email || (it?.operador ? 'Operador registrado' : 'Sistema / Manual')
+
+    ativosRemovidosFiltrados.push({
+      id: c.id,
+      codigo: c.codigo || '—',
+      nome: c.nome || 'Cliente sem nome',
+      regiao: c.regiao || 'Sem Região',
+      motivo_completo: motivoBruto,
+      motivo_categoria: categoria,
+      observacao: observacaoExtra,
+      operador_nome: operadorNome,
+      operador_id: it?.operador || c.operador,
+      data_remocao: dataRemocao,
+    })
+  }
+
+  // Ordenar mais recentes primeiro
+  ativosRemovidosFiltrados.sort((a, b) => (b.data_remocao > a.data_remocao ? 1 : -1))
+
+  const ativosRemovidosMetricas: MetricasAtivosRemovidos = {
+    total: ativosRemovidosFiltrados.length,
+    breakdown: breakdownMotivos,
+    itens: ativosRemovidosFiltrados,
+  }
+
   return {
     gerais: {
       totalAtendimentos: totalGeralAtendimentos,
@@ -606,7 +738,29 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
       taxaConversao: taxaGeral,
     },
     operadores: operadoresResumo,
+    ativosRemovidos: ativosRemovidosMetricas,
   }
+}
+
+/**
+ * Busca detalhada de clientes ativos removidos da base com paginação/listagem
+ * para a tela de Relatórios e Auditoria.
+ */
+export async function fetchClientesAtivosRemovidos(options?: {
+  regiao?: string
+  periodo?: import('@/types').PeriodoAtendimentoFiltro
+}): Promise<MetricasAtivosRemovidos> {
+  const dashData = await fetchMetricasAtendimentosDashboard({
+    periodo: options?.periodo || 'total',
+    regiao: options?.regiao,
+  })
+  return (
+    dashData.ativosRemovidos || {
+      total: 0,
+      breakdown: {},
+      itens: [],
+    }
+  )
 }
 
 // Re-export gamificação APIs
