@@ -8,6 +8,7 @@ interface AuthContextType {
   isLoading: boolean
   login: (email: string, pass: string) => Promise<void>
   logout: () => void
+  refreshUser: () => Promise<void>
   hasRole: (roles: UserRole | UserRole[]) => boolean
   hasRegiaoAccess: (regiao?: string) => boolean
 }
@@ -53,6 +54,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null)
   }
 
+  const refreshUser = async () => {
+    try {
+      if (pb.authStore.isValid && pb.authStore.record?.id) {
+        const fresh = await pb.collection('users').getOne<User>(pb.authStore.record.id)
+        pb.authStore.save(pb.authStore.token, fresh as any)
+        setUser(fresh)
+      }
+    } catch (e) {
+      console.warn('Falha ao atualizar dados de autenticação:', e)
+    }
+  }
+
   const hasRole = (roles: UserRole | UserRole[]): boolean => {
     if (!user) return false
     const allowed = Array.isArray(roles) ? roles : [roles]
@@ -79,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         login,
         logout,
+        refreshUser,
         hasRole,
         hasRegiaoAccess,
       }}

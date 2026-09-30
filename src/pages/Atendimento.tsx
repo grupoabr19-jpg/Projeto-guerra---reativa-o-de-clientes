@@ -52,6 +52,8 @@ import {
   releaseQueueLock,
   syncKommoLead,
   reserveNextQueueClient,
+  transferClienteOperador,
+  fetchUsers,
 } from '@/services/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { toast } from '@/hooks/use-toast'
@@ -90,6 +92,13 @@ export default function AtendimentoPage() {
   // Timeline nova nota
   const [novaNota, setNovaNota] = useState('')
   const [savingNota, setSavingNota] = useState(false)
+
+  // Atribuição / Transferência de cliente para colega da mesma região
+  const [showTransferModal, setShowTransferModal] = useState(false)
+  const [operadoresRegiao, setOperadoresRegiao] = useState<User[]>([])
+  const [selectedDestinoOp, setSelectedDestinoOp] = useState('')
+  const [motivoTransferencia, setMotivoTransferencia] = useState('')
+  const [transferindo, setTransferindo] = useState(false)
 
   useEffect(() => {
     if (clientId) {
@@ -214,6 +223,74 @@ export default function AtendimentoPage() {
       console.error('Falha ao carregar cliente:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Carregar colegas da MESMA região do cliente para o dropdown de transferência
+  const handleOpenTransferModal = async () => {
+    if (!cliente) return
+    try {
+      const allUsers = await fetchUsers()
+      const regiaoCliente = (cliente.regiao || '').trim().toUpperCase()
+      // Filtrar operadores da mesma região/rota do cliente, excluindo o operador logado
+      const colegas = allUsers.filter((u) => {
+        if (u.id === user?.id) return false
+        // Se o usuário tem essa região na lista dele
+        const regioesUser = (u.regioes || []).map((r) => r.trim().toUpperCase())
+        return regioesUser.includes(regiaoCliente)
+      })
+      setOperadoresRegiao(colegas)
+      setSelectedDestinoOp(colegas.length > 0 ? colegas[0].id : '')
+      setMotivoTransferencia(
+        `Cliente da carteira de ${cliente.regiao} — repasse para especialista/colega responsável`,
+      )
+      setShowTransferModal(true)
+    } catch (err) {
+      console.error('Erro ao buscar operadores da região:', err)
+      toast({
+        variant: 'destructive',
+        title: 'Erro',
+        description: 'Não foi possível carregar a lista de operadores da região.',
+      })
+    }
+  }
+
+  // Confirmar a transferência / atribuição de cliente para colega da mesma região
+  const handleConfirmTransfer = async () => {
+    if (!cliente || !selectedDestinoOp) {
+      alert('Selecione o operador de destino.')
+      return
+    }
+
+    setTransferindo(true)
+    try {
+      const destinoUser = operadoresRegiao.find((u) => u.id === selectedDestinoOp)
+      const destinoNome = destinoUser?.name || destinoUser?.email || 'Colega'
+
+      await transferClienteOperador({
+        cliente_id: cliente.id,
+        destino_operador_id: selectedDestinoOp,
+        motivo: motivoTransferencia || 'Transferência entre vendedores da mesma região',
+        rascunho_respostas: answers,
+      })
+
+      toast({
+        title: 'Cliente atribuído com sucesso!',
+        description: `O cadastro foi repassado para ${destinoNome} e será o PRIMEIRO a cair nos follow-ups dele.`,
+      })
+
+      setShowTransferModal(false)
+      setCliente(null)
+      navigate(user?.role === 'operador' ? '/meu-painel' : '/fila')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao transferir cliente'
+      toast({
+        variant: 'destructive',
+        title: 'Erro na transferência',
+        description: msg,
+      })
+    } finally {
+      setTransferindo(false)
     }
   }
 
@@ -545,7 +622,17 @@ export default function AtendimentoPage() {
                 </div>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleOpenTransferModal}
+                  className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 font-semibold text-xs h-9 px-3.5 shadow-xs"
+                  title="Atribuir este cliente a um colega da mesma região"
+                >
+                  <Users className="h-4 w-4 mr-1.5 text-indigo-600" />
+                  Atribuir cliente para...
+                </Button>
                 <Button
                   size="sm"
                   onClick={() => setShowQuestionarioModal(true)}
@@ -1351,6 +1438,108 @@ export default function AtendimentoPage() {
               </Card>
             </div>
           </div>
+
+          {/* Modal de Atribuição / Transferência de Cliente entre Operadores da Mesma Região */}
+          {showTransferModal && cliente && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                <div className="p-4 bg-indigo-900 text-white flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Users className="h-5 w-5 text-indigo-300" />
+                    <div>
+                      <h3 className="font-bold text-sm">Atribuir Cliente para Colega</h3>
+                      <p className="text-[11px] text-indigo-200">
+                        Região: <strong className="text-white">{cliente.regiao}</strong>
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowTransferModal(false)}
+                    className="text-indigo-200 hover:text-white text-xs px-2 py-1 rounded bg-indigo-800"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1">
+                    <p className="font-semibold text-slate-800">
+                      {cliente.codigo} • {cliente.nome}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      O cliente será transferido e agendado com <strong>PRIORIDADE MÁXIMA</strong>{' '}
+                      para o colega selecionado, sendo o primeiro cadastro a cair na fila dele.
+                    </p>
+                  </div>
+
+                  {operadoresRegiao.length === 0 ? (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                      Nenhum outro operador vinculado à região <strong>{cliente.regiao}</strong> foi
+                      encontrado no momento. Solicite ao administrador a inclusão de colegas nessa
+                      região em Configurações.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-bold text-slate-800">
+                          Atribuir cliente para:
+                        </Label>
+                        <Select
+                          value={selectedDestinoOp}
+                          onValueChange={(val) => setSelectedDestinoOp(val)}
+                        >
+                          <SelectTrigger className="h-9 text-xs bg-white border-slate-300">
+                            <SelectValue placeholder="Selecione o colega da região..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {operadoresRegiao.map((op) => (
+                              <SelectItem key={op.id} value={op.id} className="text-xs">
+                                {op.name || op.email} ({op.role || 'operador'})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-700">
+                          Motivo do repasse / Observação interna:
+                        </Label>
+                        <Textarea
+                          value={motivoTransferencia}
+                          onChange={(e) => setMotivoTransferencia(e.target.value)}
+                          placeholder="Ex: Cliente da carteira de especialista / construção civil..."
+                          rows={3}
+                          className="text-xs"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowTransferModal(false)}
+                    className="text-xs"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleConfirmTransfer}
+                    disabled={transferindo || operadoresRegiao.length === 0 || !selectedDestinoOp}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold"
+                  >
+                    {transferindo ? 'Atribuindo...' : 'Confirmar Atribuição'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Modal / Dialog de Confirmação do Atendimento (17 Perguntas) quando o operador clica em "Confirmar Atendimento" */}
           {showQuestionarioModal && (

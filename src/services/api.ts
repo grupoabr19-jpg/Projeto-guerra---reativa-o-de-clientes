@@ -132,7 +132,7 @@ export async function fetchInteracoesByOperador(operadorId: string) {
 export async function fetchClientesReagendadosOperador(operadorId: string) {
   return pb.collection('clientes').getFullList<Cliente>({
     filter: `reagendado_operador = '${operadorId}' && reagendado_para != ''`,
-    sort: 'reagendado_para',
+    sort: '-prioridade_transferencia,reagendado_para',
   })
 }
 
@@ -146,6 +146,38 @@ export async function releaseQueueLock(clienteId: string, rascunho?: Record<stri
     body: JSON.stringify({ cliente_id: clienteId, rascunho_respostas: rascunho }),
   })
   return res.json()
+}
+
+export async function transferClienteOperador(data: {
+  cliente_id: string
+  destino_operador_id: string
+  motivo?: string
+  rascunho_respostas?: Record<string, unknown>
+}) {
+  const res = await fetch(
+    `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/queue/transfer-client`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: pb.authStore.token,
+      },
+      body: JSON.stringify(data),
+    },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || err.message || 'Falha ao transferir cliente')
+  }
+  return res.json()
+}
+
+export async function fetchUsers() {
+  return pb.collection('users').getFullList<User>({ sort: 'name' })
+}
+
+export async function updateUserProfile(userId: string, data: Partial<User>) {
+  return pb.collection('users').update<User>(userId, data)
 }
 
 // Kommo API calls

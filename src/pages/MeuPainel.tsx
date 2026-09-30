@@ -400,6 +400,11 @@ export function MeuPainelPage() {
                         >
                           {c.codigo}
                         </Badge>
+                        {c.prioridade_transferencia && (
+                          <Badge className="bg-indigo-600 text-white text-[9px] px-1.5 py-0 font-bold">
+                            ⭐ Repassado por Colega (Prioridade)
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex items-center space-x-2 text-[11px] text-slate-500">
                         <span>{c.regiao || 'Sem Região'}</span>

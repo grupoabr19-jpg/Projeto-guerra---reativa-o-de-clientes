@@ -126,8 +126,9 @@ export default function ConfiguracoesPage() {
   const [novasRegioesSelected, setNovasRegioesSelected] = useState<string[]>(['POÇOS DE CALDAS'])
   const [isCreatingUser, setIsCreatingUser] = useState(false)
 
-  // Edição de Regiões de Usuário existente
+  // Edição de Usuário existente (Role + Regiões)
   const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [editUserRole, setEditUserRole] = useState<'operador' | 'supervisor' | 'admin'>('operador')
   const [editUserRegioes, setEditUserRegioes] = useState<string[]>([])
   const [savingUserRegioes, setSavingUserRegioes] = useState(false)
 
@@ -322,6 +323,7 @@ export default function ConfiguracoesPage() {
 
   const handleOpenEditUser = (u: User) => {
     setEditingUser(u)
+    setEditUserRole(u.role || 'operador')
     setEditUserRegioes(u.regioes || [])
   }
 
@@ -329,14 +331,19 @@ export default function ConfiguracoesPage() {
     if (!editingUser) return
     setSavingUserRegioes(true)
     try {
-      await pb.collection('users').update(editingUser.id, {
+      const updatePayload: Record<string, unknown> = {
         regioes: editUserRegioes,
-      })
-      alert(`Regiões de ${editingUser.name} atualizadas!`)
+      }
+      // Apenas admin tem permissão de alterar o nível de acesso (role)
+      if (user?.role === 'admin') {
+        updatePayload.role = editUserRole
+      }
+      await pb.collection('users').update(editingUser.id, updatePayload)
+      alert(`Cadastro e permissões de ${editingUser.name} atualizados com sucesso!`)
       setEditingUser(null)
       loadUsers()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Falha ao atualizar regiões do usuário'
+      const msg = err instanceof Error ? err.message : 'Falha ao atualizar usuário'
       alert(`Erro: ${msg}`)
     } finally {
       setSavingUserRegioes(false)
@@ -1475,8 +1482,21 @@ export default function ConfiguracoesPage() {
                           )}
                         </td>
                         <td className="py-2.5 px-3">
-                          <Badge variant="outline" className="uppercase font-mono text-[10px]">
-                            {u.role}
+                          <Badge
+                            variant="outline"
+                            className={`uppercase font-mono text-[10px] font-bold ${
+                              u.role === 'admin'
+                                ? 'bg-purple-50 text-purple-700 border-purple-300'
+                                : u.role === 'supervisor'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-300'
+                                  : 'bg-blue-50 text-blue-700 border-blue-300'
+                            }`}
+                          >
+                            {u.role === 'admin'
+                              ? '👑 Administrador'
+                              : u.role === 'supervisor'
+                                ? '⭐ Supervisor'
+                                : '👤 Operador'}
                           </Badge>
                         </td>
                         <td className="py-2.5 px-3">
@@ -1506,10 +1526,10 @@ export default function ConfiguracoesPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleOpenEditUser(u)}
-                            className="h-7 text-xs text-blue-600 hover:text-blue-700"
+                            className="h-7 text-xs text-blue-600 hover:text-blue-700 font-medium"
                           >
                             <Edit2 className="h-3 w-3 mr-1" />
-                            Editar Regiões
+                            {user?.role === 'admin' ? 'Editar Papel & Regiões' : 'Editar Regiões'}
                           </Button>
                         </td>
                       </tr>
@@ -1686,21 +1706,60 @@ export default function ConfiguracoesPage() {
         </div>
       )}
 
-      {/* MODAL DE EDIÇÃO DE REGIÕES DO USUÁRIO */}
+      {/* MODAL DE EDIÇÃO DE REGIÕES E PAPEL (ROLE) DO USUÁRIO */}
       {editingUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 border border-slate-200">
             <div className="border-b pb-3">
               <h3 className="text-sm font-bold text-slate-900">
-                Regiões Autorizadas — {editingUser.name}
+                Editar Usuário — {editingUser.name}
               </h3>
-              <p className="text-xs text-slate-500">
-                {editingUser.email} ({editingUser.role})
-              </p>
+              <p className="text-xs text-slate-500">{editingUser.email}</p>
             </div>
 
+            {/* SELEÇÃO DO PAPEL / ROLE (EXIGÊNCIA ADMINISTRATIVA) */}
+            {user?.role === 'admin' ? (
+              <div className="space-y-1.5 p-3 bg-amber-50/60 border border-amber-200 rounded-lg">
+                <Label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
+                  <span>Nível de Acesso (Role do Sistema)</span>
+                </Label>
+                <Select
+                  value={editUserRole}
+                  onValueChange={(val: 'operador' | 'supervisor' | 'admin') => setEditUserRole(val)}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-white border-slate-300 font-semibold">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="operador" className="text-xs">
+                      👤 Operador (Atendimento, contatos e Meu Painel)
+                    </SelectItem>
+                    <SelectItem value="supervisor" className="text-xs">
+                      ⭐ Supervisor (Dashboard equipe, Fila geral e Clientes)
+                    </SelectItem>
+                    <SelectItem value="admin" className="text-xs">
+                      👑 Administrador (Acesso total, Configurações e Importação)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-slate-500">
+                  Somente administradores podem alterar o nível de acesso das contas da equipe.
+                </p>
+              </div>
+            ) : (
+              <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between">
+                <span className="text-xs text-slate-600 font-medium">Nível de Acesso Atual:</span>
+                <Badge variant="outline" className="uppercase font-mono text-[10px]">
+                  {editingUser.role}
+                </Badge>
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label className="text-xs text-slate-700">Selecione as regiões de atuação:</Label>
+              <Label className="text-xs text-slate-700 font-semibold">
+                Selecione as regiões de atuação:
+              </Label>
               <div className="grid grid-cols-2 gap-2">
                 {TODAS_REGIOES_FILTRO.map((r) => {
                   const isSelected = editUserRegioes.includes(r)
@@ -1750,7 +1809,7 @@ export default function ConfiguracoesPage() {
                   size="sm"
                   className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8 font-medium"
                 >
-                  {savingUserRegioes ? 'Salvando...' : 'Salvar'}
+                  {savingUserRegioes ? 'Salvando...' : 'Salvar Alterações'}
                 </Button>
               </div>
             </div>

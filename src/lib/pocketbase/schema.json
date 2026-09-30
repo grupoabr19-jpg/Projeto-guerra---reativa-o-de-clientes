@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T13:51:07.673Z",
+  "generatedAt": "2026-09-30T14:09:42.012Z",
   "collections": [
     {
       "name": "users",
@@ -379,6 +379,12 @@
           "type": "json",
           "required": false,
           "system": false
+        },
+        {
+          "name": "prioridade_transferencia",
+          "type": "bool",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -386,7 +392,8 @@
         "CREATE INDEX idx_clientes_estado ON clientes (estado)",
         "CREATE INDEX idx_clientes_regiao ON clientes (regiao)",
         "CREATE INDEX idx_clientes_score ON clientes (score DESC)",
-        "CREATE INDEX idx_clientes_operador ON clientes (operador)"
+        "CREATE INDEX idx_clientes_operador ON clientes (operador)",
+        "CREATE INDEX `idx_clientes_reagendado_prioridade` ON `clientes` (reagendado_operador, prioridade_transferencia, reagendado_para)"
       ]
     },
     {

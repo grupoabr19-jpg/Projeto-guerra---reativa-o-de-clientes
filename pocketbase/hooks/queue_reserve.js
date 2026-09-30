@@ -208,14 +208,18 @@ routerAdd(
         const reagendados = $app.findRecordsByFilter(
           'clientes',
           reagFilter,
-          'reagendado_para',
-          20,
+          '-prioridade_transferencia,reagendado_para',
+          50,
           0,
         )
         if (reagendados && reagendados.length > 0) {
-          const myReag = reagendados.find((r) => r.getString('reagendado_operador') === userId)
-          if (myReag) {
-            cand = myReag
+          // Prioridade máxima: follow-ups do próprio operador (ou atribuídos especificamente a ele)
+          // ordenando os com prioridade_transferencia primeiro
+          const myReags = reagendados.filter((r) => r.getString('reagendado_operador') === userId)
+          if (myReags.length > 0) {
+            // Se algum tem prioridade_transferencia = true, pega ele primeiro
+            const transferido = myReags.find((r) => r.getBool('prioridade_transferencia') === true)
+            cand = transferido || myReags[0]
           } else {
             for (let k = 0; k < reagendados.length; k++) {
               const rCand = reagendados[k]
@@ -332,6 +336,10 @@ routerAdd(
       cand.set('estado', 'reservado')
       cand.set('operador', userId)
       cand.set('lock_timestamp', new Date().toISOString())
+      // Se era uma transferência pendente que agora está sendo atendida, reseta a flag
+      if (cand.getBool('prioridade_transferencia')) {
+        cand.set('prioridade_transferencia', false)
+      }
       $app.save(cand)
 
       // Registra evento de auditoria
