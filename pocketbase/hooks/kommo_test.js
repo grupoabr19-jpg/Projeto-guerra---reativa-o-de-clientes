@@ -264,47 +264,70 @@ routerAdd(
 
       // Persistir o relatório de inspeção no registro de configuracoes 'kommo_config'
       try {
-        const configRec = $app.findFirstRecordByData('configuracoes', 'chave', 'kommo_config')
-        if (configRec) {
-          const currentVal = configRec.get('valor') || {}
-          const novoVal = Object.assign({}, currentVal, {
-            ultimo_teste_ok: true,
-            ultimo_sync: new Date().toISOString(),
-            inspecao: {
-              account_name: accData.name,
-              account_id: accData.id,
-              subdomain: accData.subdomain,
-              tested_at: inspectionResult.testedAt,
-              has_reativacao_pipeline: Boolean(reativacaoPipeline),
-              pipelines: pipelines.map((p) => ({
-                id: p.id,
-                name: p.name,
-                is_main: p.is_main,
-                stages_count: p.statuses.length,
-                statuses: p.statuses,
-              })),
-              users_count: users.length,
-              users_summary: users.map((u) => ({ id: u.id, name: u.name, email: u.email })),
-              contact_fields_count: contactFields.length,
-              contact_fields: contactFields.map((f) => ({
-                id: f.id,
-                name: f.name,
-                type: f.type,
-                code: f.code,
-              })),
-              lead_fields_count: leadFields.length,
-              lead_fields: leadFields.map((f) => ({
-                id: f.id,
-                name: f.name,
-                type: f.type,
-                code: f.code,
-              })),
-              secret_checks: secretChecks,
-            },
-          })
-          configRec.set('valor', novoVal)
-          $app.save(configRec)
+        let configRec = null
+        try {
+          configRec = $app.findFirstRecordByData('configuracoes', 'chave', 'kommo_config')
+        } catch (_) {}
+
+        if (!configRec) {
+          const colCfg = $app.findCollectionByNameOrId('configuracoes')
+          configRec = new Record(colCfg)
+          configRec.set('chave', 'kommo_config')
+          configRec.set('descricao', 'Status e mapeamentos da integração Kommo CRM')
         }
+
+        let currentVal = {}
+        const rawVal = configRec.get('valor')
+        if (rawVal && typeof rawVal === 'object') {
+          currentVal = rawVal
+        } else if (typeof rawVal === 'string') {
+          try {
+            currentVal = JSON.parse(rawVal)
+          } catch (_) {
+            currentVal = {}
+          }
+        }
+
+        const novoVal = Object.assign({}, currentVal, {
+          funil_nome: currentVal.funil_nome || 'Reativação',
+          ultimo_teste_ok: true,
+          ultimo_sync: new Date().toISOString(),
+          inspecao: {
+            account_name: accData.name,
+            account_id: accData.id,
+            subdomain: accData.subdomain,
+            tested_at: inspectionResult.testedAt,
+            has_reativacao_pipeline: Boolean(reativacaoPipeline),
+            pipelines: pipelines.map((p) => ({
+              id: p.id,
+              name: p.name,
+              is_main: p.is_main,
+              stages_count: p.statuses.length,
+              statuses: p.statuses,
+            })),
+            users_count: users.length,
+            users_summary: users.map((u) => ({ id: u.id, name: u.name, email: u.email })),
+            contact_fields_count: contactFields.length,
+            contact_fields: contactFields.map((f) => ({
+              id: f.id,
+              name: f.name,
+              type: f.type,
+              code: f.code,
+            })),
+            lead_fields_count: leadFields.length,
+            lead_fields: leadFields.map((f) => ({
+              id: f.id,
+              name: f.name,
+              type: f.type,
+              code: f.code,
+            })),
+            secret_checks: secretChecks,
+          },
+        })
+
+        // PocketBase JSON field aceita JSON string ou objeto válido não vazio
+        configRec.set('valor', novoVal)
+        $app.save(configRec)
       } catch (saveErr) {
         // Se falhar ao salvar no banco, não interrompe a resposta
         console.log('[kommo_test] Aviso ao salvar inspeção em configuracoes: ' + saveErr.message)

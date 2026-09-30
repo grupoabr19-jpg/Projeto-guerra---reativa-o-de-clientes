@@ -76,10 +76,8 @@ export default function Layout() {
   useEffect(() => {
     if (user) {
       refreshKommo()
-      if (hasRole(['admin', 'supervisor'])) {
-        testKommoConnection().catch(() => {})
-      }
-      const interval = setInterval(refreshKommo, 60000)
+      // Não dispara testKommoConnection() automaticamente a cada montagem para evitar chamadas externas pesadas
+      const interval = setInterval(refreshKommo, 120000)
       return () => clearInterval(interval)
     }
   }, [user])

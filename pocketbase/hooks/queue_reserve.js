@@ -84,17 +84,30 @@ routerAdd(
         regiaoFilter = ''
       } else if (userRole === 'operador') {
         if (Array.isArray(userRegioes) && userRegioes.length > 0) {
-          const parts = userRegioes.map((r) => buildRegiaoCondition(r))
-          regiaoFilter = `(${parts.join(' || ')})`
+          const validRegioes = userRegioes.filter(Boolean)
+          if (validRegioes.length > 0) {
+            const parts = validRegioes.map((r) => buildRegiaoCondition(r))
+            regiaoFilter = `(${parts.join(' || ')})`
+          } else {
+            // Operador cadastrado sem regiões ainda atribuídas: atende qualquer cliente disponível na base
+            regiaoFilter = ''
+          }
         } else {
-          regiaoFilter =
-            "(regiao = 'Sem Regiao' || regiao = 'Sem Região' || regiao = '' || regiao = null)"
+          // Operador sem regiões atribuídas na conta: atende a base geral para não travar o teste operacional
+          regiaoFilter = ''
         }
       } else {
-        // Supervisor ou admin: se tiver regiões cadastradas filtra, senão todas
+        // Supervisor ou admin (ex.: Thiago Almeida / Pietra Leite): acesso irrestrito se não tiver regiões ou busca em todas as regiões
         if (Array.isArray(userRegioes) && userRegioes.length > 0) {
-          const parts = userRegioes.map((r) => buildRegiaoCondition(r))
-          regiaoFilter = `(${parts.join(' || ')})`
+          const validRegioes = userRegioes.filter(Boolean)
+          if (validRegioes.length > 0) {
+            const parts = validRegioes.map((r) => buildRegiaoCondition(r))
+            regiaoFilter = `(${parts.join(' || ')})`
+          } else {
+            regiaoFilter = ''
+          }
+        } else {
+          regiaoFilter = ''
         }
       }
 
