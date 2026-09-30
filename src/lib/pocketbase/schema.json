@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T10:51:33.236Z",
+  "generatedAt": "2026-09-30T10:57:01.266Z",
   "collections": [
     {
       "name": "users",
@@ -684,6 +684,12 @@
         },
         {
           "name": "sem_correspondencia",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "linhas_inalteradas",
           "type": "number",
           "required": false,
           "system": false

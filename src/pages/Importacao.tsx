@@ -137,6 +137,7 @@ export default function ImportacaoPage() {
     modo: string
     novas: number
     atualizadas: number
+    inalteradas: number
     rejeitadas: number
     matchesNome: number
     semCorrespondencia: number
@@ -645,6 +646,7 @@ export default function ImportacaoPage() {
         modo: effectiveModo,
         novas: 0,
         atualizadas: 0,
+        inalteradas: 0,
         rejeitadas: 0,
         matchesNome: 0,
         semCorrespondencia: 0,
@@ -693,6 +695,7 @@ export default function ImportacaoPage() {
         if (response.resumo) {
           consolidatedResumo.novas += response.resumo.novas || 0
           consolidatedResumo.atualizadas += response.resumo.atualizadas || 0
+          consolidatedResumo.inalteradas += response.resumo.inalteradas || 0
           consolidatedResumo.rejeitadas += response.resumo.rejeitadas || 0
           consolidatedResumo.matchesNome += response.resumo.matchesNome || 0
           consolidatedResumo.semCorrespondencia += response.resumo.semCorrespondencia || 0
@@ -773,7 +776,8 @@ export default function ImportacaoPage() {
           </CardTitle>
           <CardDescription className="text-xs text-slate-500">
             Arraste ou selecione a planilha do ERP. A chave única é o Código do Cliente (upsert sem
-            duplicar).
+            duplicar). Reenviar a mesma planilha não duplica clientes — o sistema sobrepõe por
+            código e grava só o que é novo ou mudou.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -1462,14 +1466,14 @@ export default function ImportacaoPage() {
                 </Badge>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 text-xs">
                 <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
                   <span className="text-slate-500 block text-[11px]">Total de Linhas</span>
                   <span className="font-bold text-slate-800 text-base">{importResult.total}</span>
                 </div>
                 {importResult.modo === 'base_mestre' ? (
                   <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                    <span className="text-slate-500 block text-[11px]">Novos Clientes</span>
+                    <span className="text-slate-500 block text-[11px]">Novos</span>
                     <span className="font-bold text-emerald-600 text-base">
                       {importResult.novas}
                     </span>
@@ -1488,14 +1492,20 @@ export default function ImportacaoPage() {
                     {importResult.atualizadas}
                   </span>
                 </div>
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-slate-500 block text-[11px]">Inalterados (Pulados)</span>
+                  <span className="font-bold text-slate-700 text-base">
+                    {importResult.inalteradas}
+                  </span>
+                </div>
                 <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                  <span className="text-slate-500 block text-[11px]">Reconciliados (Saíram)</span>
+                  <span className="text-slate-500 block text-[11px]">Reconciliados</span>
                   <span className="font-bold text-purple-600 text-base">
                     {importResult.reconciliadosFaturaram}
                   </span>
                 </div>
                 <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                  <span className="text-slate-500 block text-[11px]">Sem Match na Base</span>
+                  <span className="text-slate-500 block text-[11px]">Sem Match</span>
                   <span className="font-bold text-slate-600 text-base">
                     {importResult.semCorrespondencia}
                   </span>
@@ -1628,8 +1638,10 @@ export default function ImportacaoPage() {
                     <th className="py-2.5 px-3">Total</th>
                     <th className="py-2.5 px-3">Novos</th>
                     <th className="py-2.5 px-3">Atualizados</th>
+                    <th className="py-2.5 px-3">Inalterados</th>
                     <th className="py-2.5 px-3">Matches/Sem Match</th>
                     <th className="py-2.5 px-3">Reconciliados</th>
+                    <th className="py-2.5 px-3">Rejeitadas</th>
                     <th className="py-2.5 px-3">Status</th>
                   </tr>
                 </thead>
@@ -1637,7 +1649,7 @@ export default function ImportacaoPage() {
                   {importacoes.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50/80">
                       <td
-                        className="py-2.5 px-3 font-medium text-slate-800 max-w-[200px] truncate"
+                        className="py-2.5 px-3 font-medium text-slate-800 max-w-[180px] truncate"
                         title={item.nome_arquivo}
                       >
                         {item.nome_arquivo}
@@ -1670,12 +1682,26 @@ export default function ImportacaoPage() {
                       <td className="py-2.5 px-3 text-blue-600 font-medium">
                         {item.linhas_atualizadas}
                       </td>
+                      <td className="py-2.5 px-3 text-slate-500 font-medium">
+                        {item.linhas_inalteradas ?? 0}
+                      </td>
                       <td className="py-2.5 px-3 text-slate-600 text-[11px]">
                         {item.matches_nome ? `${item.matches_nome} nome` : '—'}
                         {item.sem_correspondencia ? ` / ${item.sem_correspondencia} s/ match` : ''}
                       </td>
                       <td className="py-2.5 px-3 text-purple-600 font-medium">
                         {item.reconciliados_faturaram || 0} faturaram
+                      </td>
+                      <td className="py-2.5 px-3 text-xs">
+                        <span
+                          className={
+                            item.linhas_rejeitadas > 0
+                              ? 'text-rose-600 font-semibold'
+                              : 'text-slate-400'
+                          }
+                        >
+                          {item.linhas_rejeitadas || 0}
+                        </span>
                       </td>
                       <td className="py-2.5 px-3">
                         <Badge

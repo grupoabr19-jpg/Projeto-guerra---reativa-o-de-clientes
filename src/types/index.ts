@@ -125,6 +125,7 @@ export interface Importacao {
   linhas_total: number
   linhas_importadas: number
   linhas_atualizadas: number
+  linhas_inalteradas?: number
   linhas_rejeitadas: number
   matches_nome?: number
   sem_correspondencia?: number

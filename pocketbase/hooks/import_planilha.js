@@ -29,6 +29,7 @@ routerAdd(
 
       let countNovas = 0
       let countAtualizadas = 0
+      let countInalteradas = 0
       let countRejeitadas = 0
       let countMatchesNome = 0
       let countSemCorrespondencia = 0
@@ -40,20 +41,42 @@ routerAdd(
       const semCorrespondenciaLista = []
       const importedCodigos = new Set()
 
-      // Helper inline para normalizar strings de nome e cidade para busca
+      // Helper inline para normalizar strings de texto (remove acentos, pontuação e espaços múltiplos)
       const normalizeClean = (str) => {
         if (!str) return ''
         return String(str)
           .toUpperCase()
           .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '') // remove acentos
-          .replace(/[^A-Z0-9]/g, ' ') // substitui pontuações por espaço
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^A-Z0-9]/g, ' ')
           .replace(/\s+/g, ' ')
           .trim()
       }
 
-      // Helper inline para carregar cache de clientes existentes para match rápido por nome (+ cidade/UF)
-      // Carrega registros existentes da base
+      // Helper inline para comparação de números (trata null/undefined como 0 ou compara com tolerância)
+      const numbersDifferent = (a, b) => {
+        const numA = a === null || a === undefined || a === '' ? 0 : Number(a)
+        const numB = b === null || b === undefined || b === '' ? 0 : Number(b)
+        return Math.abs(numA - numB) > 0.0001
+      }
+
+      // Helper inline para comparar strings ignorando espaços extras
+      const stringsDifferent = (a, b) => {
+        const sA = a === null || a === undefined ? '' : String(a).trim()
+        const sB = b === null || b === undefined ? '' : String(b).trim()
+        return sA !== sB
+      }
+
+      // Helper inline para comparar datas (formato YYYY-MM-DD ou ISO)
+      const datesDifferent = (a, b) => {
+        if (!a && !b) return false
+        if (!a || !b) return true
+        const sA = String(a).slice(0, 10)
+        const sB = String(b).slice(0, 10)
+        return sA !== sB
+      }
+
+      // Cache em memória de clientes existentes para busca rápida
       const existingClientes = $app.findRecordsByFilter('clientes', '1=1', '', 50000, 0)
       const clientsByCode = {}
       const clientsByNameKey = {}
@@ -63,7 +86,7 @@ routerAdd(
         const cRec = existingClientes[k]
         const cCode = cRec.getString('codigo')
         const cNome = cRec.getString('nome')
-        const cEndereco = cRec.getString('endereco') // formato "Cidade - UF" se presente
+        const cEndereco = cRec.getString('endereco')
 
         if (cCode) {
           clientsByCode[cCode.toUpperCase()] = cRec
@@ -71,7 +94,6 @@ routerAdd(
 
         const normNome = normalizeClean(cNome)
         if (normNome) {
-          // Extrair cidade se houver
           let cCity = ''
           if (cEndereco && cEndereco.includes('-')) {
             cCity = normalizeClean(cEndereco.split('-')[0])
@@ -114,9 +136,8 @@ routerAdd(
         const rawCidade = String(row.cidade || '').trim()
         const rawEstado = String(row.estado || row.uf || '').trim()
 
-        // Validação flexível conforme o modo
+        // Validação conforme modo
         if (modoImportacao === 'base_mestre') {
-          // Base mestre exige código E nome
           if (!rawCodigo) {
             countRejeitadas++
             erros.push({
@@ -136,7 +157,7 @@ routerAdd(
             continue
           }
         } else {
-          // Modos Faturamento e Margem: pelo menos UM dos dois deve existir
+          // Modos Faturamento e Margem: ao menos um dos dois
           if (!rawCodigo && !rawNome) {
             countRejeitadas++
             erros.push({
@@ -148,7 +169,9 @@ routerAdd(
           }
         }
 
-        // Busca pelo cliente existente
+        // Busca do cliente existente:
+        // No modo Base Mestre a correspondência é feita prioritariamente por CÓDIGO
+        // Nos modos Faturamento/Reconciliação e Margem, também por código se existir ou por NOME (+ cidade/UF)
         let targetRec = null
         let matchBy = '' // 'code' | 'name_city' | 'name_only'
 
@@ -188,7 +211,6 @@ routerAdd(
 
           countMatchesNome++
 
-          // Tratar dados de faturamento
           const fatValor =
             typeof row.valor_ultima_compra === 'number'
               ? row.valor_ultima_compra
@@ -212,52 +234,109 @@ routerAdd(
           ).trim()
           let dataPedido = String(row.ultima_compra || row.ultimo_pedido_data || '').trim()
 
+          // Detecção de mudanças / dados alterados para gravação cirúrgica
+          let mudou = false
+
           if (fatValor > 0) {
-            targetRec.set('valor_ultima_compra', fatValor)
-            targetRec.set('fat_12m_reais', fatValor)
+            if (numbersDifferent(targetRec.getFloat('valor_ultima_compra'), fatValor)) {
+              targetRec.set('valor_ultima_compra', fatValor)
+              mudou = true
+            }
+            if (numbersDifferent(targetRec.getFloat('fat_12m_reais'), fatValor)) {
+              targetRec.set('fat_12m_reais', fatValor)
+              mudou = true
+            }
           }
+
           if (pesoVal > 0) {
-            targetRec.set('toneladas_historico', pesoVal)
-            targetRec.set('peso_nf_tonelagem', pesoVal)
+            if (numbersDifferent(targetRec.getFloat('toneladas_historico'), pesoVal)) {
+              targetRec.set('toneladas_historico', pesoVal)
+              mudou = true
+            }
+            if (numbersDifferent(targetRec.getFloat('peso_nf_tonelagem'), pesoVal)) {
+              targetRec.set('peso_nf_tonelagem', pesoVal)
+              mudou = true
+            }
           }
-          if (numPedido) {
+
+          if (
+            numPedido &&
+            stringsDifferent(targetRec.getString('ultimo_pedido_numero'), numPedido)
+          ) {
             targetRec.set('ultimo_pedido_numero', numPedido)
+            mudou = true
           }
+
           if (dataPedido) {
             const parsed = new Date(dataPedido)
             if (!isNaN(parsed.getTime())) {
-              targetRec.set('ultima_compra', parsed.toISOString())
-              targetRec.set('ultimo_faturamento_data', parsed.toISOString())
-              targetRec.set('ultimo_pedido_data', parsed.toISOString().split('T')[0])
+              const isoFull = parsed.toISOString()
+              const isoDate = isoFull.split('T')[0]
+              if (datesDifferent(targetRec.getString('ultima_compra'), isoFull)) {
+                targetRec.set('ultima_compra', isoFull)
+                mudou = true
+              }
+              if (datesDifferent(targetRec.getString('ultimo_faturamento_data'), isoFull)) {
+                targetRec.set('ultimo_faturamento_data', isoFull)
+                mudou = true
+              }
+              if (datesDifferent(targetRec.getString('ultimo_pedido_data'), isoDate)) {
+                targetRec.set('ultimo_pedido_data', isoDate)
+                mudou = true
+              }
               const diffMs = now.getTime() - parsed.getTime()
               const dias = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
-              targetRec.set('dias_sem_faturar', dias)
-              if (dias < 60) {
+              if (targetRec.getInt('dias_sem_faturar') !== dias) {
+                targetRec.set('dias_sem_faturar', dias)
+                mudou = true
+              }
+              if (dias < 60 && targetRec.getString('faixa') !== 'recente') {
                 targetRec.set('faixa', 'recente')
+                mudou = true
               }
             }
           }
-          if (row.canal) targetRec.set('canal', String(row.canal).trim())
-          if (row.vendedor) targetRec.set('vendedor', String(row.vendedor).trim())
+
+          if (
+            row.canal &&
+            stringsDifferent(targetRec.getString('canal'), String(row.canal).trim())
+          ) {
+            targetRec.set('canal', String(row.canal).trim())
+            mudou = true
+          }
+          if (
+            row.vendedor &&
+            stringsDifferent(targetRec.getString('vendedor'), String(row.vendedor).trim())
+          ) {
+            targetRec.set('vendedor', String(row.vendedor).trim())
+            mudou = true
+          }
           if (row.regiao) {
             const regStr = String(row.regiao).trim().toUpperCase()
-            if (regStr) targetRec.set('regiao', regStr)
+            if (regStr && stringsDifferent(targetRec.getString('regiao'), regStr)) {
+              targetRec.set('regiao', regStr)
+              mudou = true
+            }
           }
 
-          // Reconciliação imediata: faturou sai da fila
+          // Reconciliação imediata: faturou sai da fila de reativação
           const estadoAtual = targetRec.getString('estado')
           if (estadoAtual !== 'reativado') {
             targetRec.set('estado', 'reativado')
             targetRec.set('operador', '')
             targetRec.set('lock_timestamp', null)
             countReconciliadosFaturaram++
+            mudou = true
           }
 
           // Validação de divergência de pedido de reativação salvo
           const pedidoSalvo = targetRec.getString('pedido_reativacao')
           if (pedidoSalvo && numPedido) {
             if (numPedido === pedidoSalvo) {
-              targetRec.set('pedido_confirmado', true)
+              if (!targetRec.getBool('pedido_confirmado')) {
+                targetRec.set('pedido_confirmado', true)
+                mudou = true
+              }
               countPedidosValidados++
             } else {
               countPedidosDivergentes++
@@ -270,8 +349,12 @@ routerAdd(
             }
           }
 
-          $app.save(targetRec)
-          countAtualizadas++
+          if (mudou) {
+            $app.save(targetRec)
+            countAtualizadas++
+          } else {
+            countInalteradas++
+          }
           continue
         }
 
@@ -288,36 +371,59 @@ routerAdd(
             countMatchesNome++
           }
 
-          // Atualizar apenas campos de margem
-          let updatedMargin = false
+          let mudou = false
+
+          let targetMargemPerc = null
           if (row.margem_media_perc !== undefined && row.margem_media_perc !== null) {
-            targetRec.set('margem_media_perc', Number(row.margem_media_perc))
-            updatedMargin = true
+            targetMargemPerc = Number(row.margem_media_perc)
+          } else if (row.margem_perc !== undefined && row.margem_perc !== null) {
+            targetMargemPerc = Number(row.margem_perc)
           }
+
+          let targetMargemReais = null
           if (row.margem_reais !== undefined && row.margem_reais !== null) {
-            targetRec.set('margem_reais', Number(row.margem_reais))
-            updatedMargin = true
-          }
-          // Se houver campos brutos de margem
-          if (row.margem_perc !== undefined) {
-            targetRec.set('margem_media_perc', Number(row.margem_perc))
-            updatedMargin = true
-          }
-          if (row.margem_valor !== undefined) {
-            targetRec.set('margem_reais', Number(row.margem_valor))
-            updatedMargin = true
+            targetMargemReais = Number(row.margem_reais)
+          } else if (row.margem_valor !== undefined && row.margem_valor !== null) {
+            targetMargemReais = Number(row.margem_valor)
           }
 
-          // Atualizar bônus de score se tiver margem
+          if (
+            targetMargemPerc !== null &&
+            !isNaN(targetMargemPerc) &&
+            numbersDifferent(targetRec.getFloat('margem_media_perc'), targetMargemPerc)
+          ) {
+            targetRec.set('margem_media_perc', targetMargemPerc)
+            mudou = true
+          }
+
+          if (
+            targetMargemReais !== null &&
+            !isNaN(targetMargemReais) &&
+            numbersDifferent(targetRec.getFloat('margem_reais'), targetMargemReais)
+          ) {
+            targetRec.set('margem_reais', targetMargemReais)
+            mudou = true
+          }
+
+          // Bônus de score se tiver margem > 20%
           const currentScore = targetRec.getInt('score') || 50
-          const margemPerc = targetRec.getFloat('margem_media_perc') || 0
-          if (margemPerc > 20) {
-            targetRec.set('score', Math.min(100, currentScore + 10))
+          const effMargemPerc =
+            targetMargemPerc !== null
+              ? targetMargemPerc
+              : targetRec.getFloat('margem_media_perc') || 0
+          if (effMargemPerc > 20) {
+            const novoScore = Math.min(100, currentScore + 10)
+            if (novoScore !== currentScore) {
+              targetRec.set('score', novoScore)
+              mudou = true
+            }
           }
 
-          if (updatedMargin) {
+          if (mudou) {
             $app.save(targetRec)
             countAtualizadas++
+          } else {
+            countInalteradas++
           }
           continue
         }
@@ -417,200 +523,475 @@ routerAdd(
         )
 
         let rec = targetRec
-        let isNew = false
-        if (!rec) {
+        const isNew = !rec
+
+        if (isNew) {
           rec = new Record(colClientes)
           rec.set('codigo', rawCodigo)
-          isNew = true
-        }
+          rec.set('nome', rawNome)
+          if (row.cpf_cnpj) rec.set('cpf_cnpj', String(row.cpf_cnpj).trim())
+          if (row.telefone) rec.set('telefone', String(row.telefone).replace(/\D/g, ''))
+          if (row.whatsapp) rec.set('whatsapp', String(row.whatsapp).replace(/\D/g, ''))
+          if (row.email) rec.set('email', String(row.email).trim())
 
-        rec.set('nome', rawNome)
-        if (row.cpf_cnpj) rec.set('cpf_cnpj', String(row.cpf_cnpj).trim())
-        if (row.telefone) rec.set('telefone', String(row.telefone).replace(/\D/g, ''))
-        if (row.whatsapp) rec.set('whatsapp', String(row.whatsapp).replace(/\D/g, ''))
-        if (row.email) rec.set('email', String(row.email).trim())
-
-        if (rawCidade || rawEstado) {
-          const locStr = [rawCidade, rawEstado].filter(Boolean).join(' - ')
-          rec.set('endereco', locStr)
-        }
-
-        const rawReg = String(row.regiao || '').trim()
-        let parsedReg = rawReg ? rawReg.toUpperCase() : 'Sem Região'
-        rec.set('regiao', parsedReg)
-
-        let vendedorRow = String(row.vendedor || '').trim()
-        if (!vendedorRow && parsedReg !== 'Sem Região') {
-          try {
-            const regRec = $app.findFirstRecordByData('regioes', 'nome', parsedReg)
-            if (regRec) {
-              const vExt = regRec.getString('vendedor_externo')
-              if (vExt) vendedorRow = vExt
-            }
-          } catch (_) {}
-        }
-        if (vendedorRow) rec.set('vendedor', vendedorRow)
-        if (row.segmento) {
-          const segRaw = String(row.segmento).trim()
-          const segNorm = segRaw
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .replace(/[._\-\/\\,;:]+/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim()
-
-          let finalSeg = segRaw
-          if (
-            segNorm.includes('ind trans') ||
-            segNorm.includes('industria de transf') ||
-            segNorm.includes('transformacao') ||
-            segNorm.includes('ind man') ||
-            segNorm.includes('metalurg') ||
-            segNorm.includes('industrial') ||
-            segNorm.includes('manufat')
-          ) {
-            finalSeg = 'Indústria de transformação'
-          } else if (
-            segNorm === 'lmc' ||
-            segNorm === 'l m c' ||
-            segNorm.includes('loja de mat') ||
-            segNorm.includes('loja mat') ||
-            segNorm.includes('material de const') ||
-            segNorm.includes('mat construcao') ||
-            segNorm.includes('materiais de const')
-          ) {
-            finalSeg = 'Loja de Material de Construção'
-          } else if (
-            segNorm.includes('deposito') ||
-            segNorm.includes('armador') ||
-            segNorm.includes('corte e dobra') ||
-            segNorm.includes('corte dobra')
-          ) {
-            finalSeg = 'Depósito (armadores)'
-          } else if (segNorm.includes('estrutur') || segNorm.includes('estrutura metal')) {
-            finalSeg = 'Estruturista'
-          } else if (segNorm.includes('calheir') || segNorm.includes('calha')) {
-            finalSeg = 'Calheiros'
-          } else if (
-            segNorm.includes('construt') ||
-            segNorm.includes('engenh') ||
-            segNorm.includes('obra')
-          ) {
-            finalSeg = 'Construtora'
-          } else if (segNorm.includes('distrib')) {
-            finalSeg = 'Distribuidor'
-          } else if (segNorm.includes('investid') || segNorm.includes('incorporad')) {
-            finalSeg = 'Investidor'
-          } else if (
-            segNorm.includes('laje') ||
-            segNorm.includes('pre mold') ||
-            segNorm.includes('premold')
-          ) {
-            finalSeg = 'Lajeiro'
-          } else if (segNorm.includes('pedreir') || segNorm.includes('mestre de obra')) {
-            finalSeg = 'Pedreiro'
-          } else if (
-            segNorm.includes('rural') ||
-            segNorm.includes('agric') ||
-            segNorm.includes('agro') ||
-            segNorm.includes('produtor') ||
-            segNorm.includes('fazend')
-          ) {
-            finalSeg = 'Produtor rural'
-          } else if (segNorm.includes('revend') || segNorm.includes('comercio varej')) {
-            finalSeg = 'Revenda'
-          } else if (segNorm.includes('serralh') || segNorm.includes('ferrag')) {
-            finalSeg = 'Serralheiro'
-          } else if (
-            segNorm.includes('cliente final') ||
-            segNorm.includes('consumidor final') ||
-            segNorm.includes('pessoa fisica') ||
-            segNorm.includes('consumidor') ||
-            segNorm === 'final'
-          ) {
-            finalSeg = 'Cliente final'
+          let locStr = ''
+          if (rawCidade || rawEstado) {
+            locStr = [rawCidade, rawEstado].filter(Boolean).join(' - ')
+          } else if (row.endereco) {
+            locStr = String(row.endereco).trim()
           }
-          rec.set('segmento', finalSeg)
-        }
-        if (row.endereco) rec.set('endereco', String(row.endereco).trim())
+          if (locStr) rec.set('endereco', locStr)
 
-        if (ultimaCompraDate) rec.set('ultima_compra', ultimaCompraDate)
-        rec.set('valor_ultima_compra', valorUltimaCompra)
-        rec.set('toneladas_historico', toneladasHistorico)
-        rec.set('valor_historico', valorHistorico)
-        rec.set('compras_count', comprasCount)
-        rec.set('dias_sem_faturar', diasSemFaturar)
-        rec.set('faixa', faixa)
+          const rawReg = String(row.regiao || '').trim()
+          let parsedReg = rawReg ? rawReg.toUpperCase() : 'Sem Região'
+          rec.set('regiao', parsedReg)
 
-        if (row.canal) rec.set('canal', String(row.canal).trim())
-        if (row.margem_media_perc !== undefined && row.margem_media_perc !== null) {
-          rec.set('margem_media_perc', Number(row.margem_media_perc))
-        }
-        if (row.margem_reais !== undefined && row.margem_reais !== null) {
-          rec.set('margem_reais', Number(row.margem_reais))
-        }
-        if (row.peso_nf_tonelagem !== undefined && row.peso_nf_tonelagem !== null) {
-          rec.set('peso_nf_tonelagem', Number(row.peso_nf_tonelagem))
-        }
-        if (row.fat_12m_reais !== undefined && row.fat_12m_reais !== null) {
-          rec.set('fat_12m_reais', Number(row.fat_12m_reais))
-        }
-        if (row.frequencia_compras_12m !== undefined && row.frequencia_compras_12m !== null) {
-          rec.set('frequencia_compras_12m', Number(row.frequencia_compras_12m))
-        }
-        if (row.tipo_vendedor) rec.set('tipo_vendedor', String(row.tipo_vendedor).trim())
-        if (row.ultimo_pedido_numero || row.pedido) {
-          rec.set('ultimo_pedido_numero', String(row.ultimo_pedido_numero || row.pedido).trim())
-        }
-        if (row.ultimo_pedido_data) {
-          rec.set('ultimo_pedido_data', String(row.ultimo_pedido_data).trim())
-        }
-        if (ultimaCompraDate) {
-          rec.set('ultimo_faturamento_data', ultimaCompraDate)
-        }
+          let vendedorRow = String(row.vendedor || '').trim()
+          if (!vendedorRow && parsedReg !== 'Sem Região') {
+            try {
+              const regRec = $app.findFirstRecordByData('regioes', 'nome', parsedReg)
+              if (regRec) {
+                const vExt = regRec.getString('vendedor_externo')
+                if (vExt) vendedorRow = vExt
+              }
+            } catch (_) {}
+          }
+          if (vendedorRow) rec.set('vendedor', vendedorRow)
 
-        const tentativas = rec.getInt('tentativas_sem_contato') || 0
-        const finalScore = Math.max(0, calcScore - tentativas * 5)
-        rec.set('score', finalScore)
+          if (row.segmento) {
+            const segRaw = String(row.segmento).trim()
+            const segNorm = segRaw
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[._\-\/\\,;:]+/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
 
-        const currentEstado = rec.getString('estado')
-        if (faixa === 'recente') {
-          if (currentEstado !== 'reativado') {
+            let finalSeg = segRaw
+            if (
+              segNorm.includes('ind trans') ||
+              segNorm.includes('industria de transf') ||
+              segNorm.includes('transformacao') ||
+              segNorm.includes('ind man') ||
+              segNorm.includes('metalurg') ||
+              segNorm.includes('industrial') ||
+              segNorm.includes('manufat')
+            ) {
+              finalSeg = 'Indústria de transformação'
+            } else if (
+              segNorm === 'lmc' ||
+              segNorm === 'l m c' ||
+              segNorm.includes('loja de mat') ||
+              segNorm.includes('loja mat') ||
+              segNorm.includes('material de const') ||
+              segNorm.includes('mat construcao') ||
+              segNorm.includes('materiais de const')
+            ) {
+              finalSeg = 'Loja de Material de Construção'
+            } else if (
+              segNorm.includes('deposito') ||
+              segNorm.includes('armador') ||
+              segNorm.includes('corte e dobra') ||
+              segNorm.includes('corte dobra')
+            ) {
+              finalSeg = 'Depósito (armadores)'
+            } else if (segNorm.includes('estrutur') || segNorm.includes('estrutura metal')) {
+              finalSeg = 'Estruturista'
+            } else if (segNorm.includes('calheir') || segNorm.includes('calha')) {
+              finalSeg = 'Calheiros'
+            } else if (
+              segNorm.includes('construt') ||
+              segNorm.includes('engenh') ||
+              segNorm.includes('obra')
+            ) {
+              finalSeg = 'Construtora'
+            } else if (segNorm.includes('distrib')) {
+              finalSeg = 'Distribuidor'
+            } else if (segNorm.includes('investid') || segNorm.includes('incorporad')) {
+              finalSeg = 'Investidor'
+            } else if (
+              segNorm.includes('laje') ||
+              segNorm.includes('pre mold') ||
+              segNorm.includes('premold')
+            ) {
+              finalSeg = 'Lajeiro'
+            } else if (segNorm.includes('pedreir') || segNorm.includes('mestre de obra')) {
+              finalSeg = 'Pedreiro'
+            } else if (
+              segNorm.includes('rural') ||
+              segNorm.includes('agric') ||
+              segNorm.includes('agro') ||
+              segNorm.includes('produtor') ||
+              segNorm.includes('fazend')
+            ) {
+              finalSeg = 'Produtor rural'
+            } else if (segNorm.includes('revend') || segNorm.includes('comercio varej')) {
+              finalSeg = 'Revenda'
+            } else if (segNorm.includes('serralh') || segNorm.includes('ferrag')) {
+              finalSeg = 'Serralheiro'
+            } else if (
+              segNorm.includes('cliente final') ||
+              segNorm.includes('consumidor final') ||
+              segNorm.includes('pessoa fisica') ||
+              segNorm.includes('consumidor') ||
+              segNorm === 'final'
+            ) {
+              finalSeg = 'Cliente final'
+            }
+            rec.set('segmento', finalSeg)
+          }
+
+          if (ultimaCompraDate) {
+            rec.set('ultima_compra', ultimaCompraDate)
+            rec.set('ultimo_faturamento_data', ultimaCompraDate)
+          }
+          rec.set('valor_ultima_compra', valorUltimaCompra)
+          rec.set('toneladas_historico', toneladasHistorico)
+          rec.set('valor_historico', valorHistorico)
+          rec.set('compras_count', comprasCount)
+          rec.set('dias_sem_faturar', diasSemFaturar)
+          rec.set('faixa', faixa)
+
+          if (row.canal) rec.set('canal', String(row.canal).trim())
+          if (row.margem_media_perc !== undefined && row.margem_media_perc !== null) {
+            rec.set('margem_media_perc', Number(row.margem_media_perc))
+          }
+          if (row.margem_reais !== undefined && row.margem_reais !== null) {
+            rec.set('margem_reais', Number(row.margem_reais))
+          }
+          if (row.peso_nf_tonelagem !== undefined && row.peso_nf_tonelagem !== null) {
+            rec.set('peso_nf_tonelagem', Number(row.peso_nf_tonelagem))
+          }
+          if (row.fat_12m_reais !== undefined && row.fat_12m_reais !== null) {
+            rec.set('fat_12m_reais', Number(row.fat_12m_reais))
+          }
+          if (row.frequencia_compras_12m !== undefined && row.frequencia_compras_12m !== null) {
+            rec.set('frequencia_compras_12m', Number(row.frequencia_compras_12m))
+          }
+          if (row.tipo_vendedor) rec.set('tipo_vendedor', String(row.tipo_vendedor).trim())
+          if (row.ultimo_pedido_numero || row.pedido) {
+            rec.set('ultimo_pedido_numero', String(row.ultimo_pedido_numero || row.pedido).trim())
+          }
+          if (row.ultimo_pedido_data) {
+            rec.set('ultimo_pedido_data', String(row.ultimo_pedido_data).trim())
+          }
+
+          rec.set('score', calcScore)
+
+          if (faixa === 'recente') {
+            rec.set('estado', 'reativado')
+            countReconciliadosFaturaram++
+          } else {
+            rec.set('estado', 'na_base')
+          }
+          rec.set('origem', 'importacao')
+
+          $app.save(rec)
+          clientsByCode[rawCodigo] = rec
+          countNovas++
+        } else {
+          // Cliente existente: comparação campo a campo (importação incremental real)
+          let mudou = false
+
+          if (stringsDifferent(rec.getString('nome'), rawNome)) {
+            rec.set('nome', rawNome)
+            mudou = true
+          }
+          if (
+            row.cpf_cnpj &&
+            stringsDifferent(rec.getString('cpf_cnpj'), String(row.cpf_cnpj).trim())
+          ) {
+            rec.set('cpf_cnpj', String(row.cpf_cnpj).trim())
+            mudou = true
+          }
+          if (row.telefone) {
+            const cleanTel = String(row.telefone).replace(/\D/g, '')
+            if (cleanTel && stringsDifferent(rec.getString('telefone'), cleanTel)) {
+              rec.set('telefone', cleanTel)
+              mudou = true
+            }
+          }
+          if (row.whatsapp) {
+            const cleanWpp = String(row.whatsapp).replace(/\D/g, '')
+            if (cleanWpp && stringsDifferent(rec.getString('whatsapp'), cleanWpp)) {
+              rec.set('whatsapp', cleanWpp)
+              mudou = true
+            }
+          }
+          if (row.email && stringsDifferent(rec.getString('email'), String(row.email).trim())) {
+            rec.set('email', String(row.email).trim())
+            mudou = true
+          }
+
+          let newLoc = ''
+          if (rawCidade || rawEstado) {
+            newLoc = [rawCidade, rawEstado].filter(Boolean).join(' - ')
+          } else if (row.endereco) {
+            newLoc = String(row.endereco).trim()
+          }
+          if (newLoc && stringsDifferent(rec.getString('endereco'), newLoc)) {
+            rec.set('endereco', newLoc)
+            mudou = true
+          }
+
+          const rawReg = String(row.regiao || '').trim()
+          const parsedReg = rawReg ? rawReg.toUpperCase() : 'Sem Região'
+          if (stringsDifferent(rec.getString('regiao'), parsedReg)) {
+            rec.set('regiao', parsedReg)
+            mudou = true
+          }
+
+          let vendedorRow = String(row.vendedor || '').trim()
+          if (!vendedorRow && parsedReg !== 'Sem Região') {
+            try {
+              const regRec = $app.findFirstRecordByData('regioes', 'nome', parsedReg)
+              if (regRec) {
+                const vExt = regRec.getString('vendedor_externo')
+                if (vExt) vendedorRow = vExt
+              }
+            } catch (_) {}
+          }
+          if (vendedorRow && stringsDifferent(rec.getString('vendedor'), vendedorRow)) {
+            rec.set('vendedor', vendedorRow)
+            mudou = true
+          }
+
+          if (row.segmento) {
+            const segRaw = String(row.segmento).trim()
+            const segNorm = segRaw
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[._\-\/\\,;:]+/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+
+            let finalSeg = segRaw
+            if (
+              segNorm.includes('ind trans') ||
+              segNorm.includes('industria de transf') ||
+              segNorm.includes('transformacao') ||
+              segNorm.includes('ind man') ||
+              segNorm.includes('metalurg') ||
+              segNorm.includes('industrial') ||
+              segNorm.includes('manufat')
+            ) {
+              finalSeg = 'Indústria de transformação'
+            } else if (
+              segNorm === 'lmc' ||
+              segNorm === 'l m c' ||
+              segNorm.includes('loja de mat') ||
+              segNorm.includes('loja mat') ||
+              segNorm.includes('material de const') ||
+              segNorm.includes('mat construcao') ||
+              segNorm.includes('materiais de const')
+            ) {
+              finalSeg = 'Loja de Material de Construção'
+            } else if (
+              segNorm.includes('deposito') ||
+              segNorm.includes('armador') ||
+              segNorm.includes('corte e dobra') ||
+              segNorm.includes('corte dobra')
+            ) {
+              finalSeg = 'Depósito (armadores)'
+            } else if (segNorm.includes('estrutur') || segNorm.includes('estrutura metal')) {
+              finalSeg = 'Estruturista'
+            } else if (segNorm.includes('calheir') || segNorm.includes('calha')) {
+              finalSeg = 'Calheiros'
+            } else if (
+              segNorm.includes('construt') ||
+              segNorm.includes('engenh') ||
+              segNorm.includes('obra')
+            ) {
+              finalSeg = 'Construtora'
+            } else if (segNorm.includes('distrib')) {
+              finalSeg = 'Distribuidor'
+            } else if (segNorm.includes('investid') || segNorm.includes('incorporad')) {
+              finalSeg = 'Investidor'
+            } else if (
+              segNorm.includes('laje') ||
+              segNorm.includes('pre mold') ||
+              segNorm.includes('premold')
+            ) {
+              finalSeg = 'Lajeiro'
+            } else if (segNorm.includes('pedreir') || segNorm.includes('mestre de obra')) {
+              finalSeg = 'Pedreiro'
+            } else if (
+              segNorm.includes('rural') ||
+              segNorm.includes('agric') ||
+              segNorm.includes('agro') ||
+              segNorm.includes('produtor') ||
+              segNorm.includes('fazend')
+            ) {
+              finalSeg = 'Produtor rural'
+            } else if (segNorm.includes('revend') || segNorm.includes('comercio varej')) {
+              finalSeg = 'Revenda'
+            } else if (segNorm.includes('serralh') || segNorm.includes('ferrag')) {
+              finalSeg = 'Serralheiro'
+            } else if (
+              segNorm.includes('cliente final') ||
+              segNorm.includes('consumidor final') ||
+              segNorm.includes('pessoa fisica') ||
+              segNorm.includes('consumidor') ||
+              segNorm === 'final'
+            ) {
+              finalSeg = 'Cliente final'
+            }
+            if (stringsDifferent(rec.getString('segmento'), finalSeg)) {
+              rec.set('segmento', finalSeg)
+              mudou = true
+            }
+          }
+
+          if (
+            ultimaCompraDate &&
+            datesDifferent(rec.getString('ultima_compra'), ultimaCompraDate)
+          ) {
+            rec.set('ultima_compra', ultimaCompraDate)
+            rec.set('ultimo_faturamento_data', ultimaCompraDate)
+            mudou = true
+          }
+
+          if (numbersDifferent(rec.getFloat('valor_ultima_compra'), valorUltimaCompra)) {
+            rec.set('valor_ultima_compra', valorUltimaCompra)
+            mudou = true
+          }
+          if (numbersDifferent(rec.getFloat('toneladas_historico'), toneladasHistorico)) {
+            rec.set('toneladas_historico', toneladasHistorico)
+            mudou = true
+          }
+          if (numbersDifferent(rec.getFloat('valor_historico'), valorHistorico)) {
+            rec.set('valor_historico', valorHistorico)
+            mudou = true
+          }
+          if (rec.getInt('compras_count') !== comprasCount) {
+            rec.set('compras_count', comprasCount)
+            mudou = true
+          }
+          if (rec.getInt('dias_sem_faturar') !== diasSemFaturar) {
+            rec.set('dias_sem_faturar', diasSemFaturar)
+            mudou = true
+          }
+          if (stringsDifferent(rec.getString('faixa'), faixa)) {
+            rec.set('faixa', faixa)
+            mudou = true
+          }
+
+          if (row.canal && stringsDifferent(rec.getString('canal'), String(row.canal).trim())) {
+            rec.set('canal', String(row.canal).trim())
+            mudou = true
+          }
+          if (
+            row.margem_media_perc !== undefined &&
+            row.margem_media_perc !== null &&
+            numbersDifferent(rec.getFloat('margem_media_perc'), Number(row.margem_media_perc))
+          ) {
+            rec.set('margem_media_perc', Number(row.margem_media_perc))
+            mudou = true
+          }
+          if (
+            row.margem_reais !== undefined &&
+            row.margem_reais !== null &&
+            numbersDifferent(rec.getFloat('margem_reais'), Number(row.margem_reais))
+          ) {
+            rec.set('margem_reais', Number(row.margem_reais))
+            mudou = true
+          }
+          if (
+            row.peso_nf_tonelagem !== undefined &&
+            row.peso_nf_tonelagem !== null &&
+            numbersDifferent(rec.getFloat('peso_nf_tonelagem'), Number(row.peso_nf_tonelagem))
+          ) {
+            rec.set('peso_nf_tonelagem', Number(row.peso_nf_tonelagem))
+            mudou = true
+          }
+          if (
+            row.fat_12m_reais !== undefined &&
+            row.fat_12m_reais !== null &&
+            numbersDifferent(rec.getFloat('fat_12m_reais'), Number(row.fat_12m_reais))
+          ) {
+            rec.set('fat_12m_reais', Number(row.fat_12m_reais))
+            mudou = true
+          }
+          if (
+            row.frequencia_compras_12m !== undefined &&
+            row.frequencia_compras_12m !== null &&
+            numbersDifferent(
+              rec.getFloat('frequencia_compras_12m'),
+              Number(row.frequencia_compras_12m),
+            )
+          ) {
+            rec.set('frequencia_compras_12m', Number(row.frequencia_compras_12m))
+            mudou = true
+          }
+          if (
+            row.tipo_vendedor &&
+            stringsDifferent(rec.getString('tipo_vendedor'), String(row.tipo_vendedor).trim())
+          ) {
+            rec.set('tipo_vendedor', String(row.tipo_vendedor).trim())
+            mudou = true
+          }
+          const numPed = String(row.ultimo_pedido_numero || row.pedido || '').trim()
+          if (numPed && stringsDifferent(rec.getString('ultimo_pedido_numero'), numPed)) {
+            rec.set('ultimo_pedido_numero', numPed)
+            mudou = true
+          }
+          if (
+            row.ultimo_pedido_data &&
+            datesDifferent(
+              rec.getString('ultimo_pedido_data'),
+              String(row.ultimo_pedido_data).trim(),
+            )
+          ) {
+            rec.set('ultimo_pedido_data', String(row.ultimo_pedido_data).trim())
+            mudou = true
+          }
+
+          const tentativas = rec.getInt('tentativas_sem_contato') || 0
+          const finalScore = Math.max(0, calcScore - tentativas * 5)
+          if (rec.getInt('score') !== finalScore) {
+            rec.set('score', finalScore)
+            mudou = true
+          }
+
+          const currentEstado = rec.getString('estado')
+          if (faixa === 'recente' && currentEstado !== 'reativado') {
             rec.set('estado', 'reativado')
             rec.set('operador', '')
             rec.set('lock_timestamp', null)
             countReconciliadosFaturaram++
+            mudou = true
           }
-        } else if (isNew) {
-          rec.set('estado', 'na_base')
-          rec.set('origem', 'importacao')
-        }
 
-        const pedidoSalvo = rec.getString('pedido_reativacao')
-        const pedidoPlanilha = String(row.pedido || row.numero_pedido || '').trim()
-        if (pedidoSalvo) {
-          if (pedidoPlanilha && pedidoPlanilha === pedidoSalvo) {
-            rec.set('pedido_confirmado', true)
-            countPedidosValidados++
-          } else if (pedidoPlanilha && pedidoPlanilha !== pedidoSalvo) {
-            countPedidosDivergentes++
-            divergencias.push({
-              codigo: rawCodigo,
-              nome: rawNome,
-              pedidoEsperado: pedidoSalvo,
-              pedidoPlanilha: pedidoPlanilha,
-            })
+          const pedidoSalvo = rec.getString('pedido_reativacao')
+          const pedidoPlanilha = String(row.pedido || row.numero_pedido || '').trim()
+          if (pedidoSalvo) {
+            if (pedidoPlanilha && pedidoPlanilha === pedidoSalvo) {
+              if (!rec.getBool('pedido_confirmado')) {
+                rec.set('pedido_confirmado', true)
+                mudou = true
+              }
+              countPedidosValidados++
+            } else if (pedidoPlanilha && pedidoPlanilha !== pedidoSalvo) {
+              countPedidosDivergentes++
+              divergencias.push({
+                codigo: rawCodigo,
+                nome: rawNome,
+                pedidoEsperado: pedidoSalvo,
+                pedidoPlanilha: pedidoPlanilha,
+              })
+            }
           }
+
+          if (mudou) {
+            $app.save(rec)
+            countAtualizadas++
+          } else {
+            countInalteradas++
+          }
+          clientsByCode[rawCodigo] = rec
         }
-
-        $app.save(rec)
-
-        // Atualizar cache em memória para próximos chunks do mesmo envio
-        clientsByCode[rawCodigo] = rec
-
-        if (isNew) countNovas++
-        else countAtualizadas++
       }
 
       // Se substituição total ativada: quem estava na base e não veio na planilha é marcado como suspenso
@@ -632,6 +1013,7 @@ routerAdd(
       impRec.set('linhas_total', rows.length)
       impRec.set('linhas_importadas', countNovas)
       impRec.set('linhas_atualizadas', countAtualizadas)
+      impRec.set('linhas_inalteradas', countInalteradas)
       impRec.set('linhas_rejeitadas', countRejeitadas)
       impRec.set('matches_nome', countMatchesNome)
       impRec.set('sem_correspondencia', countSemCorrespondencia)
@@ -640,7 +1022,9 @@ routerAdd(
       impRec.set('pedidos_divergentes', countPedidosDivergentes)
       impRec.set(
         'status',
-        countRejeitadas > 0 && countNovas === 0 && countAtualizadas === 0 ? 'erro' : 'concluida',
+        countRejeitadas > 0 && countNovas === 0 && countAtualizadas === 0 && countInalteradas === 0
+          ? 'erro'
+          : 'concluida',
       )
       impRec.set('detalhes_erro', erros)
       impRec.set('divergencias_pedidos', divergencias)
@@ -656,6 +1040,7 @@ routerAdd(
           modo: modoImportacao,
           novas: countNovas,
           atualizadas: countAtualizadas,
+          inalteradas: countInalteradas,
           rejeitadas: countRejeitadas,
           matchesNome: countMatchesNome,
           semCorrespondencia: countSemCorrespondencia,
