@@ -54,7 +54,12 @@ export default function Index() {
   // Preenchimento rápido para teste
   const fillSample = (roleEmail: string) => {
     setEmail(roleEmail)
-    setPassword('Skip@Pass')
+    // Se for conta interna institucional da equipe @grupoabr.com.br, a senha é a padrão ABR@2026
+    if (roleEmail.includes('@grupoabr.com.br')) {
+      setPassword('ABR@2026')
+    } else {
+      setPassword('Skip@Pass')
+    }
   }
 
   return (
@@ -139,27 +144,45 @@ export default function Index() {
                     variant="outline"
                     size="sm"
                     className="h-7 text-[11px]"
+                    onClick={() => fillSample('thiago.almeida@grupoabr.com.br')}
+                  >
+                    Thiago (Admin)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[11px]"
                     onClick={() => fillSample('pietra.leite@grupoabr.com.br')}
                   >
-                    Admin
+                    Pietra (Admin)
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     className="h-7 text-[11px]"
-                    onClick={() => fillSample('supervisor@guerra.com.br')}
+                    onClick={() => fillSample('eder.bueno@grupoabr.com.br')}
                   >
-                    Supervisor
+                    Eder Bueno (Op)
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     className="h-7 text-[11px]"
-                    onClick={() => fillSample('operador1@guerra.com.br')}
+                    onClick={() => fillSample('priscila.faria@grupoabr.com.br')}
                   >
-                    Operador
+                    Priscila (Repesc.)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[11px]"
+                    onClick={() => fillSample('dyovana.silva@grupoabr.com.br')}
+                  >
+                    Dyovana (Jundiaí)
                   </Button>
                 </div>
               </div>

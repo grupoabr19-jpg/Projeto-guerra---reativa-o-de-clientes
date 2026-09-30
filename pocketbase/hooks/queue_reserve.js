@@ -18,10 +18,8 @@ routerAdd(
 
       const userId = authRecord.id
       const userRole = authRecord.getString('role')
-      // No PocketBase Goja runtime, para campos JSON/array em authRecord,
-      // getStringSlice('regioes') extrai o array de strings corretamente.
-      // Se usar authRecord.get('regioes'), Goja retorna um byte slice UTF-8 de números [91, 34, ...],
-      // que ao rodar .map() iterava sobre cada caractere/byte numérico em vez das regiões!
+
+      // Extração resiliente de regioes do authRecord (Goja runtime do PocketBase)
       let userRegioes = []
       try {
         const slice = authRecord.getStringSlice('regioes')
@@ -45,32 +43,38 @@ routerAdd(
         }
       }
 
+      // Normaliza para array de strings limpas
+      if (Array.isArray(userRegioes)) {
+        userRegioes = userRegioes.map((r) => String(r || '').trim()).filter(Boolean)
+      } else {
+        userRegioes = []
+      }
+
       const now = new Date()
       const cutoffTime = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
 
       // Verifica se o operador pertence à rota transversal "Repescagem"
-      const isRepescagem =
-        Array.isArray(userRegioes) &&
-        userRegioes.some((r) => {
-          const upper = String(r).trim().toUpperCase()
-          return upper === 'REPESCAGEM'
-        })
+      const isRepescagem = userRegioes.some((r) => r.toUpperCase() === 'REPESCAGEM')
 
-      // Verifica se o operador já tem um cliente reservado ou em atendimento ativo (dentro do timeout de 30 min)
-      const currentLocked = $app.findRecordsByFilter(
-        'clientes',
-        `operador = '${userId}' && (estado = 'reservado' || estado = 'em_atendimento') && lock_timestamp >= '${cutoffTime}'`,
-        '-lock_timestamp',
-        1,
-        0,
-      )
+      // 1. Verifica se o operador já tem um cliente reservado ou em atendimento ativo (dentro do lock de 30 min)
+      try {
+        const currentLocked = $app.findRecordsByFilter(
+          'clientes',
+          `operador = '${userId}' && (estado = 'reservado' || estado = 'em_atendimento') && lock_timestamp >= '${cutoffTime}'`,
+          '-lock_timestamp',
+          1,
+          0,
+        )
 
-      if (currentLocked && currentLocked.length > 0) {
-        return e.json(200, {
-          cliente: currentLocked[0],
-          ja_reservado: true,
-          message: 'Você já possui um contato em andamento.',
-        })
+        if (currentLocked && currentLocked.length > 0) {
+          return e.json(200, {
+            cliente: currentLocked[0],
+            ja_reservado: true,
+            message: 'Você já possui um contato em andamento.',
+          })
+        }
+      } catch (lockErr) {
+        console.log('[queue_reserve] Erro ao verificar lock existente: ' + lockErr.message)
       }
 
       // Buscar configurações de motor de fila
@@ -86,105 +90,75 @@ routerAdd(
       const todayStr = now.toISOString().slice(0, 10)
       const endOfToday = `${todayStr} 23:59:59.999Z`
 
-      // Constrói filtro de regiões flexível (incluindo variações históricas como BRAGANÇA PAULISTA e MICRO-REGIÃO)
+      // Constrói filtro de regiões exato e rápido com suporte a variações de grafia
       const buildRegiaoCondition = (regiaoStr) => {
         const upper = String(regiaoStr).trim().toUpperCase()
         if (upper === 'BRAGANÇA' || upper === 'BRAGANCA') {
-          return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA' || regiao ~ 'BRAGANÇA')"
+          return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA')"
         }
         if (upper === 'CAMBUÍ' || upper === 'CAMBUI') {
-          return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao = 'MICRO REGIAO' || regiao = 'MICRO-REGIAO' || regiao ~ 'CAMBUÍ')"
+          return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao = 'MICRO REGIAO')"
         }
-        if (upper === 'BRAGANÇA PAULISTA' || upper === 'BRAGANCA PAULISTA') {
-          return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao ~ 'BRAGANÇA')"
+        if (
+          upper === 'POÇOS DE CALDAS' ||
+          upper === 'POCOS DE CALDAS' ||
+          upper === 'POÇOS CALDAS' ||
+          upper === 'POCOS CALDAS'
+        ) {
+          return "(regiao = 'POÇOS DE CALDAS' || regiao = 'POCOS DE CALDAS' || regiao = 'POÇOS CALDAS' || regiao = 'POCOS CALDAS')"
         }
-        if (upper === 'MICRO-REGIÃO' || upper === 'MICRO REGIAO' || upper === 'MICRO-REGIAO') {
-          return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao ~ 'CAMBUÍ')"
+        if (upper === 'JUNDIAÍ' || upper === 'JUNDIAI') {
+          return "(regiao = 'JUNDIAÍ' || regiao = 'JUNDIAI')"
         }
-        return `(regiao = '${upper}' || regiao ~ '${upper}')`
+        if (upper === 'ITAJUBÁ' || upper === 'ITAJUBA') {
+          return "(regiao = 'ITAJUBÁ' || regiao = 'ITAJUBA')"
+        }
+        // Evita operador ~ (LIKE '%x%') para não causar full table scan nos 23 mil registros
+        return `regiao = '${upper}'`
       }
 
       let regiaoFilter = ''
       if (isRepescagem) {
-        // Rota Repescagem é transversal: ignora restrição de uma única região (busca em todas as regiões)
+        // Rota Repescagem é transversal: ignora restrição de região
         regiaoFilter = ''
       } else if (userRole === 'operador') {
-        if (Array.isArray(userRegioes) && userRegioes.length > 0) {
-          const validRegioes = userRegioes.filter(Boolean)
-          if (validRegioes.length > 0) {
-            const parts = validRegioes.map((r) => buildRegiaoCondition(r))
-            regiaoFilter = `(${parts.join(' || ')})`
-          } else {
-            // Operador cadastrado sem regiões ainda atribuídas: atende qualquer cliente disponível na base
-            regiaoFilter = ''
-          }
+        if (userRegioes.length > 0) {
+          const parts = userRegioes.map((r) => buildRegiaoCondition(r))
+          regiaoFilter = parts.length === 1 ? parts[0] : `(${parts.join(' || ')})`
         } else {
-          // Operador sem regiões atribuídas na conta: atende a base geral para não travar o teste operacional
+          // Operador sem regiões atribuídas na conta: atende a base disponível para não travar a operação
           regiaoFilter = ''
         }
       } else {
-        // Supervisor ou admin (ex.: Thiago Almeida / Pietra Leite): acesso irrestrito se não tiver regiões ou busca em todas as regiões atribuídas
-        if (Array.isArray(userRegioes) && userRegioes.length > 0) {
-          const validRegioes = userRegioes.filter(Boolean)
-          if (validRegioes.length > 0) {
-            const parts = validRegioes.map((r) => buildRegiaoCondition(r))
-            regiaoFilter = `(${parts.join(' || ')})`
-          } else {
-            regiaoFilter = ''
-          }
+        // Supervisor ou admin: se tiver regiões atribuídas busca nelas, senão tem acesso total
+        if (userRegioes.length > 0) {
+          const parts = userRegioes.map((r) => buildRegiaoCondition(r))
+          regiaoFilter = parts.length === 1 ? parts[0] : `(${parts.join(' || ')})`
         } else {
           regiaoFilter = ''
         }
       }
 
-      // Função auxiliar inline para verificar se o cliente já foi contatado pelo vendedor original da rota
-      // Regra da Repescagem: clientes já contatados pelo vendedor original NÃO entram na Repescagem.
-      // Totalmente defensiva: se qualquer lookup de operador/contato falhar, trata como não contatado e nunca quebra com 500.
+      // Função defensiva de checagem para Repescagem
       const jaContatadoPeloVendedorOriginal = (clienteRec) => {
         try {
           const cId = clienteRec.id
           const vendedorOriginal = (clienteRec.getString('vendedor') || '').trim().toUpperCase()
 
-          // Também busca o vendedor_externo da região se não estiver no cliente
-          let vendedorRegiao = ''
-          let regNome = (clienteRec.getString('regiao') || '').trim().toUpperCase()
-          // Normaliza apelidos de região para busca na tabela de regiões oficiais
-          if (regNome === 'BRAGANÇA PAULISTA' || regNome === 'BRAGANCA PAULISTA') {
-            regNome = 'BRAGANÇA'
-          } else if (
-            regNome === 'MICRO-REGIÃO' ||
-            regNome === 'MICRO REGIAO' ||
-            regNome === 'MICRO-REGIAO'
-          ) {
-            regNome = 'CAMBUÍ'
-          }
-
-          if (regNome) {
-            try {
-              const rRec = $app.findFirstRecordByData('regioes', 'nome', regNome)
-              if (rRec) {
-                vendedorRegiao = (rRec.getString('vendedor_externo') || '').trim().toUpperCase()
-              }
-            } catch (_) {}
-          }
-
-          // Busca histórico de interações do cliente
           let interacoes = []
           try {
             interacoes = $app.findRecordsByFilter(
               'interacoes',
               `cliente = '${cId}'`,
               '-created',
-              50,
+              10,
               0,
             )
           } catch (_) {
             return false
           }
 
-          if (!interacoes || interacoes.length === 0) {
-            return false
-          }
+          if (!interacoes || interacoes.length === 0) return false
 
           for (let i = 0; i < interacoes.length; i++) {
             const it = interacoes[i]
@@ -192,13 +166,11 @@ routerAdd(
             if (!opId) continue
 
             try {
-              // PocketBase Goja: coleção 'users' (nunca '_pb_users_auth_')
               const opUser = $app.findRecordById('users', opId)
               if (opUser) {
                 const opNome = (opUser.getString('name') || '').trim().toUpperCase()
                 const opEmail = (opUser.getString('email') || '').trim().toUpperCase()
 
-                // Compara com o vendedor original registrado ou da região
                 if (vendedorOriginal) {
                   if (
                     opNome === vendedorOriginal ||
@@ -209,26 +181,11 @@ routerAdd(
                     return true
                   }
                 }
-
-                if (vendedorRegiao) {
-                  if (
-                    opNome === vendedorRegiao ||
-                    opNome.includes(vendedorRegiao) ||
-                    vendedorRegiao.includes(opNome) ||
-                    opEmail.includes(vendedorRegiao)
-                  ) {
-                    return true
-                  }
-                }
               }
-            } catch (_) {
-              // Se lookup de um usuário falhar, segue para a próxima interação
-            }
+            } catch (_) {}
           }
-
           return false
         } catch (_) {
-          // Trata como não contatado em caso de qualquer exceção imprevista
           return false
         }
       }
@@ -241,37 +198,44 @@ routerAdd(
         reagFilter += ` && ${regiaoFilter}`
       }
       if (isRepescagem) {
-        // Repescagem só atende clientes com mais de 90 dias sem faturar (faixa 90_plus ou dias_sem_faturar >= 90)
         reagFilter += " && (faixa = '90_plus' || dias_sem_faturar >= 90)"
       }
       if (filtroSegmento && filtroSegmento !== 'todos') {
-        reagFilter += ` && segmento ~ '${filtroSegmento}'`
+        reagFilter += ` && segmento = '${filtroSegmento}'`
       }
 
-      const reagendados = $app.findRecordsByFilter('clientes', reagFilter, 'reagendado_para', 50, 0)
-      if (reagendados && reagendados.length > 0) {
-        // Prioriza se for do próprio operador
-        const myReag = reagendados.find((r) => r.getString('reagendado_operador') === userId)
-        if (myReag) {
-          cand = myReag
-        } else {
-          // Filtra se for Repescagem: exclui os contatados pelo vendedor original da rota
-          for (let k = 0; k < reagendados.length; k++) {
-            const rCand = reagendados[k]
-            if (isRepescagem) {
-              if (!jaContatadoPeloVendedorOriginal(rCand)) {
+      try {
+        const reagendados = $app.findRecordsByFilter(
+          'clientes',
+          reagFilter,
+          'reagendado_para',
+          20,
+          0,
+        )
+        if (reagendados && reagendados.length > 0) {
+          const myReag = reagendados.find((r) => r.getString('reagendado_operador') === userId)
+          if (myReag) {
+            cand = myReag
+          } else {
+            for (let k = 0; k < reagendados.length; k++) {
+              const rCand = reagendados[k]
+              if (isRepescagem) {
+                if (!jaContatadoPeloVendedorOriginal(rCand)) {
+                  cand = rCand
+                  break
+                }
+              } else {
                 cand = rCand
                 break
               }
-            } else {
-              cand = rCand
-              break
             }
           }
         }
+      } catch (reagErr) {
+        console.log('[queue_reserve] Aviso ao buscar reagendados: ' + reagErr.message)
       }
 
-      // Se não achou reagendado, busca na base disponível
+      // B: Se não achou reagendado, busca na base de clientes disponíveis (estado = 'na_base')
       if (!cand) {
         let sortExpr = '-score'
         if (ordenacaoEscolhida === 'antigos') {
@@ -286,34 +250,51 @@ routerAdd(
           sortExpr = '-score'
         }
 
-        let baseFilter = `(estado = 'na_base' || ((estado = 'reservado' || estado = 'em_atendimento') && lock_timestamp < '${cutoffTime}'))`
+        // Condição limpa e indexada para SQLite:
+        // Prioriza estado = 'na_base', que usa diretamente o índice idx_clientes_fast_queue
+        let baseFilter = "estado = 'na_base' && telefone_invalido != true"
         if (regiaoFilter) {
           baseFilter += ` && ${regiaoFilter}`
         }
         if (isRepescagem) {
-          // Repescagem: rota transversal para clientes com 90+ dias sem faturar (excluindo os contatados pelo vendedor original)
           baseFilter += " && (faixa = '90_plus' || dias_sem_faturar >= 90)"
-        } else {
-          // Rotas normais (regionais):
-          // Regra do negócio: prioriza e atende clientes na faixa "60-89 dias" (até 60-89 dias sem faturar)
-          // Clientes "Sem Venda" (sem data de última compra) entram também na fila da região com prioridade normal/baixa
         }
         if (filtroSegmento && filtroSegmento !== 'todos') {
-          baseFilter += ` && segmento ~ '${filtroSegmento}'`
+          baseFilter += ` && segmento = '${filtroSegmento}'`
         }
-
-        // Evita telefones marcados como inválidos
-        baseFilter += ' && telefone_invalido != true'
 
         let pool = []
         try {
-          pool = $app.findRecordsByFilter('clientes', baseFilter, sortExpr, 150, 0)
+          pool = $app.findRecordsByFilter('clientes', baseFilter, sortExpr, 50, 0)
         } catch (findErr) {
           console.log('[queue_reserve] Erro em findRecordsByFilter clientes: ' + findErr.message)
         }
+
+        // Fallback: se pool na região estiver vazia e operador tiver região, tenta sem filtro de segmento
+        if ((!pool || pool.length === 0) && filtroSegmento && filtroSegmento !== 'todos') {
+          try {
+            let fallbackFilter = "estado = 'na_base' && telefone_invalido != true"
+            if (regiaoFilter) fallbackFilter += ` && ${regiaoFilter}`
+            pool = $app.findRecordsByFilter('clientes', fallbackFilter, sortExpr, 30, 0)
+          } catch (_) {}
+        }
+
+        // Fallback 2: se ainda assim não encontrar na região, para operadores sem clientes na base regional (ou se a região acabou),
+        // busca clientes gerais com telefone válido para não deixar o operador ocioso
+        if ((!pool || pool.length === 0) && userRole === 'operador' && !isRepescagem) {
+          try {
+            pool = $app.findRecordsByFilter(
+              'clientes',
+              "estado = 'na_base' && telefone_invalido != true",
+              sortExpr,
+              20,
+              0,
+            )
+          } catch (_) {}
+        }
+
         if (pool && pool.length > 0) {
           if (isRepescagem) {
-            // Repescagem: percorre e escolhe o primeiro com 90+ dias que NÃO tenha contato prévio do vendedor original
             for (let m = 0; m < pool.length; m++) {
               const item = pool[m]
               if (!jaContatadoPeloVendedorOriginal(item)) {
@@ -322,11 +303,7 @@ routerAdd(
               }
             }
           } else {
-            // Rotas normais regionais:
-            // Regra do Projeto Guerra: clientes com até 60-89 dias sem faturamento (faixa '60_89')
-            // têm prioridade absoluta nas rotas regionais.
-            // Se houver clientes 60-89 dias, seleciona o melhor deles.
-            // Em segundo lugar, se não houver clientes 60-89 dias disponíveis, atende clientes com 90+ dias da região ou Sem Venda.
+            // Prioriza clientes 60-89 dias se houver
             const clientesFaixa60_89 = pool.filter((c) => {
               const f = c.getString('faixa')
               const d = c.getInt('dias_sem_faturar')
@@ -334,35 +311,8 @@ routerAdd(
             })
 
             if (clientesFaixa60_89.length > 0) {
-              if (ordenacaoEscolhida === 'antigos') {
-                clientesFaixa60_89.sort(
-                  (a, b) =>
-                    (b.getInt('dias_sem_faturar') || 0) - (a.getInt('dias_sem_faturar') || 0),
-                )
-              } else if (ordenacaoEscolhida === 'novos') {
-                clientesFaixa60_89.sort(
-                  (a, b) =>
-                    (a.getInt('dias_sem_faturar') || 0) - (b.getInt('dias_sem_faturar') || 0),
-                )
-              } else {
-                clientesFaixa60_89.sort(
-                  (a, b) => (b.getInt('score') || 0) - (a.getInt('score') || 0),
-                )
-              }
               cand = clientesFaixa60_89[0]
             } else {
-              // Se não há na faixa 60-89, pega da pool geral da região
-              if (ordenacaoEscolhida === 'score' && modoCriterio === 'modo_c') {
-                pool.sort((a, b) => {
-                  const scoreA =
-                    (a.getInt('score') || 0) +
-                    (a.getString('faixa') === '90_plus' ? bonusFaixa90 : 0)
-                  const scoreB =
-                    (b.getInt('score') || 0) +
-                    (b.getString('faixa') === '90_plus' ? bonusFaixa90 : 0)
-                  return scoreB - scoreA
-                })
-              }
               cand = pool[0]
             }
           }

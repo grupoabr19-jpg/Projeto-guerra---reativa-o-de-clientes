@@ -884,13 +884,33 @@ export default function ConfiguracoesPage() {
                 </div>
               )}
 
-              <div className="text-xs text-slate-500 bg-blue-50/70 p-3 rounded-lg border border-blue-200">
+              {/* Modo de Operação Definido pelo Usuário */}
+              <div className="p-3.5 bg-indigo-50/80 border border-indigo-200 rounded-lg text-xs space-y-1.5">
+                <div className="flex items-center gap-2 text-indigo-900 font-bold">
+                  <Shield className="h-4 w-4 text-indigo-700" />
+                  <span>Modo Atual: Somente Leitura — Consulta e Cruzamento de Dados</span>
+                  <Badge className="bg-indigo-700 text-white text-[10px] py-0 px-2">
+                    Somente Leitura Ativo
+                  </Badge>
+                </div>
+                <p className="text-slate-700 leading-relaxed">
+                  Conforme diretriz estratégica do <strong>Projeto Guerra</strong>, a integração com
+                  o Kommo CRM está configurada <strong>exclusivamente para leitura</strong> (puxar e
+                  cruzar informações de contatos, campos personalizados e funis com as planilhas da
+                  base).
+                </p>
+                <p className="text-slate-600 text-[11px]">
+                  <strong>Envio de dados manual:</strong> Nenhum lead, contato, nota ou tarefa é
+                  criado ou movido automaticamente no Kommo. Todo processo de criação externa
+                  permanece manual a critério do administrador.
+                </p>
+              </div>
+
+              <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-200">
                 <strong>Instruções de Integração:</strong> Os dados de autenticação da sua conta
-                Kommo são lidos exclusivamente das variáveis seguras de ambiente do backend. Assim
-                que você fornecer o seu <code>KOMMO_SUBDOMAIN</code> e o token{' '}
-                <code>KOMMO_ACCESS_TOKEN</code> no painel do Skip Cloud, o status acima ficará verde
-                automaticamente e a sincronização bidirecional de contatos, notas e tarefas será
-                ativada.
+                Kommo são lidos exclusivamente das variáveis seguras de ambiente do backend (
+                <code>KOMMO_SUBDOMAIN</code> e <code>KOMMO_ACCESS_TOKEN</code>). O cruzamento de
+                dados com a base de planilhas opera sem envio ou alteração de dados no CRM.
               </div>
             </CardContent>
             <CardFooter className="flex justify-between border-t border-slate-100 pt-4">

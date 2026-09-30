@@ -149,66 +149,72 @@ export async function releaseQueueLock(clienteId: string, rascunho?: Record<stri
 
 // Kommo API calls
 export async function checkKommoStatus() {
-  const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/kommo/status`, {
-    headers: {
-      Authorization: pb.authStore.token,
-    },
-  })
-  return res.json() as Promise<{
-    configured: boolean
-    connected?: boolean
-    subdomain: string
-    hasAccessToken: boolean
-    hasOAuth: boolean
-    hasCustomFieldSecrets: boolean
-    status: string
-    message: string
-    inspecao?: Record<string, any>
-    ultimoSync?: string | null
-  }>
+  try {
+    const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/kommo/status`, {
+      headers: {
+        Authorization: pb.authStore.token,
+      },
+    })
+    const text = await res.text()
+    try {
+      return JSON.parse(text)
+    } catch (_) {
+      return {
+        configured: true,
+        connected: false,
+        subdomain: 'ederbueno.kommo.com',
+        mode: 'readonly',
+        somente_leitura: true,
+        status: 'timeout',
+        message:
+          'Servidor Kommo demorou para responder ou retornou formato texto. A integração opera em modo Somente Leitura.',
+      }
+    }
+  } catch (err: unknown) {
+    return {
+      configured: true,
+      connected: false,
+      subdomain: 'ederbueno.kommo.com',
+      mode: 'readonly',
+      somente_leitura: true,
+      status: 'error',
+      message: err instanceof Error ? err.message : 'Falha na conexão com a API',
+    }
+  }
 }
 
 export async function testKommoConnection() {
-  const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/kommo/test`, {
-    method: 'POST',
-    headers: {
-      Authorization: pb.authStore.token,
-    },
-  })
-  return res.json() as Promise<{
-    ok: boolean
-    status: string
-    message: string
-    account?: {
-      id?: number
-      name?: string
-      subdomain?: string
-      country?: string
-      currency?: string
+  try {
+    const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/kommo/test`, {
+      method: 'POST',
+      headers: {
+        Authorization: pb.authStore.token,
+      },
+    })
+    const text = await res.text()
+    try {
+      return JSON.parse(text)
+    } catch (_) {
+      return {
+        ok: false,
+        status: 'timeout',
+        mode: 'readonly',
+        somente_leitura: true,
+        message:
+          'Tempo limite na chamada Kommo CRM (Backend timeout). Em modo Somente Leitura, dados continuam disponíveis para consulta.',
+        testedAt: new Date().toISOString(),
+      }
     }
-    stats?: {
-      total_pipelines?: number
-      total_users?: number
-      total_contact_fields?: number
-      total_lead_fields?: number
-      has_companies?: boolean
-      has_contacts?: boolean
-      has_leads?: boolean
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      status: 'error',
+      mode: 'readonly',
+      somente_leitura: true,
+      message: err instanceof Error ? err.message : 'Falha de comunicação com o servidor',
+      testedAt: new Date().toISOString(),
     }
-    pipelines?: Array<{
-      id: number
-      name: string
-      is_main?: boolean
-      statuses: Array<{ id: number; name: string; color?: string }>
-    }>
-    users?: Array<{ id: number; name: string; email?: string }>
-    contact_fields?: Array<{ id: number; name: string; type: string; code?: string }>
-    lead_fields?: Array<{ id: number; name: string; type: string; code?: string }>
-    secretChecks?: Record<string, any>
-    hasReativacaoPipeline?: boolean
-    reativacaoPipeline?: any
-    testedAt: string
-  }>
+  }
 }
 
 export async function syncKommoLead(data: {
