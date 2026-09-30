@@ -226,6 +226,7 @@ export const REGIOES_PADRAO: readonly string[] = [
   'ITAJUBÁ',
   'EXTREMA',
   'CAMBUÍ',
+  'ATACADO',
 ] as const
 
 export const TODAS_REGIOES_FILTRO: readonly string[] = [...REGIOES_PADRAO, 'REPESCAGEM'] as const

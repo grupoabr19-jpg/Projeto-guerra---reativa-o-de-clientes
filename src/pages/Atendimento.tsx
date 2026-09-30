@@ -254,6 +254,7 @@ export default function AtendimentoPage() {
     if (s === 'POUSO ALEGRE') return 'POUSO ALEGRE'
     if (s === 'VARGINHA') return 'VARGINHA'
     if (s === 'EXTREMA') return 'EXTREMA'
+    if (s === 'ATACADO') return 'ATACADO'
     return s
   }
 

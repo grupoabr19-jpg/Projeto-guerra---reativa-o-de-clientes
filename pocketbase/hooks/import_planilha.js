@@ -342,6 +342,8 @@ routerAdd(
               regStr === 'MICRO-REGIAO'
             ) {
               regStr = 'CAMBUÍ'
+            } else if (regStr === 'ATACADO') {
+              regStr = 'ATACADO'
             }
             if (regStr && stringsDifferent(targetRec.getString('regiao'), regStr)) {
               targetRec.set('regiao', regStr)
@@ -594,6 +596,8 @@ routerAdd(
             parsedReg === 'MICRO-REGIAO'
           ) {
             parsedReg = 'CAMBUÍ'
+          } else if (parsedReg === 'ATACADO') {
+            parsedReg = 'ATACADO'
           }
           rec.set('regiao', parsedReg)
 
@@ -796,6 +800,8 @@ routerAdd(
             parsedReg === 'MICRO-REGIAO'
           ) {
             parsedReg = 'CAMBUÍ'
+          } else if (parsedReg === 'ATACADO') {
+            parsedReg = 'ATACADO'
           }
           if (stringsDifferent(rec.getString('regiao'), parsedReg)) {
             rec.set('regiao', parsedReg)

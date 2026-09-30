@@ -113,6 +113,9 @@ routerAdd(
         if (upper === 'ITAJUBÁ' || upper === 'ITAJUBA') {
           return "(regiao = 'ITAJUBÁ' || regiao = 'ITAJUBA')"
         }
+        if (upper === 'ATACADO') {
+          return "regiao = 'ATACADO'"
+        }
         // Evita operador ~ (LIKE '%x%') para não causar full table scan nos 23 mil registros
         return `regiao = '${upper}'`
       }
