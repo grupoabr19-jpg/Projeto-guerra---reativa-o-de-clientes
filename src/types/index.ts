@@ -116,13 +116,18 @@ export interface RespostaFormulario {
   created: string
 }
 
+export type ModoImportacao = 'base_mestre' | 'faturamento_reconciliacao' | 'enriquecimento_margem'
+
 export interface Importacao {
   id: string
   nome_arquivo: string
+  modo_importacao?: ModoImportacao
   linhas_total: number
   linhas_importadas: number
   linhas_atualizadas: number
   linhas_rejeitadas: number
+  matches_nome?: number
+  sem_correspondencia?: number
   reconciliados_faturaram: number
   pedidos_validados: number
   pedidos_divergentes: number

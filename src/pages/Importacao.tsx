@@ -92,6 +92,10 @@ export default function ImportacaoPage() {
     tipo_base: string
     descricao: string
   } | null>(null)
+  const [modoImportacao, setModoImportacao] = useState<
+    'base_mestre' | 'faturamento_reconciliacao' | 'enriquecimento_margem'
+  >('base_mestre')
+  const [modoAlteradoManualmente, setModoAlteradoManualmente] = useState(false)
   const [templatesConfig, setTemplatesConfig] = useState<any[]>([])
 
   const [mapping, setMapping] = useState<ColumnMapping>({
@@ -130,9 +134,20 @@ export default function ImportacaoPage() {
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<{
     total: number
+    modo: string
     novas: number
     atualizadas: number
     rejeitadas: number
+    matchesNome: number
+    semCorrespondencia: number
+    semCorrespondenciaLista?: Array<{
+      linha: number
+      nome: string
+      cidade: string
+      uf: string
+      pedido: string
+      valor: number
+    }>
     reconciliadosFaturaram: number
     pedidosValidados: number
     pedidosDivergentes: number
@@ -210,7 +225,12 @@ export default function ImportacaoPage() {
     // Assinatura: 'cod cliente', 'fat 12m', 'peso nf', 'margem media', 'freq compras'
     const hasConsolidadoGuerra = normalizedHeaders.some(
       (h) =>
-        h.norm.includes('fat 12m') || h.norm.includes('peso nf') || h.norm.includes('margem media'),
+        (h.norm.includes('fat 12m') ||
+          h.norm.includes('peso nf') ||
+          h.norm.includes('margem media')) &&
+        normalizedHeaders.some(
+          (item) => item.norm.includes('cod') && item.norm.includes('cliente'),
+        ),
     )
 
     if (hasConsolidadoGuerra) {
@@ -319,7 +339,7 @@ export default function ImportacaoPage() {
     }
 
     // Template 2: Gestão da Produção — Faturamento
-    // Assinatura: 'pedido', 'fat r', 'data nota fiscal', 'canal'
+    // Assinatura: 'pedido', 'fat r', 'data nota fiscal', 'canal', 'cliente'
     const hasPedido = normalizedHeaders.some(
       (h) => h.norm === 'pedido' || h.norm.includes('pedido'),
     )
@@ -334,7 +354,7 @@ export default function ImportacaoPage() {
         nome: 'Gestão da Produção — Faturamento',
         tipo_base: 'faturamento',
         descricao:
-          'Layout de faturamento e notas fiscais detectado: reconciliação de pedidos, clientes faturados e valores de faturamento.',
+          'Layout de faturamento detectado: "Cliente" mapeado para Razão Social / Nome. Sem código de cliente — importação no modo Faturamento/Reconciliação.',
       })
 
       const findHeader = (predicate: (norm: string) => boolean) =>
@@ -342,7 +362,12 @@ export default function ImportacaoPage() {
 
       return {
         codigo: '',
-        nome: findHeader((n) => n === 'cliente' || n.includes('cliente')),
+        nome: findHeader(
+          (n) =>
+            n === 'cliente' ||
+            n === 'nome do cliente' ||
+            (n.includes('cliente') && !n.includes('cod')),
+        ),
         telefone: '',
         whatsapp: '',
         email: '',
@@ -350,15 +375,58 @@ export default function ImportacaoPage() {
         estado_uf: findHeader((n) => n === 'uf' || n === 'estado'),
         regiao: findHeader((n) => n === 'regiao'),
         vendedor: findHeader((n) => n === 'vendedor'),
-        segmento: findHeader((n) => n === 'familia' || n.includes('familia')),
+        segmento: findHeader(
+          (n) => n === 'familia' || n.includes('familia') || n.includes('segmento'),
+        ),
         ultima_compra: findHeader(
-          (n) => n.includes('data nota fiscal') || n.includes('data entrega romaneio'),
+          (n) =>
+            n.includes('data documento') ||
+            n.includes('data entrada') ||
+            n.includes('data nota fiscal') ||
+            n.includes('data entrega romaneio'),
         ),
         valor_ultima_compra: findHeader((n) => n.includes('fat r') || n === 'total'),
         toneladas_historico: findHeader((n) => n.includes('peso nf') || n === 'peso'),
         valor_historico: findHeader((n) => n === 'total'),
         compras_count: '',
-        pedido: findHeader((n) => n === 'pedido'),
+        pedido: findHeader((n) => n === 'pedido' || n.includes('pedido')),
+        dias_sem_faturar: '',
+        faixa: '',
+      }
+    }
+
+    // Template 3: Margem GABR (Enriquecimento)
+    const hasMargemCol = normalizedHeaders.some(
+      (h) => h.norm.includes('margem') || h.norm.includes('mb %') || h.norm.includes('mrg'),
+    )
+    if (hasMargemCol) {
+      setDetectedLayout({
+        nome: 'Margem GABR (Enriquecimento Opcional)',
+        tipo_base: 'margem',
+        descricao:
+          'Planilha de Margem detectada: atualização opcional de margem média (%) e valor em clientes existentes (sem criar novos clientes nem alterar fila).',
+      })
+
+      const findHeader = (predicate: (norm: string) => boolean) =>
+        normalizedHeaders.find((h) => predicate(h.norm))?.original || ''
+
+      return {
+        codigo: findHeader((n) => n.includes('cod') && n.includes('cliente')),
+        nome: findHeader((n) => n.includes('cliente') || n.includes('nome') || n.includes('razao')),
+        telefone: '',
+        whatsapp: '',
+        email: '',
+        cidade: findHeader((n) => n === 'cidade'),
+        estado_uf: findHeader((n) => n === 'uf' || n === 'estado'),
+        regiao: findHeader((n) => n === 'regiao'),
+        vendedor: findHeader((n) => n === 'vendedor'),
+        segmento: '',
+        ultima_compra: '',
+        valor_ultima_compra: '',
+        toneladas_historico: '',
+        valor_historico: '',
+        compras_count: '',
+        pedido: '',
         dias_sem_faturar: '',
         faixa: '',
       }
@@ -393,6 +461,7 @@ export default function ImportacaoPage() {
     setFile(f)
     setImportResult(null)
     setDetectedLayout(null)
+    setModoAlteradoManualmente(false)
     setUploadError(null)
     setIsParsing(true)
     setParseProgress({ percent: 10, message: 'Iniciando leitura em segundo plano (Web Worker)...' })
@@ -424,6 +493,15 @@ export default function ImportacaoPage() {
 
       const autoMap = matchTemplate(parsed.colunasDetectadas)
       setMapping(autoMap)
+
+      // Inferência inicial de modo com base no layout e mapeamento
+      if (autoMap.codigo && autoMap.nome) {
+        setModoImportacao('base_mestre')
+      } else if (!autoMap.codigo && autoMap.nome) {
+        setModoImportacao('faturamento_reconciliacao')
+      } else if (parsed.colunasDetectadas.some((c) => c.toLowerCase().includes('margem'))) {
+        setModoImportacao('enriquecimento_margem')
+      }
     } catch (err: unknown) {
       console.error('Erro ao ler planilha na Importação:', err)
       const msg = err instanceof Error ? err.message : 'Falha ao processar arquivo'
@@ -433,13 +511,33 @@ export default function ImportacaoPage() {
     }
   }
 
+  // Determinar o modo efetivo de importação: se o usuário não escolheu explicitamente, inferir
+  const getEffectiveModo = () => {
+    if (modoAlteradoManualmente) return modoImportacao
+    if (mapping.codigo && mapping.nome) return 'base_mestre'
+    if (!mapping.codigo && mapping.nome) return 'faturamento_reconciliacao'
+    if (detectedLayout?.tipo_base === 'margem') return 'enriquecimento_margem'
+    return modoImportacao
+  }
+
+  const effectiveModo = getEffectiveModo()
+
   // Enviar para o backend em chunks seguros com atualização de progresso contínua
   const handleConfirmImport = async () => {
     if (!file || rawRows.length === 0) return
 
-    if (!mapping.codigo || !mapping.nome) {
+    // Validação flexível: pelo menos UM dos dois (Código ou Nome) é obrigatório
+    if (!mapping.codigo && !mapping.nome) {
       setUploadError(
-        'As colunas de Código do Cliente e Nome são estritamente obrigatórias para o mapeamento!',
+        'Mapeamento incompleto: pelo menos um dos campos "Código do Cliente" ou "Razão Social / Nome" deve ser vinculado!',
+      )
+      return
+    }
+
+    // Se o modo for Base Mestre explicitamente, exige ambos
+    if (effectiveModo === 'base_mestre' && (!mapping.codigo || !mapping.nome)) {
+      setUploadError(
+        'Para importação como "Base Mestre", tanto o Código do Cliente quanto a Razão Social / Nome são obrigatórios.',
       )
       return
     }
@@ -512,9 +610,20 @@ export default function ImportacaoPage() {
 
       const consolidatedResumo = {
         total: totalRows,
+        modo: effectiveModo,
         novas: 0,
         atualizadas: 0,
         rejeitadas: 0,
+        matchesNome: 0,
+        semCorrespondencia: 0,
+        semCorrespondenciaLista: [] as Array<{
+          linha: number
+          nome: string
+          cidade: string
+          uf: string
+          pedido: string
+          valor: number
+        }>,
         reconciliadosFaturaram: 0,
         pedidosValidados: 0,
         pedidosDivergentes: 0,
@@ -546,12 +655,15 @@ export default function ImportacaoPage() {
           rows: chunk,
           fileName: `${file.name} (Lote ${c + 1}/${totalChunks})`,
           substituicaoTotal: substituicaoTotal && isLastChunk,
+          modoImportacao: effectiveModo,
         })
 
         if (response.resumo) {
           consolidatedResumo.novas += response.resumo.novas || 0
           consolidatedResumo.atualizadas += response.resumo.atualizadas || 0
           consolidatedResumo.rejeitadas += response.resumo.rejeitadas || 0
+          consolidatedResumo.matchesNome += response.resumo.matchesNome || 0
+          consolidatedResumo.semCorrespondencia += response.resumo.semCorrespondencia || 0
           consolidatedResumo.reconciliadosFaturaram += response.resumo.reconciliadosFaturaram || 0
           consolidatedResumo.pedidosValidados += response.resumo.pedidosValidados || 0
           consolidatedResumo.pedidosDivergentes += response.resumo.pedidosDivergentes || 0
@@ -560,6 +672,11 @@ export default function ImportacaoPage() {
           }
           if (Array.isArray(response.resumo.divergencias)) {
             consolidatedResumo.divergencias.push(...response.resumo.divergencias)
+          }
+          if (Array.isArray(response.resumo.semCorrespondenciaLista)) {
+            consolidatedResumo.semCorrespondenciaLista.push(
+              ...response.resumo.semCorrespondenciaLista,
+            )
           }
         }
       }
@@ -688,7 +805,6 @@ export default function ImportacaoPage() {
               </div>
             )}
           </div>
-
           {/* Seletor de Aba (se arquivo tiver múltiplas abas) */}
           {availableSheets.length > 1 && file && (
             <div className="flex items-center space-x-3 bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs">
@@ -718,7 +834,6 @@ export default function ImportacaoPage() {
               </span>
             </div>
           )}
-
           {/* Feedback de Erro Visível */}
           {uploadError && (
             <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-lg flex items-start space-x-3 text-xs text-rose-800">
@@ -737,7 +852,6 @@ export default function ImportacaoPage() {
               </div>
             </div>
           )}
-
           {/* Barra de Progresso do Envio em Chunks */}
           {isProcessing && (
             <div className="p-4 bg-blue-50/80 border border-blue-200 rounded-lg space-y-2">
@@ -752,7 +866,6 @@ export default function ImportacaoPage() {
               <p className="text-[11px] text-blue-700">{processProgress.message}</p>
             </div>
           )}
-
           {/* Configuração de substituição total */}
           <div className="flex items-start space-x-3 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
             <Checkbox
@@ -774,7 +887,104 @@ export default function ImportacaoPage() {
               </p>
             </div>
           </div>
+          {/* Seletor do Modo de Importação e Explicação */}
+          {headers.length > 0 && (
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center space-x-2">
+                  <Layers className="h-4 w-4 text-blue-600" />
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                    Modo de Importação em Uso:
+                  </span>
+                  <Badge
+                    className={
+                      effectiveModo === 'base_mestre'
+                        ? 'bg-blue-600 text-white text-xs'
+                        : effectiveModo === 'faturamento_reconciliacao'
+                          ? 'bg-amber-600 text-white text-xs'
+                          : 'bg-emerald-600 text-white text-xs'
+                    }
+                  >
+                    {effectiveModo === 'base_mestre'
+                      ? 'Base Mestre (Upsert)'
+                      : effectiveModo === 'faturamento_reconciliacao'
+                        ? 'Faturamento / Reconciliação'
+                        : 'Enriquecimento (Margem)'}
+                  </Badge>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-[11px] text-slate-500">Alterar modo:</span>
+                  <Select
+                    value={effectiveModo}
+                    onValueChange={(val: any) => {
+                      setModoImportacao(val)
+                      setModoAlteradoManualmente(true)
+                    }}
+                  >
+                    <SelectTrigger className="h-7 text-xs w-56 bg-white border-slate-300">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="base_mestre" className="text-xs">
+                        Base Mestre (Cria e atualiza)
+                      </SelectItem>
+                      <SelectItem value="faturamento_reconciliacao" className="text-xs">
+                        Faturamento / Reconciliação
+                      </SelectItem>
+                      <SelectItem value="enriquecimento_margem" className="text-xs">
+                        Enriquecimento (Margem)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
+              {/* Descrição e Regras do Modo Selecionado */}
+              <div className="text-xs rounded-lg p-3 border">
+                {effectiveModo === 'base_mestre' && (
+                  <div className="space-y-1 text-blue-900 bg-blue-50/60 p-2.5 rounded border border-blue-100">
+                    <p className="font-semibold flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-blue-600" />
+                      Modo Base Mestre (requer Código + Razão Social)
+                    </p>
+                    <p className="text-[11px] text-blue-800 leading-relaxed">
+                      Realiza upsert por código único (ex: C020106). Cria novos clientes inativos,
+                      atualiza cadastros existentes, recalcula o score ponderado e alimenta a fila
+                      de reativação.
+                    </p>
+                  </div>
+                )}
+                {effectiveModo === 'faturamento_reconciliacao' && (
+                  <div className="space-y-1 text-amber-900 bg-amber-50/70 p-2.5 rounded border border-amber-200">
+                    <p className="font-semibold flex items-center gap-1.5">
+                      <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                      Planilha sem código de cliente — Modo Faturamento / Reconciliação
+                    </p>
+                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                      Clientes existentes serão atualizados por{' '}
+                      <strong>Razão Social / Nome normalizado</strong> (+ cidade/UF).{' '}
+                      <strong>Nenhum cliente novo será criado.</strong> Atualiza último pedido,
+                      notas fiscais, faturamento R$, peso e canal. Clientes que faturaram saem
+                      imediatamente da fila de reativação.
+                    </p>
+                  </div>
+                )}
+                {effectiveModo === 'enriquecimento_margem' && (
+                  <div className="space-y-1 text-emerald-900 bg-emerald-50/70 p-2.5 rounded border border-emerald-200">
+                    <p className="font-semibold flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
+                      Modo Enriquecimento (Margem)
+                    </p>
+                    <p className="text-[11px] text-emerald-800 leading-relaxed">
+                      Match por código ou nome normalizado. Atualiza apenas métricas de margem (%) e
+                      valor que alimentam o bônus de score e gatilhos de fechamento.{' '}
+                      <strong>Não cria clientes novos nem altera a fila.</strong>
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           {/* Alerta de Layout Detectado Automaticamente */}
           {detectedLayout && (
             <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-lg flex items-start space-x-3 text-xs text-blue-900">
@@ -793,7 +1003,6 @@ export default function ImportacaoPage() {
               </div>
             </div>
           )}
-
           {/* Mapeamento de Colunas */}
           {headers.length > 0 && (
             <div className="space-y-3 pt-2 border-t border-slate-200">
@@ -809,7 +1018,7 @@ export default function ImportacaoPage() {
                   )}
                 </div>
                 <span className="text-[11px] text-slate-400">
-                  Ajuste os vínculos caso as colunas da sua planilha tenham nomes diferentes.
+                  Pelo menos um dos dois (Código ou Nome) é obrigatório.
                 </span>
               </div>
 
@@ -817,17 +1026,26 @@ export default function ImportacaoPage() {
                 {/* Código */}
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-slate-700 flex items-center justify-between">
-                    <span>Código do Cliente *</span>
-                    <span className="text-[10px] text-red-500 font-bold">Obrigatório</span>
+                    <span>Código do Cliente</span>
+                    {effectiveModo === 'base_mestre' ? (
+                      <span className="text-[10px] text-red-500 font-bold">Obrigatório</span>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 font-medium">Opcional</span>
+                    )}
                   </Label>
                   <Select
-                    value={mapping.codigo}
-                    onValueChange={(val) => setMapping({ ...mapping, codigo: val })}
+                    value={mapping.codigo || '__none__'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, codigo: val === '__none__' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                        (Nenhum / Deixar Vazio)
+                      </SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h} className="text-xs">
                           {h}
@@ -840,17 +1058,26 @@ export default function ImportacaoPage() {
                 {/* Nome */}
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-slate-700 flex items-center justify-between">
-                    <span>Razão Social / Nome *</span>
-                    <span className="text-[10px] text-red-500 font-bold">Obrigatório</span>
+                    <span>Razão Social / Nome</span>
+                    <span className="text-[10px] text-red-500 font-bold">
+                      {effectiveModo === 'faturamento_reconciliacao'
+                        ? 'Chave de Match'
+                        : 'Obrigatório'}
+                    </span>
                   </Label>
                   <Select
-                    value={mapping.nome}
-                    onValueChange={(val) => setMapping({ ...mapping, nome: val })}
+                    value={mapping.nome || '__none__'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, nome: val === '__none__' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                        (Nenhum / Deixar Vazio)
+                      </SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h} className="text-xs">
                           {h}
@@ -864,13 +1091,18 @@ export default function ImportacaoPage() {
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-slate-700">Região / Território</Label>
                   <Select
-                    value={mapping.regiao}
-                    onValueChange={(val) => setMapping({ ...mapping, regiao: val })}
+                    value={mapping.regiao || '__none__'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, regiao: val === '__none__' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                        (Nenhum / Deixar Vazio)
+                      </SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h} className="text-xs">
                           {h}
@@ -884,13 +1116,18 @@ export default function ImportacaoPage() {
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-slate-700">Vendedor Carteira</Label>
                   <Select
-                    value={mapping.vendedor}
-                    onValueChange={(val) => setMapping({ ...mapping, vendedor: val })}
+                    value={mapping.vendedor || '__none__'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, vendedor: val === '__none__' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                        (Nenhum / Deixar Vazio)
+                      </SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h} className="text-xs">
                           {h}
@@ -904,13 +1141,18 @@ export default function ImportacaoPage() {
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-slate-700">Telefone Fixo / PABX</Label>
                   <Select
-                    value={mapping.telefone}
-                    onValueChange={(val) => setMapping({ ...mapping, telefone: val })}
+                    value={mapping.telefone || '__none__'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, telefone: val === '__none__' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                        (Nenhum / Deixar Vazio)
+                      </SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h} className="text-xs">
                           {h}
@@ -924,13 +1166,18 @@ export default function ImportacaoPage() {
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-slate-700">WhatsApp / Celular</Label>
                   <Select
-                    value={mapping.whatsapp}
-                    onValueChange={(val) => setMapping({ ...mapping, whatsapp: val })}
+                    value={mapping.whatsapp || '__none__'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, whatsapp: val === '__none__' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                        (Nenhum / Deixar Vazio)
+                      </SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h} className="text-xs">
                           {h}
@@ -946,13 +1193,18 @@ export default function ImportacaoPage() {
                     Último Faturamento / Data
                   </Label>
                   <Select
-                    value={mapping.ultima_compra}
-                    onValueChange={(val) => setMapping({ ...mapping, ultima_compra: val })}
+                    value={mapping.ultima_compra || '__none__'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, ultima_compra: val === '__none__' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                        (Nenhum / Deixar Vazio)
+                      </SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h} className="text-xs">
                           {h}
@@ -968,13 +1220,18 @@ export default function ImportacaoPage() {
                     Valor R$ / Faturamento / Limite
                   </Label>
                   <Select
-                    value={mapping.valor_ultima_compra}
-                    onValueChange={(val) => setMapping({ ...mapping, valor_ultima_compra: val })}
+                    value={mapping.valor_ultima_compra || '__none__'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, valor_ultima_compra: val === '__none__' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                        (Nenhum / Deixar Vazio)
+                      </SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h} className="text-xs">
                           {h}
@@ -988,13 +1245,18 @@ export default function ImportacaoPage() {
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-slate-700">Cidade</Label>
                   <Select
-                    value={mapping.cidade}
-                    onValueChange={(val) => setMapping({ ...mapping, cidade: val })}
+                    value={mapping.cidade || '__none__'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, cidade: val === '__none__' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                        (Nenhum / Deixar Vazio)
+                      </SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h} className="text-xs">
                           {h}
@@ -1008,13 +1270,18 @@ export default function ImportacaoPage() {
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-slate-700">Estado / UF</Label>
                   <Select
-                    value={mapping.estado_uf}
-                    onValueChange={(val) => setMapping({ ...mapping, estado_uf: val })}
+                    value={mapping.estado_uf || '__none__'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, estado_uf: val === '__none__' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                        (Nenhum / Deixar Vazio)
+                      </SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h} className="text-xs">
                           {h}
@@ -1030,13 +1297,18 @@ export default function ImportacaoPage() {
                     Dias Sem Faturar (Recência)
                   </Label>
                   <Select
-                    value={mapping.dias_sem_faturar}
-                    onValueChange={(val) => setMapping({ ...mapping, dias_sem_faturar: val })}
+                    value={mapping.dias_sem_faturar || '__none__'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, dias_sem_faturar: val === '__none__' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                        (Nenhum / Deixar Vazio)
+                      </SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h} className="text-xs">
                           {h}
@@ -1050,13 +1322,18 @@ export default function ImportacaoPage() {
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-slate-700">Faixa de Inatividade</Label>
                   <Select
-                    value={mapping.faixa}
-                    onValueChange={(val) => setMapping({ ...mapping, faixa: val })}
+                    value={mapping.faixa || '__none__'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, faixa: val === '__none__' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                        (Nenhum / Deixar Vazio)
+                      </SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h} className="text-xs">
                           {h}
@@ -1072,13 +1349,18 @@ export default function ImportacaoPage() {
                     Número do Pedido (Reconciliação)
                   </Label>
                   <Select
-                    value={mapping.pedido}
-                    onValueChange={(val) => setMapping({ ...mapping, pedido: val })}
+                    value={mapping.pedido || '__none__'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, pedido: val === '__none__' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                        (Nenhum / Deixar Vazio)
+                      </SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h} className="text-xs">
                           {h}
@@ -1090,7 +1372,6 @@ export default function ImportacaoPage() {
               </div>
             </div>
           )}
-
           {/* Prévia das primeiras 5 linhas */}
           {rawRows.length > 0 && (
             <div className="space-y-2">
@@ -1128,36 +1409,113 @@ export default function ImportacaoPage() {
               </div>
             </div>
           )}
-
           {/* Relatório do resultado da importação */}
           {importResult && (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
-              <div className="flex items-center space-x-2 text-emerald-800 font-bold text-sm">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                <span>Importação e Reconciliação Concluída com Sucesso!</span>
+            <div className="p-4 bg-emerald-50/90 border border-emerald-200 rounded-xl space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2 text-emerald-900 font-bold text-sm">
+                <div className="flex items-center space-x-2">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                  <span>Carga e Processamento Concluídos!</span>
+                </div>
+                <Badge
+                  variant="outline"
+                  className="bg-white border-emerald-300 text-emerald-800 text-xs"
+                >
+                  Modo:{' '}
+                  {importResult.modo === 'base_mestre'
+                    ? 'Base Mestre'
+                    : importResult.modo === 'faturamento_reconciliacao'
+                      ? 'Faturamento / Reconciliação'
+                      : 'Enriquecimento (Margem)'}
+                </Badge>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5 text-xs">
                 <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                  <span className="text-slate-500 block">Total Processado</span>
+                  <span className="text-slate-500 block text-[11px]">Total de Linhas</span>
                   <span className="font-bold text-slate-800 text-base">{importResult.total}</span>
                 </div>
+                {importResult.modo === 'base_mestre' ? (
+                  <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
+                    <span className="text-slate-500 block text-[11px]">Novos Clientes</span>
+                    <span className="font-bold text-emerald-600 text-base">
+                      {importResult.novas}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="bg-white p-2.5 rounded-lg border border-amber-100">
+                    <span className="text-slate-500 block text-[11px]">Matches por Nome</span>
+                    <span className="font-bold text-amber-700 text-base">
+                      {importResult.matchesNome}
+                    </span>
+                  </div>
+                )}
                 <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                  <span className="text-slate-500 block">Novos Clientes</span>
-                  <span className="font-bold text-emerald-600 text-base">{importResult.novas}</span>
-                </div>
-                <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                  <span className="text-slate-500 block">Atualizados (Upsert)</span>
+                  <span className="text-slate-500 block text-[11px]">Atualizados</span>
                   <span className="font-bold text-blue-600 text-base">
                     {importResult.atualizadas}
                   </span>
                 </div>
                 <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                  <span className="text-slate-500 block">Reconciliados (Faturaram)</span>
+                  <span className="text-slate-500 block text-[11px]">Reconciliados (Saíram)</span>
                   <span className="font-bold text-purple-600 text-base">
                     {importResult.reconciliadosFaturaram}
                   </span>
                 </div>
+                <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
+                  <span className="text-slate-500 block text-[11px]">Sem Match na Base</span>
+                  <span className="font-bold text-slate-600 text-base">
+                    {importResult.semCorrespondencia}
+                  </span>
+                </div>
+                <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
+                  <span className="text-slate-500 block text-[11px]">Rejeitadas</span>
+                  <span
+                    className={`font-bold text-base ${importResult.rejeitadas > 0 ? 'text-rose-600' : 'text-slate-400'}`}
+                  >
+                    {importResult.rejeitadas}
+                  </span>
+                </div>
               </div>
+
+              {/* Relatório de Divergências no Modo Faturamento: quem faturou mas não estava na base */}
+              {importResult.modo === 'faturamento_reconciliacao' &&
+                importResult.semCorrespondencia > 0 && (
+                  <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-lg space-y-1.5 text-xs">
+                    <div className="flex items-center space-x-1.5 font-semibold text-amber-900">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span>
+                        Relatório de Divergências: Faturaram mas não estão cadastrados na Base (
+                        {importResult.semCorrespondencia})
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-amber-800">
+                      Estes registros foram faturados pelo ERP mas não encontraram cliente
+                      correspondente por Razão Social/Nome normalizado. Conforme a regra de
+                      reconciliação, nenhum cliente novo foi criado.
+                    </p>
+                    {importResult.semCorrespondenciaLista &&
+                      importResult.semCorrespondenciaLista.length > 0 && (
+                        <div className="max-h-32 overflow-y-auto space-y-1 bg-white p-2 rounded border border-amber-200 text-[11px]">
+                          {importResult.semCorrespondenciaLista.map((sc, i) => (
+                            <div
+                              key={i}
+                              className="text-slate-700 flex justify-between border-b border-slate-100 pb-0.5"
+                            >
+                              <span>
+                                • Linha {sc.linha}: <strong>{sc.nome}</strong>{' '}
+                                {sc.cidade ? `(${sc.cidade}/${sc.uf})` : ''}
+                              </span>
+                              <span className="text-slate-500 font-mono">
+                                Pedido: {sc.pedido || 's/n'}{' '}
+                                {sc.valor ? `| R$ ${Number(sc.valor).toLocaleString('pt-BR')}` : ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                  </div>
+                )}
 
               {/* Erros por linha */}
               {importResult.erros && importResult.erros.length > 0 && (
@@ -1175,7 +1533,7 @@ export default function ImportacaoPage() {
                 </div>
               )}
             </div>
-          )}
+          )}{' '}
         </CardContent>
         <CardFooter className="flex justify-end space-x-3 border-t border-slate-100 pt-4">
           <Button
@@ -1233,10 +1591,12 @@ export default function ImportacaoPage() {
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
                   <tr>
                     <th className="py-2.5 px-3">Nome do Arquivo</th>
+                    <th className="py-2.5 px-3">Modo</th>
                     <th className="py-2.5 px-3">Data</th>
                     <th className="py-2.5 px-3">Total</th>
                     <th className="py-2.5 px-3">Novos</th>
                     <th className="py-2.5 px-3">Atualizados</th>
+                    <th className="py-2.5 px-3">Matches/Sem Match</th>
                     <th className="py-2.5 px-3">Reconciliados</th>
                     <th className="py-2.5 px-3">Status</th>
                   </tr>
@@ -1244,8 +1604,29 @@ export default function ImportacaoPage() {
                 <tbody className="divide-y divide-slate-100">
                   {importacoes.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50/80">
-                      <td className="py-2.5 px-3 font-medium text-slate-800">
+                      <td
+                        className="py-2.5 px-3 font-medium text-slate-800 max-w-[200px] truncate"
+                        title={item.nome_arquivo}
+                      >
                         {item.nome_arquivo}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <Badge
+                          variant="outline"
+                          className={
+                            item.modo_importacao === 'faturamento_reconciliacao'
+                              ? 'border-amber-300 bg-amber-50 text-amber-800 text-[10px]'
+                              : item.modo_importacao === 'enriquecimento_margem'
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-800 text-[10px]'
+                                : 'border-blue-300 bg-blue-50 text-blue-800 text-[10px]'
+                          }
+                        >
+                          {item.modo_importacao === 'faturamento_reconciliacao'
+                            ? 'Faturamento'
+                            : item.modo_importacao === 'enriquecimento_margem'
+                              ? 'Margem'
+                              : 'Base Mestre'}
+                        </Badge>
                       </td>
                       <td className="py-2.5 px-3 text-slate-500 font-mono">
                         {new Date(item.created).toLocaleString('pt-BR')}
@@ -1256,6 +1637,10 @@ export default function ImportacaoPage() {
                       </td>
                       <td className="py-2.5 px-3 text-blue-600 font-medium">
                         {item.linhas_atualizadas}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600 text-[11px]">
+                        {item.matches_nome ? `${item.matches_nome} nome` : '—'}
+                        {item.sem_correspondencia ? ` / ${item.sem_correspondencia} s/ match` : ''}
                       </td>
                       <td className="py-2.5 px-3 text-purple-600 font-medium">
                         {item.reconciliados_faturaram || 0} faturaram

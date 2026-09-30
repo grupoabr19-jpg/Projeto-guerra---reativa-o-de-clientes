@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-29T20:17:41.423Z",
+  "generatedAt": "2026-09-30T10:13:14.415Z",
   "collections": [
     {
       "name": "users",
@@ -668,6 +668,25 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "modo_importacao",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["base_mestre", "faturamento_reconciliacao", "enriquecimento_margem"]
+        },
+        {
+          "name": "matches_nome",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "sem_correspondencia",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": ["CREATE INDEX idx_importacoes_created ON importacoes (created DESC)"]

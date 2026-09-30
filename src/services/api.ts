@@ -200,6 +200,7 @@ export async function processSpreadsheetRows(data: {
   rows: Record<string, unknown>[]
   fileName: string
   substituicaoTotal: boolean
+  modoImportacao?: 'base_mestre' | 'faturamento_reconciliacao' | 'enriquecimento_margem'
 }) {
   const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/import/process-rows`, {
     method: 'POST',
