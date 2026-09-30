@@ -174,19 +174,76 @@ export default function RelatoriosPage() {
     link.click()
   }
 
+  // Filtragem local dos clientes ativos removidos
+  const ativosRemovidosFiltrados = (ativosRemovidos.itens || []).filter((item) => {
+    if (filtroMotivoAtivos !== 'todos' && item.motivo_categoria !== filtroMotivoAtivos) {
+      return false
+    }
+    if (buscaAtivos.trim()) {
+      const q = buscaAtivos.toLowerCase()
+      const matchCodigo = item.codigo.toLowerCase().includes(q)
+      const matchNome = item.nome.toLowerCase().includes(q)
+      const matchRegiao = item.regiao.toLowerCase().includes(q)
+      const matchMotivo = item.motivo_completo.toLowerCase().includes(q)
+      const matchOperador = item.operador_nome.toLowerCase().includes(q)
+      if (!matchCodigo && !matchNome && !matchRegiao && !matchMotivo && !matchOperador) {
+        return false
+      }
+    }
+    return true
+  })
+
+  // Exportar especificamente a Auditoria de Clientes Ativos Removidos para CSV
+  const handleExportAtivosRemovidosCSV = () => {
+    let csv =
+      'Codigo;Cliente;Regiao;Motivo_Categoria;Motivo_Completo_Observacao;Operador;Data_Remocao\n'
+    ativosRemovidosFiltrados.forEach((item) => {
+      const obsLimpa = (item.motivo_completo || '').replace(/[\n\r;]/g, ' ')
+      const dataFormatada = new Date(item.data_remocao).toLocaleString('pt-BR')
+      csv += `"${item.codigo}";"${item.nome}";"${item.regiao}";"${item.motivo_categoria}";"${obsLimpa}";"${item.operador_nome}";"${dataFormatada}"\n`
+    })
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `auditoria_ativos_removidos_${selectedPeriodo}_${selectedRegiao}_${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900">
-            Relatórios e Auditoria de Conversão
+            Relatórios e Auditoria da Operação
           </h2>
           <p className="text-xs text-slate-500">
-            Métricas de fechamento, faturamento recuperado e conciliação de pedidos da reativação.
+            Métricas de conversão, conciliação e auditoria detalhada de clientes ativos removidos da
+            base de inativos.
           </p>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Filtro de Período */}
+          <div className="flex items-center space-x-1 bg-white border border-slate-200 rounded-md px-2 py-0.5">
+            <Calendar className="h-3.5 w-3.5 text-slate-400" />
+            <Select
+              value={selectedPeriodo}
+              onValueChange={(v) => setSelectedPeriodo(v as PeriodoAtendimentoFiltro)}
+            >
+              <SelectTrigger className="h-7 text-xs border-0 shadow-none px-1 w-32 focus:ring-0">
+                <SelectValue placeholder="Período" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="hoje">Hoje</SelectItem>
+                <SelectItem value="7dias">Últimos 7 dias</SelectItem>
+                <SelectItem value="30dias">Últimos 30 dias</SelectItem>
+                <SelectItem value="total">Acumulado Total</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Filtro de Região */}
           <Select value={selectedRegiao} onValueChange={setSelectedRegiao}>
             <SelectTrigger className="h-8 text-xs w-44">
               <SelectValue placeholder="Região" />
@@ -204,10 +261,11 @@ export default function RelatoriosPage() {
           <Button
             onClick={handleExportCSV}
             size="sm"
-            className="bg-slate-900 text-white h-8 text-xs font-medium"
+            variant="outline"
+            className="border-slate-300 text-slate-700 h-8 text-xs font-medium"
           >
             <Download className="h-3.5 w-3.5 mr-1.5" />
-            Exportar CSV
+            Exportar Geral CSV
           </Button>
         </div>
       </div>
@@ -295,6 +353,199 @@ export default function RelatoriosPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* SEÇÃO PRINCIPAL: AUDITORIA DE CLIENTES ATIVOS REMOVIDOS DA BASE */}
+      <Card className="border-emerald-300/80 shadow-sm overflow-hidden bg-white">
+        <CardHeader className="bg-gradient-to-r from-emerald-50 via-teal-50/40 to-white border-b border-emerald-100 pb-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center space-x-2">
+                <div className="h-8 w-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                  <ShieldCheck className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <CardTitle className="text-base font-bold text-slate-900">
+                      Clientes Ativos Removidos da Base de Inativos
+                    </CardTitle>
+                    <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs px-2 py-0.5">
+                      {loadingAtivos ? '...' : `${ativosRemovidosFiltrados.length} listados`}
+                    </Badge>
+                  </div>
+                  <CardDescription className="text-xs text-slate-600">
+                    Registros identificados em atendimento como faturando regularmente (via CPF de
+                    terceiro, CNPJ coligada ou acompanhamento de vendedor) e retirados da fila.
+                  </CardDescription>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleExportAtivosRemovidosCSV}
+                size="sm"
+                className="bg-emerald-700 hover:bg-emerald-800 text-white h-8 text-xs font-semibold shadow-xs"
+                disabled={loadingAtivos || ativosRemovidosFiltrados.length === 0}
+              >
+                <Download className="h-3.5 w-3.5 mr-1.5" />
+                Exportar Auditoria CSV ({ativosRemovidosFiltrados.length})
+              </Button>
+            </div>
+          </div>
+
+          {/* Cards Rápidos de Breakdown por Categoria nesta Seção */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-3">
+            {Object.entries(ativosRemovidos.breakdown || {}).map(([motivo, count]) => {
+              const perc =
+                ativosRemovidos.total > 0 ? Math.round((count / ativosRemovidos.total) * 100) : 0
+              const isSelected = filtroMotivoAtivos === motivo
+              return (
+                <button
+                  key={motivo}
+                  type="button"
+                  onClick={() => setFiltroMotivoAtivos(isSelected ? 'todos' : motivo)}
+                  className={`text-left p-2.5 rounded-lg border transition-all ${
+                    isSelected
+                      ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-800 truncate" title={motivo}>
+                      {motivo}
+                    </span>
+                    <span className="font-mono font-bold text-emerald-700 ml-1">{count}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-1 flex justify-between">
+                    <span>{perc}% do total</span>
+                    <span className="text-emerald-600 font-medium">
+                      {isSelected ? 'Filtrado' : 'Filtrar'}
+                    </span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Barra de Filtros Internos da Tabela */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-3 border-t border-emerald-100/60 mt-1">
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Buscar por cliente, código, região ou operador..."
+                value={buscaAtivos}
+                onChange={(e) => setBuscaAtivos(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-auto text-xs">
+              {filtroMotivoAtivos !== 'todos' && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setFiltroMotivoAtivos('todos')}
+                  className="h-7 text-xs text-slate-500 hover:text-slate-800 px-2"
+                >
+                  Limpar filtro ({filtroMotivoAtivos})
+                </Button>
+              )}
+              <span className="text-[11px] text-slate-500">
+                Mostrando{' '}
+                <strong className="text-slate-700">{ativosRemovidosFiltrados.length}</strong> de{' '}
+                <strong className="text-slate-700">{ativosRemovidos.total}</strong>
+              </span>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-0">
+          {loadingAtivos ? (
+            <div className="py-12 text-center text-xs text-slate-400">
+              Carregando registros de clientes ativos removidos...
+            </div>
+          ) : ativosRemovidosFiltrados.length === 0 ? (
+            <div className="py-12 text-center text-xs text-slate-400">
+              Nenhum cliente ativo removido encontrado para os filtros selecionados (
+              {selectedPeriodo === 'hoje'
+                ? 'Hoje'
+                : selectedPeriodo === '7dias'
+                  ? '7 dias'
+                  : selectedPeriodo === '30dias'
+                    ? '30 dias'
+                    : 'Total'}
+              {selectedRegiao !== 'todas' ? ` • ${selectedRegiao}` : ''}).
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[10px]">
+                  <tr>
+                    <th className="py-3 px-3.5">Código</th>
+                    <th className="py-3 px-3.5">Cliente</th>
+                    <th className="py-3 px-3.5">Região</th>
+                    <th className="py-3 px-3.5">Motivo da Ativação / Limpeza</th>
+                    <th className="py-3 px-3.5">Observação / Detalhe</th>
+                    <th className="py-3 px-3.5">Operador Responsável</th>
+                    <th className="py-3 px-3.5 text-right">Data Remoção</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {ativosRemovidosFiltrados.map((item) => (
+                    <tr key={item.id} className="hover:bg-emerald-50/40 transition-colors">
+                      <td className="py-2.5 px-3.5 font-mono font-bold text-blue-700 whitespace-nowrap">
+                        {item.codigo}
+                      </td>
+                      <td className="py-2.5 px-3.5 font-medium text-slate-900">
+                        <div className="font-semibold">{item.nome}</div>
+                      </td>
+                      <td className="py-2.5 px-3.5">
+                        <Badge
+                          variant="outline"
+                          className="bg-slate-50 text-slate-700 border-slate-300 text-[10px] whitespace-nowrap font-normal"
+                        >
+                          {item.regiao}
+                        </Badge>
+                      </td>
+                      <td className="py-2.5 px-3.5">
+                        <Badge
+                          className={`text-[10px] font-medium whitespace-nowrap ${
+                            item.motivo_categoria === 'Compra por CPF de terceiro'
+                              ? 'bg-blue-100 text-blue-800 border-blue-200'
+                              : item.motivo_categoria.includes('CNPJ')
+                                ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                                : item.motivo_categoria.includes('Acompanhamento')
+                                  ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                  : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                          }`}
+                        >
+                          {item.motivo_categoria}
+                        </Badge>
+                      </td>
+                      <td className="py-2.5 px-3.5 text-slate-600 max-w-xs">
+                        <span className="line-clamp-2" title={item.motivo_completo}>
+                          {item.observacao || item.motivo_completo}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3.5 text-slate-700 whitespace-nowrap font-medium">
+                        {item.operador_nome}
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-mono text-slate-500 whitespace-nowrap">
+                        {new Date(item.data_remocao).toLocaleDateString('pt-BR')} às{' '}
+                        {new Date(item.data_remocao).toLocaleTimeString('pt-BR', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Relatório de Divergências de Pedidos Informados */}
       <Card className="border-slate-200 shadow-sm">

@@ -44,6 +44,88 @@ routerAdd(
         return e.json(404, { error: 'Operador de destino não encontrado' })
       }
 
+      const destinoRole = destinoUser.getString('role')
+      // Apenas operadores, líderes ou supervisores podem receber clientes reatribuídos
+      if (destinoRole !== 'operador' && destinoRole !== 'lider' && destinoRole !== 'supervisor') {
+        return e.json(400, {
+          error: 'O destinatário deve ser um operador, líder ou supervisor de rota.',
+        })
+      }
+
+      // Função auxiliar de normalização de região (inline no callback do hook)
+      const normalizarRegiaoHook = (r) => {
+        let s = String(r || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase()
+          .trim()
+        if (s === 'BRAGANCA PAULISTA' || s === 'BRAGANCA') return 'BRAGANCA'
+        if (s === 'POCOS DE CALDAS' || s === 'POCOS CALDAS' || s === 'POCOS') {
+          return 'POCOS DE CALDAS'
+        }
+        if (s === 'CAMBUI' || s === 'MICRO-REGIAO' || s === 'MICRO REGIAO' || s === 'MICROREGIAO') {
+          return 'CAMBUI'
+        }
+        if (s === 'JUNDIAI') return 'JUNDIAI'
+        if (s === 'ITAJUBA') return 'ITAJUBA'
+        if (s === 'POUSO ALEGRE') return 'POUSO ALEGRE'
+        if (s === 'VARGINHA') return 'VARGINHA'
+        if (s === 'EXTREMA') return 'EXTREMA'
+        return s
+      }
+
+      // Extrair regiões de um record de usuário (resiliente com Goja PocketBase)
+      const extrairRegioesUsuario = (rec) => {
+        let arr = []
+        try {
+          const slice = rec.getStringSlice('regioes')
+          if (slice && slice.length > 0) {
+            arr = slice
+          } else {
+            const raw = rec.getString('regioes')
+            if (raw && raw.trim().startsWith('[')) {
+              arr = JSON.parse(raw)
+            } else {
+              const rawGet = rec.get('regioes')
+              if (Array.isArray(rawGet)) arr = rawGet
+            }
+          }
+        } catch (_) {
+          const rawGet = rec.get('regioes')
+          if (Array.isArray(rawGet)) arr = rawGet
+        }
+        if (Array.isArray(arr)) {
+          return arr.map(normalizarRegiaoHook).filter(Boolean)
+        }
+        return []
+      }
+
+      const destinoRegioesNorm = extrairRegioesUsuario(destinoUser)
+      const origemRegioesNorm = extrairRegioesUsuario(authRecord)
+      const clienteRegiaoNorm = normalizarRegiaoHook(cliente.getString('regiao'))
+
+      // Se o atendente atual for operador ou líder e não tiver região definida
+      if ((userRole === 'operador' || userRole === 'lider') && origemRegioesNorm.length === 0) {
+        return e.json(400, {
+          error:
+            'Sua conta não possui região/rota atribuída. Contate o administrador antes de repassar clientes.',
+        })
+      }
+
+      // Validação de região entre cliente/atendente e destinatário:
+      // O destinatário precisa compartilhar ao menos uma região com o atendente (ou com a região do cliente)
+      if (userRole !== 'admin') {
+        const atendeCliente = clienteRegiaoNorm && destinoRegioesNorm.includes(clienteRegiaoNorm)
+        const compartilhaOrigem = origemRegioesNorm.some((r) => destinoRegioesNorm.includes(r))
+
+        if (!atendeCliente && !compartilhaOrigem) {
+          return e.json(400, {
+            error:
+              'O operador de destino não pertence à mesma região/rota do cliente ou do seu usuário.',
+          })
+        }
+      }
+
       const destinoNome =
         destinoUser.getString('name') || destinoUser.getString('email') || 'Colega'
 

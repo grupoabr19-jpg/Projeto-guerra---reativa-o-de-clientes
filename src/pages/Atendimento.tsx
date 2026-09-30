@@ -229,23 +229,68 @@ export default function AtendimentoPage() {
     }
   }
 
-  // Carregar colegas da MESMA região do cliente para o dropdown de transferência
+  // Normalizador auxiliar para comparar regiões/rotas ignorando acentos e variações
+  const normalizarNomeRegiao = (r?: string) => {
+    let s = (r || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .trim()
+    if (s === 'BRAGANCA PAULISTA' || s === 'BRAGANCA') return 'BRAGANCA'
+    if (s === 'POCOS DE CALDAS' || s === 'POCOS CALDAS' || s === 'POCOS') {
+      return 'POCOS DE CALDAS'
+    }
+    if (s === 'CAMBUI' || s === 'MICRO-REGIAO' || s === 'MICRO REGIAO' || s === 'MICROREGIAO') {
+      return 'CAMBUI'
+    }
+    if (s === 'JUNDIAI') return 'JUNDIAI'
+    if (s === 'ITAJUBA') return 'ITAJUBA'
+    if (s === 'POUSO ALEGRE') return 'POUSO ALEGRE'
+    if (s === 'VARGINHA') return 'VARGINHA'
+    if (s === 'EXTREMA') return 'EXTREMA'
+    return s
+  }
+
+  // Carregar colegas da MESMA região/rota para o dropdown de transferência
   const handleOpenTransferModal = async () => {
     if (!cliente) return
     try {
       const allUsers = await fetchUsers()
-      const regiaoCliente = (cliente.regiao || '').trim().toUpperCase()
-      // Filtrar operadores da mesma região/rota do cliente, excluindo o operador logado
+
+      // Regiões do operador logado
+      const regioesLogadoNorm = (user?.regioes || []).map(normalizarNomeRegiao).filter(Boolean)
+      const regiaoClienteNorm = normalizarNomeRegiao(cliente.regiao)
+
+      // Regiões de referência da rota: se o operador logado tiver regiões, usamos as dele (e também a do cliente se bater)
+      const regioesRotaRef = new Set<string>()
+      if (regioesLogadoNorm.length > 0) {
+        regioesLogadoNorm.forEach((r) => regioesRotaRef.add(r))
+      }
+      if (regiaoClienteNorm && regiaoClienteNorm !== 'SEM REGIAO') {
+        regioesRotaRef.add(regiaoClienteNorm)
+      }
+
+      // Filtrar APENAS colegas de rota:
+      // 1. Papel operador, líder ou supervisor (exclui admins sem região ou admins globais)
+      // 2. Não ser o próprio usuário
+      // 3. Ter pelo menos uma região na rota de referência
       const colegas = allUsers.filter((u) => {
         if (u.id === user?.id) return false
-        // Se o usuário tem essa região na lista dele
-        const regioesUser = (u.regioes || []).map((r) => r.trim().toUpperCase())
-        return regioesUser.includes(regiaoCliente)
+        // Excluir admins do dropdown de destino (regra: colegas de rota de vendas)
+        if (u.role !== 'operador' && u.role !== 'lider' && u.role !== 'supervisor') {
+          return false
+        }
+        const regioesUserNorm = (u.regioes || []).map(normalizarNomeRegiao).filter(Boolean)
+        if (regioesUserNorm.length === 0) return false
+
+        // Deve pertencer à mesma rota/região
+        return regioesUserNorm.some((r) => regioesRotaRef.has(r))
       })
+
       setOperadoresRegiao(colegas)
       setSelectedDestinoOp(colegas.length > 0 ? colegas[0].id : '')
       setMotivoTransferencia(
-        `Cliente da carteira de ${cliente.regiao} — repasse para especialista/colega responsável`,
+        `Cliente da carteira de ${cliente.regiao || 'rota'} — repasse para colega de rota`,
       )
       setShowTransferModal(true)
     } catch (err) {
@@ -1579,17 +1624,30 @@ export default function AtendimentoPage() {
                     </p>
                   </div>
 
-                  {operadoresRegiao.length === 0 ? (
-                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                      Nenhum outro operador vinculado à região <strong>{cliente.regiao}</strong> foi
-                      encontrado no momento. Solicite ao administrador a inclusão de colegas nessa
-                      região em Configurações.
+                  {(!user?.regioes || user.regioes.length === 0) && user?.role !== 'admin' ? (
+                    <div className="p-4 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800 space-y-1">
+                      <p className="font-bold">Sua conta não possui região/rota atribuída</p>
+                      <p>
+                        Para atribuir clientes a colegas de rota, é necessário ter ao menos uma
+                        região vinculada ao seu usuário. Solicite ao administrador do sistema a
+                        atribuição da sua região em{' '}
+                        <strong>Configurações &gt; Gestão de Acessos</strong>.
+                      </p>
+                    </div>
+                  ) : operadoresRegiao.length === 0 ? (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
+                      <p className="font-bold">Nenhum colega da mesma rota encontrado</p>
+                      <p>
+                        Não há outros operadores, líderes ou supervisores cadastrados para a região{' '}
+                        <strong>{cliente.regiao || user?.regioes?.join(', ') || 'da rota'}</strong>.
+                        A reatribuição só é permitida entre colegas da mesma região.
+                      </p>
                     </div>
                   ) : (
                     <>
                       <div className="space-y-1.5">
                         <Label className="text-xs font-bold text-slate-800">
-                          Atribuir cliente para:
+                          Atribuir cliente para colega da mesma região/rota:
                         </Label>
                         <Select
                           value={selectedDestinoOp}
@@ -1601,7 +1659,13 @@ export default function AtendimentoPage() {
                           <SelectContent>
                             {operadoresRegiao.map((op) => (
                               <SelectItem key={op.id} value={op.id} className="text-xs">
-                                {op.name || op.email} ({op.role || 'operador'})
+                                {op.name || op.email} (
+                                {op.role === 'lider'
+                                  ? 'Líder'
+                                  : op.role === 'supervisor'
+                                    ? 'Supervisor'
+                                    : 'Operador'}{' '}
+                                — {op.regioes?.join(', ')})
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1615,7 +1679,7 @@ export default function AtendimentoPage() {
                         <Textarea
                           value={motivoTransferencia}
                           onChange={(e) => setMotivoTransferencia(e.target.value)}
-                          placeholder="Ex: Cliente da carteira de especialista / construção civil..."
+                          placeholder="Ex: Cliente da carteira de especialista / colega responsável pela praça..."
                           rows={3}
                           className="text-xs"
                         />
@@ -1638,7 +1702,12 @@ export default function AtendimentoPage() {
                     type="button"
                     size="sm"
                     onClick={handleConfirmTransfer}
-                    disabled={transferindo || operadoresRegiao.length === 0 || !selectedDestinoOp}
+                    disabled={
+                      transferindo ||
+                      operadoresRegiao.length === 0 ||
+                      !selectedDestinoOp ||
+                      ((!user?.regioes || user.regioes.length === 0) && user?.role !== 'admin')
+                    }
                     className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold"
                   >
                     {transferindo ? 'Atribuindo...' : 'Confirmar Atribuição'}

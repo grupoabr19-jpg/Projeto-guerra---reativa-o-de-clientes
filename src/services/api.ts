@@ -364,10 +364,13 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
       filter: "reagendado_para != '' || estado = 'reagendado'",
     }),
     calculateRankingData({ periodo, regiao: regiaoFiltro || undefined }).catch(() => null),
-    pb.collection('clientes').getFullList<Cliente>({
-      filter: "ativo_fora_base = true || estado = 'ativo_fora_base'",
-      sort: '-updated',
-    }).catch(() => [] as Cliente[]),
+    pb
+      .collection('clientes')
+      .getFullList<Cliente>({
+        filter: "ativo_fora_base = true || estado = 'ativo_fora_base'",
+        sort: '-updated',
+      })
+      .catch(() => [] as Cliente[]),
   ])
 
   // Mapa de operadores e usuários
@@ -665,7 +668,11 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
     if (regiaoFiltro) {
       const regUpper = (c.regiao || '').trim().toUpperCase()
       const filtroUpper = regiaoFiltro.trim().toUpperCase()
-      if (regUpper !== filtroUpper && !regUpper.includes(filtroUpper) && !filtroUpper.includes(regUpper)) {
+      if (
+        regUpper !== filtroUpper &&
+        !regUpper.includes(filtroUpper) &&
+        !filtroUpper.includes(regUpper)
+      ) {
         continue
       }
     }
@@ -687,7 +694,8 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
     clientesIdsProcessados.add(c.id)
 
     // Extrair motivo e observação
-    const motivoBruto = c.motivo_ativo_fora_base || it?.motivo || it?.conteudo || 'Motivo não informado'
+    const motivoBruto =
+      c.motivo_ativo_fora_base || it?.motivo || it?.conteudo || 'Motivo não informado'
     let motivoPrincipal = motivoBruto
     let observacaoExtra = ''
 
@@ -701,7 +709,8 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
     breakdownMotivos[categoria] = (breakdownMotivos[categoria] || 0) + 1
 
     const opUser = it?.expand?.operador || (c.operador ? usersMap.get(c.operador) : undefined)
-    const operadorNome = opUser?.name || opUser?.email || (it?.operador ? 'Operador registrado' : 'Sistema / Manual')
+    const operadorNome =
+      opUser?.name || opUser?.email || (it?.operador ? 'Operador registrado' : 'Sistema / Manual')
 
     ativosRemovidosFiltrados.push({
       id: c.id,

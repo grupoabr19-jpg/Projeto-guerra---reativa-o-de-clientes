@@ -925,9 +925,7 @@ export default function Dashboard() {
               <div>
                 <CardTitle className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
                   <span>Ativos Fora da Base</span>
-                  <Badge className="bg-emerald-600 text-white text-[9px] px-1 py-0">
-                    Limpeza
-                  </Badge>
+                  <Badge className="bg-emerald-600 text-white text-[9px] px-1 py-0">Limpeza</Badge>
                 </CardTitle>
                 <span className="text-[10px] text-emerald-700 block">
                   Clientes ativos removidos da esteira
@@ -983,7 +981,8 @@ export default function Dashboard() {
                     </Badge>
                   </div>
                   <CardDescription className="text-xs text-slate-500">
-                    Cadastros que constavam na base de inativos mas continuam faturando (CPF/CNPJ terceiro ou acompanhamento periódico do vendedor).
+                    Cadastros que constavam na base de inativos mas continuam faturando (CPF/CNPJ
+                    terceiro ou acompanhamento periódico do vendedor).
                   </CardDescription>
                 </div>
               </div>
@@ -1096,7 +1095,10 @@ export default function Dashboard() {
                       <p className="font-semibold text-slate-800 truncate" title={item.nome}>
                         {item.nome}
                       </p>
-                      <p className="text-[11px] text-emerald-800 font-medium truncate" title={item.motivo_completo}>
+                      <p
+                        className="text-[11px] text-emerald-800 font-medium truncate"
+                        title={item.motivo_completo}
+                      >
                         {item.motivo_categoria}
                       </p>
                       <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5">
