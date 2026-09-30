@@ -18,7 +18,33 @@ routerAdd(
 
       const userId = authRecord.id
       const userRole = authRecord.getString('role')
-      const userRegioes = authRecord.get('regioes') || []
+      // No PocketBase Goja runtime, para campos JSON/array em authRecord,
+      // getStringSlice('regioes') extrai o array de strings corretamente.
+      // Se usar authRecord.get('regioes'), Goja retorna um byte slice UTF-8 de números [91, 34, ...],
+      // que ao rodar .map() iterava sobre cada caractere/byte numérico em vez das regiões!
+      let userRegioes = []
+      try {
+        const slice = authRecord.getStringSlice('regioes')
+        if (slice && slice.length > 0) {
+          userRegioes = slice
+        } else {
+          const raw = authRecord.getString('regioes')
+          if (raw && raw.trim().startsWith('[')) {
+            userRegioes = JSON.parse(raw)
+          } else {
+            const rawGet = authRecord.get('regioes')
+            if (Array.isArray(rawGet)) {
+              userRegioes = rawGet
+            }
+          }
+        }
+      } catch (_) {
+        const rawGet = authRecord.get('regioes')
+        if (Array.isArray(rawGet)) {
+          userRegioes = rawGet
+        }
+      }
+
       const now = new Date()
       const cutoffTime = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
 
@@ -97,7 +123,7 @@ routerAdd(
           regiaoFilter = ''
         }
       } else {
-        // Supervisor ou admin (ex.: Thiago Almeida / Pietra Leite): acesso irrestrito se não tiver regiões ou busca em todas as regiões
+        // Supervisor ou admin (ex.: Thiago Almeida / Pietra Leite): acesso irrestrito se não tiver regiões ou busca em todas as regiões atribuídas
         if (Array.isArray(userRegioes) && userRegioes.length > 0) {
           const validRegioes = userRegioes.filter(Boolean)
           if (validRegioes.length > 0) {
@@ -279,7 +305,12 @@ routerAdd(
         // Evita telefones marcados como inválidos
         baseFilter += ' && telefone_invalido != true'
 
-        const pool = $app.findRecordsByFilter('clientes', baseFilter, sortExpr, 150, 0)
+        let pool = []
+        try {
+          pool = $app.findRecordsByFilter('clientes', baseFilter, sortExpr, 150, 0)
+        } catch (findErr) {
+          console.log('[queue_reserve] Erro em findRecordsByFilter clientes: ' + findErr.message)
+        }
         if (pool && pool.length > 0) {
           if (isRepescagem) {
             // Repescagem: percorre e escolhe o primeiro com 90+ dias que NÃO tenha contato prévio do vendedor original
