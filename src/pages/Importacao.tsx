@@ -467,6 +467,8 @@ export default function ImportacaoPage() {
     setParseProgress({ percent: 10, message: 'Iniciando leitura em segundo plano (Web Worker)...' })
 
     try {
+      // Se não houver overrideSheet explícito mas houver uma selectedSheet anterior do mesmo arquivo, respeita
+      const sheetToParse = overrideSheet || selectedSheet || undefined
       const parsed = await parseSpreadsheetWithSheetJS(
         f,
         20,
@@ -476,7 +478,7 @@ export default function ImportacaoPage() {
             message: p.message,
           })
         },
-        { mode: 'full_rows', targetSheet: overrideSheet },
+        { mode: 'full_rows', targetSheet: sheetToParse },
       )
 
       const rows =

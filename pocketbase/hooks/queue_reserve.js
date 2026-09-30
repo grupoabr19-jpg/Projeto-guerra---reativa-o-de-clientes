@@ -3,8 +3,8 @@ routerAdd(
   '/backend/v1/queue/reserve-next',
   (e) => {
     try {
-      const authRecord = e.get('authRecord')
-      if (!authRecord) {
+      const authRecord = e.auth
+      if (!authRecord || !authRecord.id) {
         return e.json(401, { error: 'Autenticação obrigatória' })
       }
 

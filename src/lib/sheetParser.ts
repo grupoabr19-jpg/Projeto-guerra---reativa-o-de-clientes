@@ -316,6 +316,7 @@ async function parseWithMainThreadSheetJS(
   file: File,
   sampleSize: number = 50,
   onProgress?: (p: ParseProgress) => void,
+  options?: { mode?: 'metadata' | 'full_rows'; targetSheet?: string },
 ): Promise<ParsedSpreadsheet> {
   onProgress?.({
     stage: 'reading',
@@ -510,13 +511,66 @@ async function parseWithMainThreadSheetJS(
     processedRows: primaryAba?.total_linhas || maxLinhasOverall,
   })
 
+  const chosenAba = options?.targetSheet
+    ? analiseAbas.find((a) => a.nome === options.targetSheet) || primaryAba
+    : primaryAba
+
+  let allRowsResult: Record<string, unknown>[] | undefined = undefined
+
+  if (options?.mode === 'full_rows' && chosenAba) {
+    const ws = workbook.Sheets[chosenAba.nome]
+    if (ws) {
+      const fullMatrix: any[][] = XLSX.utils.sheet_to_json(ws, {
+        header: 1,
+        defval: '',
+        blankrows: false,
+      })
+      if (fullMatrix.length > 0) {
+        // Encontra o cabeçalho
+        const cols = chosenAba.colunas
+        let hIdx = 0
+        for (let r = 0; r < Math.min(fullMatrix.length, 8); r++) {
+          const row = fullMatrix[r]
+          if (!Array.isArray(row)) continue
+          const nonBlanks = row.filter(
+            (c) => c !== undefined && c !== null && String(c).trim().length > 0,
+          )
+          if (nonBlanks.length >= cols.length * 0.6 && nonBlanks.length >= 2) {
+            hIdx = r
+            break
+          }
+        }
+        allRowsResult = []
+        for (let r = hIdx + 1; r < fullMatrix.length; r++) {
+          const row = fullMatrix[r]
+          if (!row) continue
+          const obj: Record<string, unknown> = {}
+          let hasVal = false
+          for (let c = 0; c < cols.length; c++) {
+            const colName = cols[c]
+            const val = row[c]
+            if (val !== undefined && val !== null && String(val).trim() !== '') {
+              obj[colName] = val
+              hasVal = true
+            } else {
+              obj[colName] = ''
+            }
+          }
+          if (hasVal) allRowsResult.push(obj)
+        }
+      }
+    }
+  }
+
   return {
     fileName: file.name,
-    totalLinhas: primaryAba?.total_linhas || maxLinhasOverall,
-    colunasDetectadas: primaryAba?.colunas || [],
-    amostraLinhas: primaryAba?.amostra || [],
+    totalLinhas: allRowsResult ? allRowsResult.length : chosenAba?.total_linhas || maxLinhasOverall,
+    colunasDetectadas: chosenAba?.colunas || [],
+    amostraLinhas: chosenAba?.amostra || [],
+    allRows: allRowsResult,
     sheetNames: workbook.SheetNames,
     analiseAbas,
+    selectedSheet: chosenAba?.nome,
   }
 }
 
@@ -557,9 +611,9 @@ export async function parseSpreadsheetWithSheetJS(
         percent: 30,
         message: 'Alternando para processamento nativo...',
       })
-      return parseWithMainThreadSheetJS(file, sampleSize, onProgress)
+      return parseWithMainThreadSheetJS(file, sampleSize, onProgress, options)
     }
   }
 
-  return parseWithMainThreadSheetJS(file, sampleSize, onProgress)
+  return parseWithMainThreadSheetJS(file, sampleSize, onProgress, options)
 }
