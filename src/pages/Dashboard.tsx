@@ -76,25 +76,25 @@ export default function Dashboard() {
     useState<MetricasAtendimentoOperador | null>(null)
 
   useEffect(() => {
-    if (user && user.role === 'operador') {
-      navigate('/meu-painel', { replace: true })
+    if (user && (user.role === 'operador' || user.role === 'lider')) {
+      navigate(user.role === 'lider' ? '/equipe' : '/meu-painel', { replace: true })
     }
   }, [user, navigate])
 
   useEffect(() => {
-    if (user && user.role !== 'operador') {
+    if (user && user.role !== 'operador' && user.role !== 'lider') {
       loadData()
     }
   }, [user])
 
   // Recarregar métricas de atendimento quando filtros mudam
   useEffect(() => {
-    if (user && user.role !== 'operador') {
+    if (user && user.role !== 'operador' && user.role !== 'lider') {
       loadMetricasAtendimento()
     }
   }, [user, selectedRegion, selectedPeriodo])
 
-  if (user?.role === 'operador') {
+  if (user?.role === 'operador' || user?.role === 'lider') {
     return null
   }
 

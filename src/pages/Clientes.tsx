@@ -58,18 +58,18 @@ export default function ClientesPage() {
   const [loadingDetails, setLoadingDetails] = useState(false)
 
   useEffect(() => {
-    if (user && user.role === 'operador') {
+    if (user && (user.role === 'operador' || user.role === 'lider')) {
       navigate('/meu-painel', { replace: true })
     }
   }, [user, navigate])
 
   useEffect(() => {
-    if (user && user.role !== 'operador') {
+    if (user && user.role !== 'operador' && user.role !== 'lider') {
       loadClientes()
     }
   }, [user])
 
-  if (user?.role === 'operador') {
+  if (user?.role === 'operador' || user?.role === 'lider') {
     return null
   }
 

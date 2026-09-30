@@ -133,13 +133,13 @@ export default function ConfiguracoesPage() {
   // Novo Usuário Form
   const [novoEmail, setNovoEmail] = useState('')
   const [novoNome, setNovoNome] = useState('')
-  const [novoRole, setNovoRole] = useState<'operador' | 'supervisor' | 'admin'>('operador')
+  const [novoRole, setNovoRole] = useState<UserRole>('operador')
   const [novasRegioesSelected, setNovasRegioesSelected] = useState<string[]>(['POÇOS DE CALDAS'])
   const [isCreatingUser, setIsCreatingUser] = useState(false)
 
   // Edição de Usuário existente (Role + Regiões)
   const [editingUser, setEditingUser] = useState<User | null>(null)
-  const [editUserRole, setEditUserRole] = useState<'operador' | 'supervisor' | 'admin'>('operador')
+  const [editUserRole, setEditUserRole] = useState<UserRole>('operador')
   const [editUserRegioes, setEditUserRegioes] = useState<string[]>([])
   const [savingUserRegioes, setSavingUserRegioes] = useState(false)
 
@@ -154,20 +154,20 @@ export default function ConfiguracoesPage() {
   const [activeTab, setActiveTab] = useState('bases')
 
   useEffect(() => {
-    if (user && user.role === 'operador') {
+    if (user && (user.role === 'operador' || user.role === 'lider')) {
       navigate('/meu-painel', { replace: true })
     }
   }, [user, navigate])
 
   useEffect(() => {
-    if (user && user.role !== 'operador') {
+    if (user && user.role !== 'operador' && user.role !== 'lider') {
       loadSettings()
       loadUsers()
       loadRegioesData()
     }
   }, [user])
 
-  if (user?.role === 'operador') {
+  if (user?.role === 'operador' || user?.role === 'lider') {
     return null
   }
 
@@ -300,6 +300,14 @@ export default function ConfiguracoesPage() {
     e.preventDefault()
     if (!novoEmail || !novoNome) return
 
+    // Regra obrigatória: Líder de Rota DEVE ter ao menos uma região selecionada (escopo da sua equipe)
+    if (novoRole === 'lider' && novasRegioesSelected.length === 0) {
+      alert(
+        'Para o Líder de Rota, a seleção de ao menos uma Região é obrigatória para definir o escopo da equipe.',
+      )
+      return
+    }
+
     setIsCreatingUser(true)
     try {
       await pb.collection('users').create({
@@ -346,8 +354,16 @@ export default function ConfiguracoesPage() {
   const handleSaveUserRegioes = async () => {
     if (!editingUser) return
     setSavingUserRegioes(true)
+    // Regra obrigatória: Líder de Rota DEVE ter região
+    if (editUserRole === 'lider' && editUserRegioes.length === 0) {
+      alert(
+        'Para o Líder de Rota, a seleção de ao menos uma Região é obrigatória para definir o escopo da equipe.',
+      )
+      return
+    }
+
     try {
-      const updatePayload: Record<string, unknown> = {
+      const updatePayload: { regioes: string[]; role?: UserRole } = {
         regioes: editUserRegioes,
       }
       // Apenas admin tem permissão de alterar o nível de acesso (role)
@@ -1435,6 +1451,9 @@ export default function ConfiguracoesPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="operador">Operador (Atendimento)</SelectItem>
+                        <SelectItem value="lider">
+                          🚩 Líder de Rota (Chefe de Operadores / Equipe)
+                        </SelectItem>
                         <SelectItem value="supervisor">Supervisor (Fila & Relatórios)</SelectItem>
                         <SelectItem value="admin">Administrador (Total)</SelectItem>
                       </SelectContent>
@@ -1525,20 +1544,24 @@ export default function ConfiguracoesPage() {
                         <td className="py-2.5 px-3">
                           <Badge
                             variant="outline"
-                            className={`uppercase font-mono text-[10px] font-bold ${
+                            className={`text-[10px] ${
                               u.role === 'admin'
-                                ? 'bg-purple-50 text-purple-700 border-purple-300'
+                                ? 'bg-purple-50 text-purple-700 border-purple-200'
                                 : u.role === 'supervisor'
-                                  ? 'bg-amber-50 text-amber-700 border-amber-300'
-                                  : 'bg-blue-50 text-blue-700 border-blue-300'
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                  : u.role === 'lider'
+                                    ? 'bg-amber-50 text-amber-800 border-amber-300 font-semibold'
+                                    : 'bg-slate-50 text-slate-700 border-slate-200'
                             }`}
                           >
                             {u.role === 'admin'
-                              ? '👑 Administrador'
+                              ? 'Admin'
                               : u.role === 'supervisor'
-                                ? '⭐ Supervisor'
-                                : '👤 Operador'}
-                          </Badge>
+                                ? 'Supervisor'
+                                : u.role === 'lider'
+                                  ? '🚩 Líder de Rota'
+                                  : 'Operador'}
+                          </Badge>{' '}
                         </td>
                         <td className="py-2.5 px-3">
                           <Badge className="bg-emerald-50 text-emerald-700 border-emerald-300 font-normal text-[10px]">
@@ -1858,23 +1881,26 @@ export default function ConfiguracoesPage() {
                 </Label>
                 <Select
                   value={editUserRole}
-                  onValueChange={(val: 'operador' | 'supervisor' | 'admin') => setEditUserRole(val)}
+                  onValueChange={(val: UserRole) => setEditUserRole(val)}
                 >
-                  <SelectTrigger className="h-8 text-xs bg-white border-slate-300 font-semibold">
+                  <SelectTrigger className="h-9 text-xs bg-white">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="operador" className="text-xs">
-                      👤 Operador (Atendimento, contatos e Meu Painel)
+                      👤 Operador (Atendimento e Meu Painel apenas)
+                    </SelectItem>
+                    <SelectItem value="lider" className="text-xs">
+                      🚩 Líder de Rota (Atendimento + Painel de Equipe da Rota)
                     </SelectItem>
                     <SelectItem value="supervisor" className="text-xs">
                       ⭐ Supervisor (Dashboard equipe, Fila geral e Clientes)
                     </SelectItem>
                     <SelectItem value="admin" className="text-xs">
-                      👑 Administrador (Acesso total, Configurações e Importação)
+                      🛡️ Administrador (Acesso total ao sistema)
                     </SelectItem>
                   </SelectContent>
-                </Select>
+                </Select>{' '}
                 <p className="text-[10px] text-slate-500">
                   Somente administradores podem alterar o nível de acesso das contas da equipe.
                 </p>

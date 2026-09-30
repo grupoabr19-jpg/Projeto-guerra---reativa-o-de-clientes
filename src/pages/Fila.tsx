@@ -44,18 +44,18 @@ export default function FilaPage() {
   const [filterFaixa, setFilterFaixa] = useState<string>('todas')
 
   useEffect(() => {
-    if (user && user.role === 'operador') {
+    if (user && (user.role === 'operador' || user.role === 'lider')) {
       navigate('/meu-painel', { replace: true })
     }
   }, [user, navigate])
 
   useEffect(() => {
-    if (user && user.role !== 'operador') {
+    if (user && user.role !== 'operador' && user.role !== 'lider') {
       loadQueue()
     }
   }, [user])
 
-  if (user?.role === 'operador') {
+  if (user?.role === 'operador' || user?.role === 'lider') {
     return null
   }
 

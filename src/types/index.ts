@@ -1,4 +1,4 @@
-export type UserRole = 'operador' | 'supervisor' | 'admin'
+export type UserRole = 'operador' | 'supervisor' | 'admin' | 'lider'
 
 export interface User {
   id: string
@@ -24,6 +24,7 @@ export type ClienteEstado =
   | 'duplicado'
   | 'sem_contato'
   | 'suspenso'
+  | 'ativo_fora_base'
 
 export type FaixaInatividade = 'recente' | '60_89' | '90_plus'
 
@@ -68,6 +69,8 @@ export interface Cliente {
   duplicado_de_codigo?: string
   notas?: string
   rascunho_respostas?: Record<string, unknown>
+  ativo_fora_base?: boolean
+  motivo_ativo_fora_base?: string
   // Gatilhos de fechamento / cruzamento de planilhas
   ultimo_faturamento_data?: string
   fat_12m_reais?: number
@@ -133,6 +136,7 @@ export interface Importacao {
   reconciliados_faturaram: number
   pedidos_validados: number
   pedidos_divergentes: number
+  linhas_puladas_ativo_fora_base?: number
   status: 'processando' | 'concluida' | 'erro'
   detalhes_erro?: Array<{ linha: number; codigo: string; erro: string }>
   divergencias_pedidos?: Array<{

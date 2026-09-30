@@ -10,14 +10,10 @@ import {
   Settings,
   LogOut,
   Menu,
-  ShieldCheck,
   RefreshCw,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  HelpCircle,
   Activity,
   Trophy,
+  Flag,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -95,10 +91,14 @@ export default function Layout() {
   }
 
   // Definição estrita de permissões de menu:
-  // Operador vê SOMENTE: "Meu Painel", "Atendimento" e "Ranking" (SEM Fila, SEM Clientes, SEM Dashboard, SEM Relatórios, SEM Importação, SEM Configurações).
-  // Supervisor e Admin têm acesso ampliado conforme sua função.
+  // Operador vê SOMENTE: "Meu Painel", "Atendimento" e "Ranking".
+  // Líder de Rota vê: "Meu Painel", "Atendimento", "Equipe" (novo) e "Ranking".
+  // NÃO vê outras rotas, NÃO vê Importação, NÃO vê Configurações, NÃO vê a fila geral nem a lista de Clientes.
+  // Supervisor e Admin mantêm seus acessos ampliados.
 
+  const isLider = user.role === 'lider'
   const isOperador = user.role === 'operador' || !user.role
+
   const navItems = isOperador
     ? [
         {
@@ -117,64 +117,87 @@ export default function Layout() {
           icon: Trophy,
         },
       ]
-    : [
-        ...(hasRole(['supervisor', 'admin'])
-          ? [
-              {
-                title: 'Dashboard',
-                href: '/dashboard',
-                icon: LayoutDashboard,
-              },
-            ]
-          : []),
-        ...(hasRole('admin')
-          ? [
-              {
-                title: 'Importação',
-                href: '/importacao',
-                icon: FileSpreadsheet,
-              },
-            ]
-          : []),
-        {
-          title: 'Fila de Atendimento',
-          href: '/fila',
-          icon: ListOrdered,
-        },
-        {
-          title: 'Atendimento',
-          href: '/atendimento',
-          icon: Headphones,
-        },
-        {
-          title: 'Clientes',
-          href: '/clientes',
-          icon: Users,
-        },
-        {
-          title: 'Ranking',
-          href: '/ranking',
-          icon: Trophy,
-        },
-        ...(hasRole(['supervisor', 'admin'])
-          ? [
-              {
-                title: 'Relatórios',
-                href: '/relatorios',
-                icon: BarChart3,
-              },
-            ]
-          : []),
-        ...(hasRole('admin')
-          ? [
-              {
-                title: 'Configurações',
-                href: '/configuracoes',
-                icon: Settings,
-              },
-            ]
-          : []),
-      ]
+    : isLider
+      ? [
+          {
+            title: 'Meu Painel',
+            href: '/meu-painel',
+            icon: Activity,
+          },
+          {
+            title: 'Atendimento',
+            href: '/atendimento',
+            icon: Headphones,
+          },
+          {
+            title: 'Equipe',
+            href: '/equipe',
+            icon: Flag,
+          },
+          {
+            title: 'Ranking',
+            href: '/ranking',
+            icon: Trophy,
+          },
+        ]
+      : [
+          ...(hasRole(['supervisor', 'admin'])
+            ? [
+                {
+                  title: 'Dashboard',
+                  href: '/dashboard',
+                  icon: LayoutDashboard,
+                },
+              ]
+            : []),
+          ...(hasRole('admin')
+            ? [
+                {
+                  title: 'Importação',
+                  href: '/importacao',
+                  icon: FileSpreadsheet,
+                },
+              ]
+            : []),
+          {
+            title: 'Fila de Atendimento',
+            href: '/fila',
+            icon: ListOrdered,
+          },
+          {
+            title: 'Atendimento',
+            href: '/atendimento',
+            icon: Headphones,
+          },
+          {
+            title: 'Clientes',
+            href: '/clientes',
+            icon: Users,
+          },
+          {
+            title: 'Ranking',
+            href: '/ranking',
+            icon: Trophy,
+          },
+          ...(hasRole(['supervisor', 'admin'])
+            ? [
+                {
+                  title: 'Relatórios',
+                  href: '/relatorios',
+                  icon: BarChart3,
+                },
+              ]
+            : []),
+          ...(hasRole('admin')
+            ? [
+                {
+                  title: 'Configurações',
+                  href: '/configuracoes',
+                  icon: Settings,
+                },
+              ]
+            : []),
+        ]
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full bg-slate-900 text-slate-100">
@@ -231,9 +254,13 @@ export default function Layout() {
               <div className="flex items-center space-x-1.5 mt-0.5">
                 <Badge
                   variant="outline"
-                  className="text-[10px] px-1.5 py-0 h-4 border-slate-700 text-slate-400 uppercase font-mono"
+                  className={
+                    user.role === 'lider'
+                      ? 'text-[10px] px-1.5 py-0 h-4 border-amber-600 bg-amber-950/40 text-amber-300 font-semibold flex items-center gap-1'
+                      : 'text-[10px] px-1.5 py-0 h-4 border-slate-700 text-slate-400 uppercase font-mono'
+                  }
                 >
-                  {user.role}
+                  {user.role === 'lider' ? '🚩 Líder de Rota' : user.role}
                 </Badge>
               </div>
             </div>

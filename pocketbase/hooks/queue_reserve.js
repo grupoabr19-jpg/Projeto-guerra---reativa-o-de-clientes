@@ -121,12 +121,13 @@ routerAdd(
       if (isRepescagem) {
         // Rota Repescagem é transversal: ignora restrição de região
         regiaoFilter = ''
-      } else if (userRole === 'operador') {
+      } else if (userRole === 'operador' || userRole === 'lider') {
+        // Operador e Líder de rota atendem estritamente às regiões da sua rota
         if (userRegioes.length > 0) {
           const parts = userRegioes.map((r) => buildRegiaoCondition(r))
           regiaoFilter = parts.length === 1 ? parts[0] : `(${parts.join(' || ')})`
         } else {
-          // Operador sem regiões atribuídas na conta: atende a base disponível para não travar a operação
+          // Sem regiões atribuídas na conta: atende a base disponível para não travar a operação
           regiaoFilter = ''
         }
       } else {
@@ -256,7 +257,9 @@ routerAdd(
 
         // Condição limpa e indexada para SQLite:
         // Prioriza estado = 'na_base', que usa diretamente o índice idx_clientes_fast_queue
-        let baseFilter = "estado = 'na_base' && telefone_invalido != true"
+        // NUNCA traz clientes marcados como ativo_fora_base
+        let baseFilter =
+          "estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true"
         if (regiaoFilter) {
           baseFilter += ` && ${regiaoFilter}`
         }
@@ -277,7 +280,8 @@ routerAdd(
         // Fallback: se pool na região estiver vazia e operador tiver região, tenta sem filtro de segmento
         if ((!pool || pool.length === 0) && filtroSegmento && filtroSegmento !== 'todos') {
           try {
-            let fallbackFilter = "estado = 'na_base' && telefone_invalido != true"
+            let fallbackFilter =
+              "estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true"
             if (regiaoFilter) fallbackFilter += ` && ${regiaoFilter}`
             pool = $app.findRecordsByFilter('clientes', fallbackFilter, sortExpr, 30, 0)
           } catch (_) {}
@@ -285,11 +289,15 @@ routerAdd(
 
         // Fallback 2: se ainda assim não encontrar na região, para operadores sem clientes na base regional (ou se a região acabou),
         // busca clientes gerais com telefone válido para não deixar o operador ocioso
-        if ((!pool || pool.length === 0) && userRole === 'operador' && !isRepescagem) {
+        if (
+          (!pool || pool.length === 0) &&
+          (userRole === 'operador' || userRole === 'lider') &&
+          !isRepescagem
+        ) {
           try {
             pool = $app.findRecordsByFilter(
               'clientes',
-              "estado = 'na_base' && telefone_invalido != true",
+              "estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true",
               sortExpr,
               20,
               0,

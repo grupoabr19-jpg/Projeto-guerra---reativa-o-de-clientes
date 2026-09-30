@@ -18,6 +18,7 @@ import RelatoriosPage from '@/pages/Relatorios'
 import ConfiguracoesPage from '@/pages/Configuracoes'
 import MeuPainelPage from '@/pages/MeuPainel'
 import RankingPage from '@/pages/Ranking'
+import EquipePage from '@/pages/Equipe'
 import { ForgotPassword, ResetPassword, VerifyEmail } from '@/pages/AuthPages'
 import NotFound from '@/pages/NotFound'
 
@@ -36,11 +37,11 @@ const App = () => (
             <Route path="/verify-email" element={<VerifyEmail />} />
 
             {/* Rotas Operacionais Autorizadas */}
-            {/* Operador: vê /meu-painel, /atendimento e agora /ranking (gamificação e posição pessoal) */}
+            {/* Operador e Líder: veem /meu-painel, /atendimento e /ranking */}
             <Route
               path="/meu-painel"
               element={
-                <RoleRoute allowedRoles={['operador', 'supervisor', 'admin']}>
+                <RoleRoute allowedRoles={['operador', 'lider', 'supervisor', 'admin']}>
                   <MeuPainelPage />
                 </RoleRoute>
               }
@@ -48,7 +49,7 @@ const App = () => (
             <Route
               path="/atendimento"
               element={
-                <RoleRoute allowedRoles={['operador', 'supervisor', 'admin']}>
+                <RoleRoute allowedRoles={['operador', 'lider', 'supervisor', 'admin']}>
                   <AtendimentoPage />
                 </RoleRoute>
               }
@@ -56,7 +57,7 @@ const App = () => (
             <Route
               path="/atendimento/:clientId"
               element={
-                <RoleRoute allowedRoles={['operador', 'supervisor', 'admin']}>
+                <RoleRoute allowedRoles={['operador', 'lider', 'supervisor', 'admin']}>
                   <AtendimentoPage />
                 </RoleRoute>
               }
@@ -64,8 +65,18 @@ const App = () => (
             <Route
               path="/ranking"
               element={
-                <RoleRoute allowedRoles={['operador', 'supervisor', 'admin']}>
+                <RoleRoute allowedRoles={['operador', 'lider', 'supervisor', 'admin']}>
                   <RankingPage />
+                </RoleRoute>
+              }
+            />
+
+            {/* Nova Rota Equipe: Exclusiva para Líder de Rota (e supervisores/admins se necessário) */}
+            <Route
+              path="/equipe"
+              element={
+                <RoleRoute allowedRoles={['lider', 'supervisor', 'admin']}>
+                  <EquipePage />
                 </RoleRoute>
               }
             />

@@ -168,16 +168,15 @@ export default function ImportacaoPage() {
   }, [user, navigate])
 
   useEffect(() => {
-    if (user && user.role !== 'operador') {
-      loadHistory()
-      loadTemplates()
+    // Redirecionamento estrito de operadores e líderes de rota: não têm acesso ao módulo de importação
+    if (user && (user.role === 'operador' || user.role === 'lider')) {
+      navigate('/meu-painel', { replace: true })
     }
-  }, [user])
+  }, [user, navigate])
 
-  if (user?.role === 'operador') {
+  if (user?.role === 'operador' || user?.role === 'lider') {
     return null
   }
-
   const loadTemplates = async () => {
     try {
       const configs = await fetchConfiguracoes()

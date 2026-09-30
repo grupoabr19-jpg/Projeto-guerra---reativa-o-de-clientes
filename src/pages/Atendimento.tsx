@@ -84,6 +84,8 @@ export default function AtendimentoPage() {
   // Desfecho Unificado (Q14 e Q17 foram unificados pelo usuário)
   const [desfechoFinal, setDesfechoFinal] = useState<ClienteEstado | ''>('')
   const [motivoDesfecho, setMotivoDesfecho] = useState('')
+  const [motivoAtivoForaBase, setMotivoAtivoForaBase] = useState('compra por CPF de terceiro')
+  const [obsAtivoForaBase, setObsAtivoForaBase] = useState('')
   const [observacoes, setObservacoes] = useState('')
   const [reagendarData, setReagendarData] = useState('')
   const [numeroPedido, setNumeroPedido] = useState('')
@@ -282,7 +284,7 @@ export default function AtendimentoPage() {
 
       setShowTransferModal(false)
       setCliente(null)
-      navigate(user?.role === 'operador' ? '/meu-painel' : '/fila')
+      navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao transferir cliente'
       toast({
@@ -306,11 +308,11 @@ export default function AtendimentoPage() {
     try {
       await releaseQueueLock(cliente.id, answers)
       setCliente(null)
-      navigate(user?.role === 'operador' ? '/meu-painel' : '/fila')
+      navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila')
     } catch (err) {
       console.error('Erro ao liberar cliente:', err)
       setCliente(null)
-      navigate(user?.role === 'operador' ? '/meu-painel' : '/fila')
+      navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila')
     }
   }
 
@@ -386,6 +388,11 @@ export default function AtendimentoPage() {
       if (!confirmSemPedido) return
     }
 
+    if (desfechoFinal === 'ativo_fora_base' && !motivoAtivoForaBase.trim()) {
+      alert('Informe o motivo obrigatório para a saída do cliente ativo da base.')
+      return
+    }
+
     setIsFinalizing(true)
     try {
       // 1. Gravar dados das respostas
@@ -438,6 +445,14 @@ export default function AtendimentoPage() {
         updatePayload.quarentena_ate = quarentena.toISOString()
       } else if (desfechoFinal === 'duplicado') {
         updatePayload.duplicado_de_codigo = duplicadoCodigo
+      } else if (desfechoFinal === 'ativo_fora_base') {
+        // Regra da Frente 2: Cliente Ativo — Fora da Base de Inativos
+        // Marcação permanente no banco para nunca mais voltar para a fila de inativos
+        updatePayload.ativo_fora_base = true
+        updatePayload.motivo_ativo_fora_base = `${motivoAtivoForaBase}${obsAtivoForaBase ? ` — ${obsAtivoForaBase}` : ''}`
+        updatePayload.operador = undefined
+        updatePayload.lock_timestamp = undefined
+        updatePayload.quarentena_ate = undefined
       }
 
       await updateCliente(cliente.id, updatePayload)
@@ -448,10 +463,16 @@ export default function AtendimentoPage() {
         operador: user.id,
         tipo: 'formulario',
         desfecho: desfechoFinal,
-        motivo: motivoDesfecho,
-        conteudo: `Atendimento finalizado com desfecho: ${desfechoFinal.toUpperCase()}.\nObservações: ${observacoes || 'Nenhuma'}${
-          numeroPedido ? `\nPedido: ${numeroPedido}` : ''
-        }`,
+        motivo:
+          desfechoFinal === 'ativo_fora_base'
+            ? `${motivoAtivoForaBase}${obsAtivoForaBase ? ` — ${obsAtivoForaBase}` : ''}`
+            : motivoDesfecho,
+        conteudo:
+          desfechoFinal === 'ativo_fora_base'
+            ? `Atendimento finalizado: CLIENTE ATIVO — FORA DA BASE DE INATIVOS.\nMotivo: ${motivoAtivoForaBase}\nObservação do operador: ${obsAtivoForaBase || 'Nenhuma'}\n(Cliente removido permanentemente da base de inativos e protegido contra reimportações/recálculo)`
+            : `Atendimento finalizado com desfecho: ${desfechoFinal.toUpperCase()}.\nObservações: ${observacoes || 'Nenhuma'}${
+                numeroPedido ? `\nPedido: ${numeroPedido}` : ''
+              }`,
         reagendado_para: reagendarData ? new Date(reagendarData).toISOString() : undefined,
         numero_pedido: numeroPedido,
         estado_anterior: cliente.estado,
@@ -469,7 +490,7 @@ export default function AtendimentoPage() {
       alert('Atendimento registrado e sincronizado com sucesso!')
       setCliente(null)
       setShowQuestionarioModal(false)
-      navigate(user?.role === 'operador' ? '/meu-painel' : '/fila')
+      navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao salvar atendimento'
       alert(`Erro: ${msg}`)
@@ -1205,6 +1226,12 @@ export default function AtendimentoPage() {
                             label: 'Registro Duplicado no ERP',
                             color: 'border-purple-400 bg-purple-50 text-purple-900',
                           },
+                          {
+                            id: 'ativo_fora_base',
+                            label: 'Cliente Ativo — Fora da Base de Inativos',
+                            color:
+                              'border-emerald-600 bg-emerald-100/90 text-emerald-950 font-bold',
+                          },
                         ].map((btn) => (
                           <div
                             key={btn.id}
@@ -1260,6 +1287,76 @@ export default function AtendimentoPage() {
                             onChange={(e) => setDuplicadoCodigo(e.target.value)}
                             className="bg-white text-xs"
                           />
+                        </div>
+                      )}
+
+                      {/* Campos específicos para Cliente Ativo — Fora da Base de Inativos */}
+                      {desfechoFinal === 'ativo_fora_base' && (
+                        <div className="p-4 bg-emerald-50 border-2 border-emerald-400 rounded-xl space-y-3">
+                          <div className="flex items-center space-x-2 text-emerald-900">
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                            <Label className="text-xs font-bold">
+                              Remoção Definitiva da Base de Inativos (Cliente Ativo)
+                            </Label>
+                          </div>
+                          <p className="text-[11px] text-emerald-800 leading-relaxed">
+                            Este cliente sairá da base de inativos permanentemente e NÃO voltará
+                            para a fila (nem na rotina da meia-noite, nem nas importações de
+                            planilhas, nem na Repescagem).
+                          </p>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold text-slate-700">
+                              Motivo da Remoção (Obrigatório) *
+                            </Label>
+                            <Select
+                              value={motivoAtivoForaBase}
+                              onValueChange={(val) => setMotivoAtivoForaBase(val)}
+                            >
+                              <SelectTrigger className="h-8 text-xs bg-white border-slate-300">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="compra por CPF de terceiro" className="text-xs">
+                                  Compra por CPF de terceiro
+                                </SelectItem>
+                                <SelectItem value="compra por CNPJ de terceiro" className="text-xs">
+                                  Compra por CNPJ de terceiro / coligada
+                                </SelectItem>
+                                <SelectItem
+                                  value="acompanhamento periódico do vendedor"
+                                  className="text-xs"
+                                >
+                                  Acompanhamento periódico do vendedor (em negociação contínua)
+                                </SelectItem>
+                                <SelectItem
+                                  value="cliente ativo faturando por outro cadastro"
+                                  className="text-xs"
+                                >
+                                  Cliente ativo faturando por outro cadastro/filial
+                                </SelectItem>
+                                <SelectItem
+                                  value="outro motivo de cliente ativo"
+                                  className="text-xs"
+                                >
+                                  Outro motivo (especificar abaixo)
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold text-slate-700">
+                              Observações Complementares / Detalhes (Livre)
+                            </Label>
+                            <Textarea
+                              placeholder="Descreva detalhes: qual terceiro compra, qual vendedor acompanha, etc..."
+                              value={obsAtivoForaBase}
+                              onChange={(e) => setObsAtivoForaBase(e.target.value)}
+                              rows={2}
+                              className="text-xs bg-white"
+                            />
+                          </div>
                         </div>
                       )}
                     </div>

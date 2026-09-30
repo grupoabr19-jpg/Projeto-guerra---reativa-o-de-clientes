@@ -36,6 +36,7 @@ routerAdd(
       let countReconciliadosFaturaram = 0
       let countPedidosValidados = 0
       let countPedidosDivergentes = 0
+      let countPuladosAtivoForaBase = 0
       const erros = []
       const divergencias = []
       const semCorrespondenciaLista = []
@@ -188,6 +189,22 @@ routerAdd(
             targetRec = clientsByNameOnly[normNome]
             matchBy = 'name_only'
           }
+        }
+
+        // REGRA MANDATÓRIA: Se o cliente foi marcado como "Cliente Ativo - Fora da Base" (ativo_fora_base = true ou estado = 'ativo_fora_base'),
+        // a importação DEVE PRESERVAR essa flag e NÃO pode reativá-lo, nem trazê-lo de volta para a fila/base de inativos.
+        // O cliente é pulado em TODOS os modos.
+        if (
+          targetRec &&
+          (targetRec.getString('estado') === 'ativo_fora_base' ||
+            targetRec.getBool('ativo_fora_base'))
+        ) {
+          countPuladosAtivoForaBase++
+          countInalteradas++
+          if (modoImportacao === 'base_mestre') {
+            importedCodigos.add(rawCodigo)
+          }
+          continue
         }
 
         // ==========================================
@@ -1063,6 +1080,7 @@ routerAdd(
       impRec.set('reconciliados_faturaram', countReconciliadosFaturaram)
       impRec.set('pedidos_validados', countPedidosValidados)
       impRec.set('pedidos_divergentes', countPedidosDivergentes)
+      impRec.set('linhas_puladas_ativo_fora_base', countPuladosAtivoForaBase)
       impRec.set(
         'status',
         countRejeitadas > 0 && countNovas === 0 && countAtualizadas === 0 && countInalteradas === 0
@@ -1091,6 +1109,7 @@ routerAdd(
           reconciliadosFaturaram: countReconciliadosFaturaram,
           pedidosValidados: countPedidosValidados,
           pedidosDivergentes: countPedidosDivergentes,
+          puladosAtivoForaBase: countPuladosAtivoForaBase,
           erros: erros,
           divergencias: divergencias,
         },

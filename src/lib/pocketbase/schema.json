@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T14:26:11.838Z",
+  "generatedAt": "2026-09-30T14:41:01.138Z",
   "collections": [
     {
       "name": "users",
@@ -43,7 +43,7 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["operador", "supervisor", "admin"]
+          "selectValues": ["operador", "supervisor", "admin", "lider"]
         },
         {
           "name": "regioes",
@@ -204,7 +204,8 @@
             "compra_terceiros",
             "nao_quer_negociar",
             "duplicado",
-            "sem_contato"
+            "sem_contato",
+            "ativo_fora_base"
           ]
         },
         {
@@ -385,6 +386,18 @@
           "type": "bool",
           "required": false,
           "system": false
+        },
+        {
+          "name": "ativo_fora_base",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "motivo_ativo_fora_base",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -393,7 +406,8 @@
         "CREATE INDEX idx_clientes_regiao ON clientes (regiao)",
         "CREATE INDEX idx_clientes_score ON clientes (score DESC)",
         "CREATE INDEX idx_clientes_operador ON clientes (operador)",
-        "CREATE INDEX `idx_clientes_reagendado_prioridade` ON `clientes` (reagendado_operador, prioridade_transferencia, reagendado_para)"
+        "CREATE INDEX `idx_clientes_reagendado_prioridade` ON `clientes` (reagendado_operador, prioridade_transferencia, reagendado_para)",
+        "CREATE INDEX `idx_clientes_ativo_fora_base` ON `clientes` (ativo_fora_base)"
       ]
     },
     {
@@ -697,6 +711,12 @@
         },
         {
           "name": "linhas_inalteradas",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "linhas_puladas_ativo_fora_base",
           "type": "number",
           "required": false,
           "system": false

@@ -385,9 +385,9 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
     return u.role === 'admin'
   })
 
-  // Operadores e supervisores que participam do atendimento
+  // Operadores, supervisores e líderes que participam do atendimento
   const operadoresList = filteredUsers.filter(
-    (u) => u.role === 'operador' || u.role === 'supervisor',
+    (u) => u.role === 'operador' || u.role === 'supervisor' || u.role === 'lider',
   )
 
   // Mapa de pontos de gamificação e títulos indexados por usuário

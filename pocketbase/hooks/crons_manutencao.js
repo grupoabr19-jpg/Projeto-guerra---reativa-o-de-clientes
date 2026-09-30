@@ -107,7 +107,7 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
     while (hasMore) {
       const batch = $app.findRecordsByFilter(
         'clientes',
-        "estado != 'duplicado'",
+        "estado != 'duplicado' && estado != 'ativo_fora_base' && ativo_fora_base != true",
         'id',
         pageSize,
         page * pageSize,
@@ -120,6 +120,10 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
 
       for (let i = 0; i < batch.length; i++) {
         const c = batch[i]
+        // Proteção adicional: se o cliente for ativo_fora_base, nunca mexer
+        if (c.getString('estado') === 'ativo_fora_base' || c.getBool('ativo_fora_base')) {
+          continue
+        }
         totalProcessados++
 
         // Recalcular dias sem faturar a partir de ultima_compra ou ultimo_faturamento_data

@@ -35,8 +35,9 @@ export function RoleRoute({ children, allowedRoles, fallbackPath }: RoleRoutePro
 
   if (!allowedRoles.includes(role)) {
     // Regra estrita de negócio do Projeto Guerra:
-    // Qualquer tentativa de operador acessar rotas proibidas cai direto em /meu-painel
-    const destination = role === 'operador' ? '/meu-painel' : fallbackPath || '/dashboard'
+    // Operador e Líder de rota tentando acessar rotas administrativas proibidas caem em /meu-painel
+    const destination =
+      role === 'operador' || role === 'lider' ? '/meu-painel' : fallbackPath || '/dashboard'
     return <Navigate to={destination} replace />
   }
 
