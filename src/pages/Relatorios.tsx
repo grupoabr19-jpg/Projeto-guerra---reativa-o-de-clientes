@@ -31,7 +31,14 @@ import {
   Ban,
   Eye,
   SlidersHorizontal,
+  Briefcase,
+  UserCheck2,
+  TrendingDown,
+  Layers2,
+  RotateCcw,
+  Sparkles,
 } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -55,6 +62,7 @@ import {
   fetchMetricasAtendimentosDashboard,
   fetchRelatorioDiagnostico,
   fetchMetricasBaseKpis,
+  fetchReportsAnalytics,
 } from '@/services/api'
 import type {
   Importacao,
@@ -65,8 +73,12 @@ import type {
   RelatorioDiagnosticoCompleto,
   DiagnosticoItemMotivo,
   MetricasBaseKpisResponse,
+  ReportsAnalyticsResponse,
+  FiltrosRelatoriosAvancados,
 } from '@/types'
 import { TODAS_REGIOES_FILTRO } from '@/types'
+import { SEGMENTOS_OFICIAIS } from '@/lib/segmentos'
+import pb from '@/lib/pocketbase/client'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { ExpedienteStatusBadge } from '@/components/ExpedienteStatusBadge'
@@ -79,13 +91,26 @@ export default function RelatoriosPage() {
   const isLider = user?.role === 'lider'
   const rotaLider = isLider && user?.regioes && user.regioes.length > 0 ? user.regioes[0] : null
 
-  // Filtros
+  // Filtros Básicos e Avançados
   const [selectedPeriodo, setSelectedPeriodo] = useState<PeriodoAtendimentoFiltro>('total')
   const [selectedRegiao, setSelectedRegiao] = useState<string>(rotaLider || 'todas')
+  const [selectedSegmento, setSelectedSegmento] = useState<string>('todos')
+  const [selectedVendedor, setSelectedVendedor] = useState<string>('todos')
+  const [selectedOperador, setSelectedOperador] = useState<string>('todos')
+  const [selectedFaixaInatividade, setSelectedFaixaInatividade] = useState<string>('todas')
+  const [selectedFaixaScore, setSelectedFaixaScore] = useState<string>('todas')
+  const [selectedFaixaFaturamento, setSelectedFaixaFaturamento] = useState<string>('todas')
+  const [selectedDesfecho, setSelectedDesfecho] = useState<string>('todos')
+  const [showFiltrosAvancados, setShowFiltrosAvancados] = useState<boolean>(true)
+
+  // Listas para os selects de filtro
   const [regioesList, setRegioesList] = useState<string[]>([...TODAS_REGIOES_FILTRO])
+  const [vendedoresList, setVendedoresList] = useState<string[]>([])
+  const [segmentosList, setSegmentosList] = useState<string[]>([...SEGMENTOS_OFICIAIS])
 
   // Estados de dados
   const [baseKpis, setBaseKpis] = useState<MetricasBaseKpisResponse | null>(null)
+  const [reportsAnalytics, setReportsAnalytics] = useState<ReportsAnalyticsResponse | null>(null)
   const [importacoes, setImportacoes] = useState<Importacao[]>([])
   const [metricasAtendimento, setMetricasAtendimento] =
     useState<MetricasAtendimentosDashboard | null>(null)
@@ -95,6 +120,7 @@ export default function RelatoriosPage() {
   const [loadingGeral, setLoadingGeral] = useState(true)
   const [loadingAtendimentos, setLoadingAtendimentos] = useState(false)
   const [loadingDiagnostico, setLoadingDiagnostico] = useState(false)
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false)
 
   // Ordenação da tabela de operadores
   const [sortFieldOp, setSortFieldOp] = useState<'conversoes' | 'atendimentos' | 'taxaConversao'>(
@@ -117,6 +143,12 @@ export default function RelatoriosPage() {
     }
   }, [user, navigate])
 
+  // Validação: operador que atende (para enriquecer lista de operadores do filtro)
+  // Operadores e supervisores elegíveis
+  const [usersListOp, setUsersListOp] = useState<Array<{ id: string; name: string; role: string }>>(
+    [],
+  )
+
   // Se for líder, força a rota do líder
   useEffect(() => {
     if (isLider && rotaLider) {
@@ -127,19 +159,30 @@ export default function RelatoriosPage() {
   // Estado de erro explícito
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null)
 
-  // Carga inicial de metadados (apenas lista de regiões e importações)
+  // Carga inicial de metadados (apenas lista de regiões, operadores e importações)
   useEffect(() => {
     if (user && user.role !== 'operador') {
       loadMetadata()
     }
   }, [user])
 
-  // Recarrega relatórios quando filtros mudam ou quando autenticação é restabelecida
+  // Recarrega relatórios quando qualquer filtro mudar
   useEffect(() => {
     if (user && user.role !== 'operador') {
       loadRelatorios()
     }
-  }, [user, selectedPeriodo, selectedRegiao])
+  }, [
+    user,
+    selectedPeriodo,
+    selectedRegiao,
+    selectedSegmento,
+    selectedVendedor,
+    selectedOperador,
+    selectedFaixaInatividade,
+    selectedFaixaScore,
+    selectedFaixaFaturamento,
+    selectedDesfecho,
+  ])
 
   if (user?.role === 'operador') {
     return null
@@ -147,13 +190,23 @@ export default function RelatoriosPage() {
 
   const loadMetadata = async () => {
     try {
-      const [resI, resRegioes] = await Promise.all([
+      const [resI, resRegioes, resUsers] = await Promise.all([
         fetchImportacoes().catch(() => [] as Importacao[]),
         fetchRegioes().catch(() => [] as Regiao[]),
+        pb
+          .collection('users')
+          .getFullList<{ id: string; name: string; role: string }>({
+            sort: 'name',
+            filter: "role = 'operador' || role = 'supervisor' || role = 'lider'",
+          })
+          .catch(() => []),
       ])
       setImportacoes(resI)
       if (resRegioes.length > 0) {
         setRegioesList(resRegioes.map((r) => r.nome))
+      }
+      if (resUsers.length > 0) {
+        setUsersListOp(resUsers)
       }
     } catch (err) {
       console.warn('Erro ao carregar metadados auxiliares para relatórios:', err)
@@ -164,15 +217,35 @@ export default function RelatoriosPage() {
     const regiaoParam = selectedRegiao !== 'todas' ? selectedRegiao : undefined
     setLoadingAtendimentos(true)
     setLoadingDiagnostico(true)
+    setLoadingAnalytics(true)
     setLoadingGeral(true)
     setErroCarregamento(null)
 
     const errosEncontrados: string[] = []
 
+    const filtrosObj: FiltrosRelatoriosAvancados = {
+      periodo: selectedPeriodo,
+      regiao: selectedRegiao,
+      segmento: selectedSegmento !== 'todos' ? selectedSegmento : undefined,
+      vendedor: selectedVendedor !== 'todos' ? selectedVendedor : undefined,
+      operador: selectedOperador !== 'todos' ? selectedOperador : undefined,
+      faixaInatividade: selectedFaixaInatividade !== 'todas' ? selectedFaixaInatividade : undefined,
+      faixaScore: selectedFaixaScore !== 'todas' ? selectedFaixaScore : undefined,
+      faixaFaturamento: selectedFaixaFaturamento !== 'todas' ? selectedFaixaFaturamento : undefined,
+      desfecho: selectedDesfecho !== 'todos' ? selectedDesfecho : undefined,
+    }
+
     // Executar chamadas com tratamento individual de erro para não derrubar o painel todo
     const promessaAtendimentos = fetchMetricasAtendimentosDashboard({
       periodo: selectedPeriodo,
       regiao: regiaoParam,
+      segmento: selectedSegmento !== 'todos' ? selectedSegmento : undefined,
+      vendedor: selectedVendedor !== 'todos' ? selectedVendedor : undefined,
+      operador: selectedOperador !== 'todos' ? selectedOperador : undefined,
+      faixaInatividade: selectedFaixaInatividade !== 'todas' ? selectedFaixaInatividade : undefined,
+      faixaScore: selectedFaixaScore !== 'todas' ? selectedFaixaScore : undefined,
+      faixaFaturamento: selectedFaixaFaturamento !== 'todas' ? selectedFaixaFaturamento : undefined,
+      desfecho: selectedDesfecho !== 'todos' ? selectedDesfecho : undefined,
     }).catch((err) => {
       console.error('Falha em fetchMetricasAtendimentosDashboard:', err)
       errosEncontrados.push('Atividades de atendimento')
@@ -182,6 +255,13 @@ export default function RelatoriosPage() {
     const promessaDiagnostico = fetchRelatorioDiagnostico({
       periodo: selectedPeriodo,
       regiao: regiaoParam,
+      segmento: selectedSegmento !== 'todos' ? selectedSegmento : undefined,
+      vendedor: selectedVendedor !== 'todos' ? selectedVendedor : undefined,
+      operador: selectedOperador !== 'todos' ? selectedOperador : undefined,
+      faixaInatividade: selectedFaixaInatividade !== 'todas' ? selectedFaixaInatividade : undefined,
+      faixaScore: selectedFaixaScore !== 'todas' ? selectedFaixaScore : undefined,
+      faixaFaturamento: selectedFaixaFaturamento !== 'todas' ? selectedFaixaFaturamento : undefined,
+      desfecho: selectedDesfecho !== 'todos' ? selectedDesfecho : undefined,
     }).catch((err) => {
       console.error('Falha em fetchRelatorioDiagnostico:', err)
       errosEncontrados.push('Diagnóstico comercial')
@@ -196,16 +276,35 @@ export default function RelatoriosPage() {
       return null
     })
 
+    const promessaAnalytics = fetchReportsAnalytics(filtrosObj).catch((err) => {
+      console.error('Falha em fetchReportsAnalytics:', err)
+      errosEncontrados.push('Cruzamentos analíticos')
+      return null
+    })
+
     try {
-      const [dadosAtendimento, dadosDiagnostico, dadosBase] = await Promise.all([
+      const [dadosAtendimento, dadosDiagnostico, dadosBase, dadosAnalytics] = await Promise.all([
         promessaAtendimentos,
         promessaDiagnostico,
         promessaBaseKpis,
+        promessaAnalytics,
       ])
 
       if (dadosAtendimento) setMetricasAtendimento(dadosAtendimento)
       if (dadosDiagnostico) setDiagnostico(dadosDiagnostico)
       if (dadosBase) setBaseKpis(dadosBase)
+      if (dadosAnalytics) {
+        setReportsAnalytics(dadosAnalytics)
+        if (dadosAnalytics.opcoesFiltros?.vendedores?.length > 0 && vendedoresList.length === 0) {
+          setVendedoresList(dadosAnalytics.opcoesFiltros.vendedores)
+        }
+        if (dadosAnalytics.opcoesFiltros?.segmentos?.length > 0) {
+          const combinados = Array.from(
+            new Set([...SEGMENTOS_OFICIAIS, ...dadosAnalytics.opcoesFiltros.segmentos]),
+          )
+          setSegmentosList(combinados)
+        }
+      }
 
       if (errosEncontrados.length > 0) {
         setErroCarregamento(
@@ -218,23 +317,46 @@ export default function RelatoriosPage() {
     } finally {
       setLoadingAtendimentos(false)
       setLoadingDiagnostico(false)
+      setLoadingAnalytics(false)
       setLoadingGeral(false)
     }
   }
 
-  // Totais agregados no servidor (com suporte snake_case e camelCase)
+  // Limpar todos os filtros avançados
+  const handleResetFiltros = () => {
+    setSelectedPeriodo('total')
+    if (!isLider) setSelectedRegiao('todas')
+    setSelectedSegmento('todos')
+    setSelectedVendedor('todos')
+    setSelectedOperador('todos')
+    setSelectedFaixaInatividade('todas')
+    setSelectedFaixaScore('todas')
+    setSelectedFaixaFaturamento('todas')
+    setSelectedDesfecho('todos')
+  }
+
+  const isFiltroAtivo =
+    selectedPeriodo !== 'total' ||
+    (selectedRegiao !== 'todas' && !isLider) ||
+    selectedSegmento !== 'todos' ||
+    selectedVendedor !== 'todos' ||
+    selectedOperador !== 'todos' ||
+    selectedFaixaInatividade !== 'todas' ||
+    selectedFaixaScore !== 'todas' ||
+    selectedFaixaFaturamento !== 'todas' ||
+    selectedDesfecho !== 'todos'
+
+  // Totais agregados no servidor (com suporte aos filtros combinados via reportsAnalytics ou baseKpis)
   const totalBase = Number(
-    baseKpis?.kpis?.totalBase ??
+    reportsAnalytics?.kpis?.totalBase ??
+      baseKpis?.kpis?.totalBase ??
       (baseKpis?.kpis as any)?.total_base ??
-      (baseKpis as any)?.totalBase ??
-      (baseKpis as any)?.total_base ??
       0,
   )
   const elegiveisNaFila = Number(
-    baseKpis?.kpis?.naFila ??
+    reportsAnalytics?.kpis?.naFila ??
+      baseKpis?.kpis?.naFila ??
       (baseKpis?.kpis as any)?.na_fila ??
-      (baseKpis as any)?.naFila ??
-      (baseKpis as any)?.na_fila ??
       0,
   )
 
@@ -298,13 +420,75 @@ export default function RelatoriosPage() {
   // Exportar Geral da Operação (amostra de auditoria)
   const handleExportGeralCSV = async () => {
     let csv =
-      'Total_Base;Elegiveis_Fila;Reativados;Taxa_Recuperacao;Valor_Recuperado;Regiao_Filtro\n'
-    csv += `${totalBase};${elegiveisNaFila};${baseKpis?.kpis.reativados || 0};"${baseKpis?.kpis.taxaReativacao || 0}%";${baseKpis?.kpis.valorRecuperado || 0};"${selectedRegiao}"\n`
+      'Total_Base;Elegiveis_Fila;Reativados;Taxa_Recuperacao;Valor_Recuperado;Regiao_Filtro;Segmento_Filtro;Vendedor_Filtro;Desfecho_Filtro\n'
+    const reativadosVal = reportsAnalytics?.kpis.reativados ?? baseKpis?.kpis.reativados ?? 0
+    const taxaVal = reportsAnalytics?.kpis.taxaReativacao ?? baseKpis?.kpis.taxaReativacao ?? 0
+    const valorVal = reportsAnalytics?.kpis.valorRecuperado ?? baseKpis?.kpis.valorRecuperado ?? 0
+    csv += `${totalBase};${elegiveisNaFila};${reativadosVal};"${taxaVal}%";${valorVal};"${selectedRegiao}";"${selectedSegmento}";"${selectedVendedor}";"${selectedDesfecho}"\n`
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
     link.download = `relatorio_geral_operacao_${selectedPeriodo}_${selectedRegiao}_${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+  }
+
+  // Exportar Cruzamento Comercial: Segmentos
+  const handleExportSegmentosCSV = () => {
+    if (!reportsAnalytics?.cruzamentos.conversaoPorSegmento) return
+    let csv =
+      'Segmento;Total_Clientes;Reativados;Taxa_Conversao;Valor_Recuperado;Toneladas_Recuperadas;Perdidos;Reagendados\n'
+    reportsAnalytics.cruzamentos.conversaoPorSegmento.forEach((item) => {
+      csv += `"${item.segmento}";${item.totalClientes};${item.reativados};"${item.taxaConversao}%";${item.valorRecuperado};${item.toneladasRecuperadas};${item.perdidos};${item.reagendados}\n`
+    })
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `cruzamento_comercial_segmentos_${selectedPeriodo}_${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+  }
+
+  // Exportar Cruzamento Comercial: Faixa de Inatividade
+  const handleExportInatividadeCSV = () => {
+    if (!reportsAnalytics?.cruzamentos.conversaoPorFaixaInatividade) return
+    let csv =
+      'Faixa_Inatividade;Total_Clientes;Reativados;Taxa_Conversao;Valor_Recuperado;Perdidos\n'
+    reportsAnalytics.cruzamentos.conversaoPorFaixaInatividade.forEach((item) => {
+      csv += `"${item.faixa}";${item.totalClientes};${item.reativados};"${item.taxaConversao}%";${item.valorRecuperado};${item.perdidos}\n`
+    })
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `cruzamento_comercial_inatividade_${selectedPeriodo}_${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+  }
+
+  // Exportar Cruzamento Comercial: Score vs Conversão
+  const handleExportScoreCSV = () => {
+    if (!reportsAnalytics?.cruzamentos.conversaoPorScore) return
+    let csv = 'Faixa_Score;Score_Medio;Total_Clientes;Reativados;Taxa_Conversao;Valor_Recuperado\n'
+    reportsAnalytics.cruzamentos.conversaoPorScore.forEach((item) => {
+      csv += `"${item.faixaScore}";${item.scoreMedio};${item.totalClientes};${item.reativados};"${item.taxaConversao}%";${item.valorRecuperado}\n`
+    })
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `cruzamento_comercial_score_${selectedPeriodo}_${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+  }
+
+  // Exportar Cruzamento Gestão: Vendedores com Carteira Morta
+  const handleExportCarteiraMortaCSV = () => {
+    if (!reportsAnalytics?.cruzamentos.rankingCarteiraMorta) return
+    let csv =
+      'Vendedor_Origem;Total_Carteira;Inativos_90_Na_Base;Percentual_Morto;Reativados;Em_Trabalho\n'
+    reportsAnalytics.cruzamentos.rankingCarteiraMorta.forEach((item) => {
+      csv += `"${item.vendedor}";${item.totalCarteira};${item.inativos90NaBase};"${item.percentualMorto}%";${item.reativados};${item.emTrabalho}\n`
+    })
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `cruzamento_carteira_morta_vendedores_${selectedPeriodo}_${new Date().toISOString().slice(0, 10)}.csv`
     link.click()
   }
 
@@ -441,7 +625,7 @@ export default function RelatoriosPage() {
           <div className="flex items-center space-x-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1 shadow-xs">
             <Filter className="h-3 w-3 text-slate-400" />
             <Select value={selectedRegiao} onValueChange={setSelectedRegiao} disabled={isLider}>
-              <SelectTrigger className="h-7 text-xs border-0 shadow-none px-1 w-40 focus:ring-0">
+              <SelectTrigger className="h-7 text-xs border-0 shadow-none px-1 w-36 focus:ring-0">
                 <SelectValue placeholder="Região" />
               </SelectTrigger>
               <SelectContent>
@@ -456,17 +640,35 @@ export default function RelatoriosPage() {
             </Select>
           </div>
 
+          {/* Botão de Toggle Filtros Avançados */}
+          <Button
+            variant={showFiltrosAvancados ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setShowFiltrosAvancados(!showFiltrosAvancados)}
+            className={`h-8 text-xs font-semibold ${
+              showFiltrosAvancados
+                ? 'bg-slate-900 hover:bg-slate-800 text-white'
+                : 'text-slate-700 bg-white border-slate-300'
+            }`}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5 mr-1.5" />
+            {showFiltrosAvancados ? 'Ocultar Filtros' : 'Filtros Avançados'}
+            {isFiltroAtivo && (
+              <span className="ml-1.5 h-2 w-2 rounded-full bg-emerald-400 inline-block" />
+            )}
+          </Button>
+
           {/* Botões de Ação */}
           <Button
             variant="outline"
             size="sm"
             onClick={loadRelatorios}
-            disabled={loadingAtendimentos || loadingDiagnostico}
+            disabled={loadingAtendimentos || loadingDiagnostico || loadingAnalytics}
             className="h-8 text-xs text-slate-700 bg-white"
           >
             <RefreshCw
               className={`h-3.5 w-3.5 mr-1.5 ${
-                loadingAtendimentos || loadingDiagnostico ? 'animate-spin' : ''
+                loadingAtendimentos || loadingDiagnostico || loadingAnalytics ? 'animate-spin' : ''
               }`}
             />
             Atualizar
@@ -483,6 +685,235 @@ export default function RelatoriosPage() {
           </Button>
         </div>
       </div>
+
+      {/* PAINEL EXPANSÍVEL DE FILTROS AVANÇADOS COMBINADOS (AND) */}
+      {showFiltrosAvancados && (
+        <Card className="border-blue-200/80 bg-gradient-to-r from-blue-50/40 via-indigo-50/20 to-white shadow-xs">
+          <CardHeader className="py-3 px-4 border-b border-blue-100 flex flex-row items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <SlidersHorizontal className="h-4 w-4 text-blue-700" />
+              <CardTitle className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                Filtros Cruzados Avançados (Combinação Obrigatória &bull; Lógica AND)
+              </CardTitle>
+            </div>
+            {isFiltroAtivo && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleResetFiltros}
+                className="h-7 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 font-medium"
+              >
+                <RotateCcw className="h-3 w-3 mr-1" />
+                Limpar Todos os Filtros
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+              {/* 1. Segmento */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 uppercase">Segmento</label>
+                <Select value={selectedSegmento} onValueChange={setSelectedSegmento}>
+                  <SelectTrigger className="h-8 text-xs bg-white border-slate-300">
+                    <SelectValue placeholder="Todos os Segmentos" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    <SelectItem value="todos">Todos os Segmentos</SelectItem>
+                    {segmentosList.map((seg) => (
+                      <SelectItem key={seg} value={seg}>
+                        {seg}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 2. Vendedor de Origem */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 uppercase">
+                  Vendedor Origem
+                </label>
+                <Select value={selectedVendedor} onValueChange={setSelectedVendedor}>
+                  <SelectTrigger className="h-8 text-xs bg-white border-slate-300">
+                    <SelectValue placeholder="Todos os Vendedores" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    <SelectItem value="todos">Todos os Vendedores</SelectItem>
+                    {vendedoresList.map((vend) => (
+                      <SelectItem key={vend} value={vend}>
+                        {vend}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 3. Operador */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 uppercase">Operador</label>
+                <Select value={selectedOperador} onValueChange={setSelectedOperador}>
+                  <SelectTrigger className="h-8 text-xs bg-white border-slate-300">
+                    <SelectValue placeholder="Todos os Operadores" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    <SelectItem value="todos">Todos os Operadores</SelectItem>
+                    {usersListOp.map((op) => (
+                      <SelectItem key={op.id} value={op.id}>
+                        {op.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 4. Faixa de Inatividade */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 uppercase">
+                  Faixa Inatividade
+                </label>
+                <Select
+                  value={selectedFaixaInatividade}
+                  onValueChange={setSelectedFaixaInatividade}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-white border-slate-300">
+                    <SelectValue placeholder="Todas as Faixas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas as Faixas</SelectItem>
+                    <SelectItem value="menos_60">Menos de 60 dias</SelectItem>
+                    <SelectItem value="60_89">60 a 89 dias (Prioritária)</SelectItem>
+                    <SelectItem value="90_179">90 a 179 dias (Repescagem)</SelectItem>
+                    <SelectItem value="180_365">180 a 365 dias</SelectItem>
+                    <SelectItem value="365_plus">Mais de 365 dias</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 5. Faixa de Score */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 uppercase">
+                  Faixa de Score
+                </label>
+                <Select value={selectedFaixaScore} onValueChange={setSelectedFaixaScore}>
+                  <SelectTrigger className="h-8 text-xs bg-white border-slate-300">
+                    <SelectValue placeholder="Todos os Scores" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todos os Scores</SelectItem>
+                    <SelectItem value="alto">Alto (61 - 100)</SelectItem>
+                    <SelectItem value="medio">Médio (30 - 60)</SelectItem>
+                    <SelectItem value="baixo">Baixo (0 - 29)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 6. Faixa Faturamento Histórico */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 uppercase">
+                  Faturamento 12m
+                </label>
+                <Select
+                  value={selectedFaixaFaturamento}
+                  onValueChange={setSelectedFaixaFaturamento}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-white border-slate-300">
+                    <SelectValue placeholder="Todas as Faixas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas as Faixas</SelectItem>
+                    <SelectItem value="mais_150k">Mais de R$ 150k</SelectItem>
+                    <SelectItem value="50k_150k">R$ 50k a R$ 150k</SelectItem>
+                    <SelectItem value="10k_50k">R$ 10k a R$ 50k</SelectItem>
+                    <SelectItem value="ate_10k">Até R$ 10k</SelectItem>
+                    <SelectItem value="zero">Sem Histórico (R$ 0)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 7. Desfecho */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 uppercase">
+                  Desfecho / Status
+                </label>
+                <Select value={selectedDesfecho} onValueChange={setSelectedDesfecho}>
+                  <SelectTrigger className="h-8 text-xs bg-white border-slate-300">
+                    <SelectValue placeholder="Todos os Desfechos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos os Desfechos</SelectItem>
+                    <SelectItem value="reativado">Reativado (Compra)</SelectItem>
+                    <SelectItem value="reagendado">Reagendado</SelectItem>
+                    <SelectItem value="venda_perdida">Venda Perdida (Recusa)</SelectItem>
+                    <SelectItem value="em_atendimento">Em Atendimento</SelectItem>
+                    <SelectItem value="na_base">Na Base (Sem Contato)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Feedback visual se houver filtros ativos */}
+            {isFiltroAtivo && (
+              <div className="mt-3 pt-3 border-t border-blue-100 flex flex-wrap items-center justify-between text-xs text-slate-600">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-semibold text-slate-700">Filtros combinados ativos:</span>
+                  {selectedPeriodo !== 'total' && (
+                    <Badge variant="outline" className="bg-white text-blue-700 border-blue-200">
+                      Período: {selectedPeriodo}
+                    </Badge>
+                  )}
+                  {selectedRegiao !== 'todas' && (
+                    <Badge variant="outline" className="bg-white text-blue-700 border-blue-200">
+                      Região: {selectedRegiao}
+                    </Badge>
+                  )}
+                  {selectedSegmento !== 'todos' && (
+                    <Badge variant="outline" className="bg-white text-blue-700 border-blue-200">
+                      Segmento: {selectedSegmento}
+                    </Badge>
+                  )}
+                  {selectedVendedor !== 'todos' && (
+                    <Badge variant="outline" className="bg-white text-blue-700 border-blue-200">
+                      Vendedor: {selectedVendedor}
+                    </Badge>
+                  )}
+                  {selectedOperador !== 'todos' && (
+                    <Badge variant="outline" className="bg-white text-blue-700 border-blue-200">
+                      Operador:{' '}
+                      {usersListOp.find((u) => u.id === selectedOperador)?.name || selectedOperador}
+                    </Badge>
+                  )}
+                  {selectedFaixaInatividade !== 'todas' && (
+                    <Badge variant="outline" className="bg-white text-blue-700 border-blue-200">
+                      Inatividade: {selectedFaixaInatividade}
+                    </Badge>
+                  )}
+                  {selectedFaixaScore !== 'todas' && (
+                    <Badge variant="outline" className="bg-white text-blue-700 border-blue-200">
+                      Score: {selectedFaixaScore}
+                    </Badge>
+                  )}
+                  {selectedFaixaFaturamento !== 'todas' && (
+                    <Badge variant="outline" className="bg-white text-blue-700 border-blue-200">
+                      Fat 12m: {selectedFaixaFaturamento}
+                    </Badge>
+                  )}
+                  {selectedDesfecho !== 'todos' && (
+                    <Badge variant="outline" className="bg-white text-blue-700 border-blue-200">
+                      Desfecho: {selectedDesfecho}
+                    </Badge>
+                  )}
+                </div>
+                {loadingAnalytics && (
+                  <span className="text-blue-600 font-semibold flex items-center">
+                    <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                    Recalculando métricas da base...
+                  </span>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* ========================================================================= */}
       {/* BLOCO 1 — MÉTRICAS DE ATENDIMENTO (ATIVIDADE DA EQUIPE COMERCIAL) */}
@@ -531,9 +962,11 @@ export default function RelatoriosPage() {
                 <Users className="h-3.5 w-3.5 text-blue-500 shrink-0" />
               </div>
               <div className="text-xl font-black text-slate-900 font-mono">
-                {loadingGeral ? '—' : totalBase}
+                {loadingGeral || loadingAnalytics ? '—' : totalBase}
               </div>
-              <span className="text-[10px] text-slate-400 block truncate">carteira inativa</span>
+              <span className="text-[10px] text-slate-400 block truncate">
+                {isFiltroAtivo ? 'após filtros' : 'carteira inativa'}
+              </span>
             </CardContent>
           </Card>
 
@@ -547,7 +980,7 @@ export default function RelatoriosPage() {
                 <Layers className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
               </div>
               <div className="text-xl font-black text-indigo-700 font-mono">
-                {loadingGeral ? '—' : elegiveisNaFila}
+                {loadingGeral || loadingAnalytics ? '—' : elegiveisNaFila}
               </div>
               <span className="text-[10px] text-slate-400 block truncate">prontos p/ ligar</span>
             </CardContent>
@@ -869,6 +1302,657 @@ export default function RelatoriosPage() {
             )}
           </CardContent>
         </Card>
+      </section>
+
+      {/* ========================================================================= */}
+      {/* SEÇÃO NOVA: CRUZAMENTOS ESTRATÉGICOS DE DADOS POR ÁREA DA EMPRESA */}
+      {/* ========================================================================= */}
+      <section className="space-y-4 pt-4 border-t border-slate-200">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center space-x-2.5">
+            <div className="h-8 w-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+                  Cruzamentos Estratégicos &bull; Inteligência por Área da Empresa
+                </h2>
+                <Badge className="bg-indigo-600 text-white text-[10px]">Análise Multi-Eixo</Badge>
+              </div>
+              <p className="text-xs text-slate-500">
+                Cruzamentos analíticos combinados: descubra onde a reativação rende mais, tempo
+                ideal de contato e saúde da carteira.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <Tabs defaultValue="comercial" className="w-full space-y-4">
+          <TabsList className="bg-slate-100 p-1 rounded-xl border border-slate-200 flex flex-wrap h-auto gap-1">
+            <TabsTrigger
+              value="comercial"
+              className="data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:shadow-xs text-xs font-semibold py-2 px-3 flex items-center gap-1.5"
+            >
+              <Briefcase className="h-3.5 w-3.5" />
+              <span>Comercial & Faturamento</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="gestao"
+              className="data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:shadow-xs text-xs font-semibold py-2 px-3 flex items-center gap-1.5"
+            >
+              <UserCheck2 className="h-3.5 w-3.5" />
+              <span>Gestão de Equipe & Carteira</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="marketing"
+              className="data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:shadow-xs text-xs font-semibold py-2 px-3 flex items-center gap-1.5"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              <span>Cadastro & Limpeza de Base</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="diagnostico_matriz"
+              className="data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:shadow-xs text-xs font-semibold py-2 px-3 flex items-center gap-1.5"
+            >
+              <Layers2 className="h-3.5 w-3.5" />
+              <span>Matriz de Diagnóstico</span>
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ABA 1: COMERCIAL */}
+          <TabsContent value="comercial" className="space-y-4 m-0">
+            {/* Grid 1: Conversão por Segmento */}
+            <Card className="border-slate-200 shadow-xs bg-white overflow-hidden">
+              <CardHeader className="py-3 px-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <CardTitle className="text-sm font-bold text-slate-900">
+                      Conversão por segmento — onde a reativação rende mais
+                    </CardTitle>
+                    <Badge
+                      variant="outline"
+                      className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]"
+                    >
+                      Comercial
+                    </Badge>
+                  </div>
+                  <CardDescription className="text-xs text-slate-500">
+                    Taxa real de reativação, clientes na base, pedidos efetivados e faturamento
+                    recuperado por nicho
+                  </CardDescription>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleExportSegmentosCSV}
+                  className="h-7 text-xs bg-white text-slate-700 border-slate-300"
+                >
+                  <Download className="h-3 w-3 mr-1.5" />
+                  Exportar CSV
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0">
+                {loadingAnalytics ? (
+                  <div className="py-8 text-center text-xs text-slate-400">
+                    Calculando dados por segmento...
+                  </div>
+                ) : !reportsAnalytics?.cruzamentos.conversaoPorSegmento?.length ? (
+                  <div className="py-8 text-center text-xs text-slate-400">
+                    Nenhum dado encontrado para os filtros selecionados.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-50/70 text-slate-600 font-semibold uppercase text-[10px] border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5 px-4">Segmento</th>
+                          <th className="py-2.5 px-3 text-center">Clientes na Base</th>
+                          <th className="py-2.5 px-3 text-center text-emerald-700">Reativados</th>
+                          <th className="py-2.5 px-3 text-center text-purple-700">
+                            Taxa de Conversão
+                          </th>
+                          <th className="py-2.5 px-3 text-right text-emerald-800">
+                            Valor Recuperado
+                          </th>
+                          <th className="py-2.5 px-3 text-center text-amber-700">Reagendados</th>
+                          <th className="py-2.5 px-3 text-center text-slate-500">Perdidos</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {reportsAnalytics.cruzamentos.conversaoPorSegmento.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
+                            <td className="py-2.5 px-4 font-semibold text-slate-900">
+                              {item.segmento}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono text-slate-700">
+                              {item.totalClientes}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono font-bold text-emerald-700">
+                              {item.reativados > 0 ? (
+                                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-xs font-mono">
+                                  {item.reativados}
+                                </Badge>
+                              ) : (
+                                <span className="text-slate-400">0</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono font-bold text-purple-700">
+                              {item.taxaConversao}%
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-900">
+                              {item.valorRecuperado > 0 ? (
+                                <span className="text-emerald-700">
+                                  {item.valorRecuperado.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono text-amber-700">
+                              {item.reagendados}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono text-slate-500">
+                              {item.perdidos}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Grid 2: Duas colunas (Faixa Inatividade + Score vs Resultado) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Conversão por Faixa de Inatividade */}
+              <Card className="border-slate-200 shadow-xs bg-white overflow-hidden">
+                <CardHeader className="py-3 px-4 bg-slate-50 border-b border-slate-200 flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-xs font-bold text-slate-900 uppercase">
+                      Conversão por tempo sem faturar — quando a reativação compensa
+                    </CardTitle>
+                    <CardDescription className="text-[11px] text-slate-500">
+                      Relação entre dias de inatividade do cliente e chance de reativação
+                    </CardDescription>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleExportInatividadeCSV}
+                    className="h-6 text-[10px] px-2 bg-white text-slate-700"
+                  >
+                    CSV
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {loadingAnalytics ? (
+                    <div className="py-6 text-center text-xs text-slate-400">
+                      Carregando faixas...
+                    </div>
+                  ) : !reportsAnalytics?.cruzamentos.conversaoPorFaixaInatividade?.length ? (
+                    <div className="py-6 text-center text-xs text-slate-400">Sem dados.</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-slate-50 text-slate-600 font-semibold text-[10px] border-b border-slate-200 uppercase">
+                          <tr>
+                            <th className="py-2 px-3">Faixa de Dias</th>
+                            <th className="py-2 px-2 text-center">Clientes</th>
+                            <th className="py-2 px-2 text-center text-emerald-700">Reativados</th>
+                            <th className="py-2 px-2 text-center text-purple-700">Taxa</th>
+                            <th className="py-2 px-3 text-right">Recuperado</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {reportsAnalytics.cruzamentos.conversaoPorFaixaInatividade.map((f, i) => (
+                            <tr key={i} className="hover:bg-slate-50/50">
+                              <td className="py-2 px-3 font-medium text-slate-800">{f.faixa}</td>
+                              <td className="py-2 px-2 text-center font-mono">{f.totalClientes}</td>
+                              <td className="py-2 px-2 text-center font-mono font-bold text-emerald-700">
+                                {f.reativados}
+                              </td>
+                              <td className="py-2 px-2 text-center font-mono font-bold text-purple-700">
+                                {f.taxaConversao}%
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono text-slate-700">
+                                {f.valorRecuperado > 0
+                                  ? f.valorRecuperado.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })
+                                  : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Conversão por Score vs Resultado Real */}
+              <Card className="border-slate-200 shadow-xs bg-white overflow-hidden">
+                <CardHeader className="py-3 px-4 bg-slate-50 border-b border-slate-200 flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-xs font-bold text-slate-900 uppercase">
+                      Score vs. Resultado Real — validação do algoritmo preditivo
+                    </CardTitle>
+                    <CardDescription className="text-[11px] text-slate-500">
+                      Clientes com score alto realmente convertem mais pedidos?
+                    </CardDescription>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleExportScoreCSV}
+                    className="h-6 text-[10px] px-2 bg-white text-slate-700"
+                  >
+                    CSV
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {loadingAnalytics ? (
+                    <div className="py-6 text-center text-xs text-slate-400">
+                      Carregando scores...
+                    </div>
+                  ) : !reportsAnalytics?.cruzamentos.conversaoPorScore?.length ? (
+                    <div className="py-6 text-center text-xs text-slate-400">Sem dados.</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-slate-50 text-slate-600 font-semibold text-[10px] border-b border-slate-200 uppercase">
+                          <tr>
+                            <th className="py-2 px-3">Nível de Score</th>
+                            <th className="py-2 px-2 text-center">Score Médio</th>
+                            <th className="py-2 px-2 text-center">Clientes</th>
+                            <th className="py-2 px-2 text-center text-emerald-700">Reativados</th>
+                            <th className="py-2 px-2 text-center text-purple-700">Taxa</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {reportsAnalytics.cruzamentos.conversaoPorScore.map((sc, i) => (
+                            <tr key={i} className="hover:bg-slate-50/50">
+                              <td className="py-2 px-3 font-medium text-slate-800">
+                                {sc.faixaScore}
+                              </td>
+                              <td className="py-2 px-2 text-center font-mono font-bold text-blue-700">
+                                {sc.scoreMedio} pts
+                              </td>
+                              <td className="py-2 px-2 text-center font-mono">
+                                {sc.totalClientes}
+                              </td>
+                              <td className="py-2 px-2 text-center font-mono font-bold text-emerald-700">
+                                {sc.reativados}
+                              </td>
+                              <td className="py-2 px-2 text-center font-mono font-bold text-purple-700">
+                                {sc.taxaConversao}%
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Grid 3: Ticket e Volume Recuperado por Região */}
+            <Card className="border-slate-200 shadow-xs bg-white overflow-hidden">
+              <CardHeader className="py-3 px-4 bg-slate-50 border-b border-slate-200">
+                <CardTitle className="text-xs font-bold text-slate-900 uppercase">
+                  Ticket Médio & Volume Recuperado por Região / Rota
+                </CardTitle>
+                <CardDescription className="text-[11px] text-slate-500">
+                  Desempenho financeiro e volumetria recuperada nas 8 rotas do varejo, atacado e
+                  repescagem
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                {loadingAnalytics ? (
+                  <div className="py-6 text-center text-xs text-slate-400">Carregando rotas...</div>
+                ) : !reportsAnalytics?.cruzamentos.recuperacaoPorRegiao?.length ? (
+                  <div className="py-6 text-center text-xs text-slate-400">Sem dados.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-50 text-slate-600 font-semibold text-[10px] border-b border-slate-200 uppercase">
+                        <tr>
+                          <th className="py-2 px-4">Região / Rota</th>
+                          <th className="py-2 px-3 text-center">Clientes</th>
+                          <th className="py-2 px-3 text-center text-emerald-700">Reativados</th>
+                          <th className="py-2 px-3 text-center text-purple-700">Taxa</th>
+                          <th className="py-2 px-3 text-right text-emerald-800">Total Faturado</th>
+                          <th className="py-2 px-3 text-right">Ticket Médio</th>
+                          <th className="py-2 px-3 text-right">Toneladas</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {reportsAnalytics.cruzamentos.recuperacaoPorRegiao.map((r, i) => (
+                          <tr key={i} className="hover:bg-slate-50/50">
+                            <td className="py-2 px-4 font-semibold text-slate-800">{r.regiao}</td>
+                            <td className="py-2 px-3 text-center font-mono">{r.totalClientes}</td>
+                            <td className="py-2 px-3 text-center font-mono font-bold text-emerald-700">
+                              {r.reativados}
+                            </td>
+                            <td className="py-2 px-3 text-center font-mono font-bold text-purple-700">
+                              {r.taxaConversao}%
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700">
+                              {r.valorRecuperado > 0
+                                ? r.valorRecuperado.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })
+                                : '—'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono text-slate-700">
+                              {r.ticketMedio > 0
+                                ? r.ticketMedio.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })
+                                : '—'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono text-slate-600">
+                              {r.toneladasRecuperadas > 0
+                                ? `${r.toneladasRecuperadas.toFixed(1)} t`
+                                : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ABA 2: GESTÃO DE EQUIPE & CARTEIRA */}
+          <TabsContent value="gestao" className="space-y-4 m-0">
+            {/* Top Vendedores com Carteira Morta */}
+            <Card className="border-slate-200 shadow-xs bg-white overflow-hidden">
+              <CardHeader className="py-3 px-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <CardTitle className="text-sm font-bold text-slate-900">
+                      Top vendedores de origem com carteira mais "morta" (90+ dias sem contato)
+                    </CardTitle>
+                    <Badge
+                      variant="outline"
+                      className="bg-rose-50 text-rose-700 border-rose-200 text-[10px]"
+                    >
+                      Gestão de Carteira
+                    </Badge>
+                  </div>
+                  <CardDescription className="text-xs text-slate-500">
+                    Vendedores cujos clientes estão inativos há mais de 90 dias e continuam parados
+                    na base sem abordagem
+                  </CardDescription>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleExportCarteiraMortaCSV}
+                  className="h-7 text-xs bg-white text-slate-700 border-slate-300"
+                >
+                  <Download className="h-3 w-3 mr-1.5" />
+                  Exportar CSV
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0">
+                {loadingAnalytics ? (
+                  <div className="py-8 text-center text-xs text-slate-400">
+                    Mapeando carteiras dos vendedores...
+                  </div>
+                ) : !reportsAnalytics?.cruzamentos.rankingCarteiraMorta?.length ? (
+                  <div className="py-8 text-center text-xs text-slate-400">
+                    Nenhum dado encontrado para os filtros selecionados.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-50/70 text-slate-600 font-semibold uppercase text-[10px] border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5 px-4">Vendedor de Origem</th>
+                          <th className="py-2.5 px-3 text-center">Total Carteira</th>
+                          <th className="py-2.5 px-3 text-center text-rose-700">
+                            Inativos 90+ na Base
+                          </th>
+                          <th className="py-2.5 px-3 text-center text-rose-800">
+                            % Morto da Carteira
+                          </th>
+                          <th className="py-2.5 px-3 text-center text-blue-700">Em Trabalho</th>
+                          <th className="py-2.5 px-3 text-center text-emerald-700">Reativados</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {reportsAnalytics.cruzamentos.rankingCarteiraMorta.map((row, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
+                            <td className="py-2.5 px-4 font-semibold text-slate-900 flex items-center gap-1.5">
+                              <span className="font-mono text-slate-400 text-[10px]">
+                                #{idx + 1}
+                              </span>
+                              <span>{row.vendedor}</span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono text-slate-700">
+                              {row.totalCarteira}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono font-bold text-rose-600">
+                              {row.inativos90NaBase}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono font-bold">
+                              <span
+                                className={
+                                  row.percentualMorto >= 50
+                                    ? 'text-rose-700 font-black'
+                                    : 'text-slate-700'
+                                }
+                              >
+                                {row.percentualMorto}%
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono text-blue-700">
+                              {row.emTrabalho}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono font-bold text-emerald-700">
+                              {row.reativados}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Produtividade com Qualidade e Taxa de Follow-up */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card className="border-slate-200 shadow-xs bg-white">
+                <CardHeader className="py-3 px-4 border-b border-slate-100">
+                  <CardTitle className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    <span>Produtividade com Qualidade de Fechamento</span>
+                  </CardTitle>
+                  <CardDescription className="text-[11px] text-slate-500">
+                    Relação entre volume de contatos e pedidos efetivados
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-600">Atendimentos no Período</span>
+                    <span className="font-mono font-bold text-slate-900">
+                      {metricasAtendimento?.gerais.totalAtendimentos || 0}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-600">Conversões Efetivadas</span>
+                    <span className="font-mono font-bold text-emerald-700">
+                      {metricasAtendimento?.gerais.conversoes || 0}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-600">Taxa Global de Conversão</span>
+                    <span className="font-mono font-bold text-purple-700">
+                      {metricasAtendimento?.gerais.taxaConversao || 0}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-600 rounded-full"
+                      style={{
+                        width: `${Math.min(metricasAtendimento?.gerais.taxaConversao || 0, 100)}%`,
+                      }}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-200 shadow-xs bg-white">
+                <CardHeader className="py-3 px-4 border-b border-slate-100">
+                  <CardTitle className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
+                    <Calendar className="h-4 w-4 text-rose-600" />
+                    <span>Gestão de Follow-ups (Retornos Marcados)</span>
+                  </CardTitle>
+                  <CardDescription className="text-[11px] text-slate-500">
+                    Acompanhamento de compromissos assumidos com clientes
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-600">Follow-ups Programados Para Hoje</span>
+                    <span className="font-mono font-bold text-rose-600">
+                      {metricasAtendimento?.gerais.followUpsHoje || 0}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-600">Total de Follow-ups em Aberto</span>
+                    <span className="font-mono font-bold text-amber-700">
+                      {metricasAtendimento?.gerais.followUpsPendentes || 0}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-600">Reagendamentos Efetuados no Período</span>
+                    <span className="font-mono font-bold text-blue-700">
+                      {metricasAtendimento?.gerais.reagendamentos || 0}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* ABA 3: CADASTRO & LIMPEZA DE BASE */}
+          <TabsContent value="marketing" className="space-y-4 m-0">
+            <Card className="border-slate-200 shadow-xs bg-white overflow-hidden">
+              <CardHeader className="py-3 px-4 bg-slate-50 border-b border-slate-200">
+                <div className="flex items-center space-x-2">
+                  <CardTitle className="text-sm font-bold text-slate-900">
+                    Diagnóstico de higienização de base — onde estão os desvios de cadastro
+                  </CardTitle>
+                  <Badge
+                    variant="outline"
+                    className="bg-teal-50 text-teal-700 border-teal-200 text-[10px]"
+                  >
+                    Auditoria de Base
+                  </Badge>
+                </div>
+                <CardDescription className="text-xs text-slate-500">
+                  Cadastros marcados como "Cliente Ativo — Fora da Base" por motivo, comprovando
+                  compras via terceiros, coligadas ou telefone incorreto
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {Object.entries(ativosRemovidosData.breakdown || {}).map(([motivo, count]) => {
+                    const perc =
+                      ativosRemovidosData.total > 0
+                        ? Math.round((count / ativosRemovidosData.total) * 100)
+                        : 0
+                    return (
+                      <div
+                        key={motivo}
+                        className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1"
+                      >
+                        <span
+                          className="text-xs font-bold text-slate-800 line-clamp-1"
+                          title={motivo}
+                        >
+                          {motivo}
+                        </span>
+                        <div className="text-xl font-black text-emerald-700 font-mono">{count}</div>
+                        <span className="text-[10px] text-slate-500">
+                          {perc}% dos clientes ativos fora da base
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ABA 4: MATRIZ DE DIAGNÓSTICO */}
+          <TabsContent value="diagnostico_matriz" className="space-y-4 m-0">
+            <Card className="border-slate-200 shadow-xs bg-white overflow-hidden">
+              <CardHeader className="py-3 px-4 bg-slate-50 border-b border-slate-200">
+                <CardTitle className="text-sm font-bold text-slate-900">
+                  Matriz cruzada das causas de inatividade do cliente
+                </CardTitle>
+                <CardDescription className="text-xs text-slate-500">
+                  Ranking consolidado por volume de ocorrências nas 17 perguntas e motivos de perda
+                  registrados pela equipe
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-4">
+                {!diagnostico || diagnostico.rankingMotivos.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-slate-400">
+                    Sem dados de diagnóstico para os filtros selecionados.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {diagnostico.rankingMotivos.map((motivo, idx) => (
+                      <div
+                        key={motivo.id}
+                        onClick={() => {
+                          setMotivoDrillDown(motivo)
+                          setDrillDownSearch('')
+                        }}
+                        className="p-3 bg-white border border-slate-200 rounded-xl hover:border-blue-400 hover:shadow-xs transition-all cursor-pointer space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono text-slate-400 font-bold">
+                            #{idx + 1}
+                          </span>
+                          <Badge variant="outline" className={`text-[9px] ${motivo.corBadge}`}>
+                            {motivo.percentual}%
+                          </Badge>
+                        </div>
+                        <h4 className="text-xs font-bold text-slate-900 line-clamp-1">
+                          {motivo.titulo}
+                        </h4>
+                        <div className="text-lg font-black text-slate-900 font-mono">
+                          {motivo.totalOcorrencias}
+                        </div>
+                        <p className="text-[10px] text-slate-500 line-clamp-1">
+                          {motivo.descricao}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </section>
 
       {/* ========================================================================= */}

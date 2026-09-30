@@ -460,3 +460,102 @@ export interface MetricasBaseKpisResponse {
     }
   >
 }
+
+// Filtros Combinados Avançados de Relatórios
+export interface FiltrosRelatoriosAvancados {
+  periodo: PeriodoAtendimentoFiltro
+  regiao: string
+  segmento?: string
+  vendedor?: string
+  operador?: string
+  faixaInatividade?: string
+  faixaScore?: string
+  faixaFaturamento?: string
+  desfecho?: string
+}
+
+// Cruzamento Comercial: Conversão por Segmento
+export interface CruzamentoConversaoSegmento {
+  segmento: string
+  totalClientes: number
+  reativados: number
+  taxaConversao: number
+  valorRecuperado: number
+  toneladasRecuperadas: number
+  perdidos: number
+  reagendados: number
+}
+
+// Cruzamento Comercial: Conversão por Faixa de Inatividade
+export interface CruzamentoConversaoInatividade {
+  faixa: string
+  totalClientes: number
+  reativados: number
+  taxaConversao: number
+  valorRecuperado: number
+  perdidos: number
+}
+
+// Cruzamento Comercial: Conversão por Score vs. Resultado
+export interface CruzamentoConversaoScore {
+  faixaScore: string
+  scoreMedio: number
+  totalClientes: number
+  reativados: number
+  taxaConversao: number
+  valorRecuperado: number
+}
+
+// Cruzamento Comercial: Ticket & Volume por Região
+export interface CruzamentoRecuperacaoRegiao {
+  regiao: string
+  totalClientes: number
+  reativados: number
+  taxaConversao: number
+  valorRecuperado: number
+  toneladasRecuperadas: number
+  ticketMedio: number
+}
+
+// Cruzamento Cadastro/Marketing: Top Vendedores com Carteira Morta
+export interface CruzamentoCarteiraMorta {
+  vendedor: string
+  totalCarteira: number
+  inativos90NaBase: number
+  percentualMorto: number
+  reativados: number
+  emTrabalho: number
+}
+
+// Resposta do Endpoint de Analytics
+export interface ReportsAnalyticsResponse {
+  kpis: {
+    totalBase: number
+    naFila: number
+    reativados: number
+    taxaReativacao: number
+    valorRecuperado: number
+    toneladasRecuperadas: number
+  }
+  estadosContagem: {
+    na_base: number
+    em_atendimento: number
+    reagendado: number
+    contatado: number
+    reativado: number
+    compra_terceiros: number
+    nao_quer_negociar: number
+    sem_contato: number
+  }
+  cruzamentos: {
+    conversaoPorSegmento: CruzamentoConversaoSegmento[]
+    conversaoPorFaixaInatividade: CruzamentoConversaoInatividade[]
+    conversaoPorScore: CruzamentoConversaoScore[]
+    recuperacaoPorRegiao: CruzamentoRecuperacaoRegiao[]
+    rankingCarteiraMorta: CruzamentoCarteiraMorta[]
+  }
+  opcoesFiltros: {
+    segmentos: string[]
+    vendedores: string[]
+  }
+}

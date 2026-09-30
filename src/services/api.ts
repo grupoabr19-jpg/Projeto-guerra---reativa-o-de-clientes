@@ -332,9 +332,30 @@ export async function deleteBaseReferencia(id: string) {
 export async function fetchMetricasAtendimentosDashboard(options?: {
   periodo?: import('@/types').PeriodoAtendimentoFiltro
   regiao?: string
+  segmento?: string
+  vendedor?: string
+  operador?: string
+  faixaInatividade?: string
+  faixaScore?: string
+  faixaFaturamento?: string
+  desfecho?: string
 }): Promise<import('@/types').MetricasAtendimentosDashboard> {
   const periodo = options?.periodo || 'hoje'
   const regiaoFiltro = options?.regiao && options.regiao !== 'todas' ? options.regiao : null
+  const segmentoFiltro = options?.segmento && options.segmento !== 'todos' ? options.segmento : null
+  const vendedorFiltro = options?.vendedor && options.vendedor !== 'todos' ? options.vendedor : null
+  const operadorFiltro = options?.operador && options.operador !== 'todos' ? options.operador : null
+  const faixaInatFiltro =
+    options?.faixaInatividade && options.faixaInatividade !== 'todas'
+      ? options.faixaInatividade
+      : null
+  const faixaScoreFiltro =
+    options?.faixaScore && options.faixaScore !== 'todas' ? options.faixaScore : null
+  const faixaFatFiltro =
+    options?.faixaFaturamento && options.faixaFaturamento !== 'todas'
+      ? options.faixaFaturamento
+      : null
+  const desfechoFiltro = options?.desfecho && options.desfecho !== 'todos' ? options.desfecho : null
 
   // Construir janelas de data alinhadas ao fuso de Brasília (America/Sao_Paulo)
   const now = new Date()
@@ -468,10 +489,103 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
     }
   }
 
-  // Filtragem de interações por região (se região informada, verificar cliente da interação ou região do operador)
+  // Verificador se cliente atende a todos os filtros combinados adicionais
+  const isClienteMatchingFilters = (c?: Cliente): boolean => {
+    if (!c) return true
+    // Segmento
+    if (
+      segmentoFiltro &&
+      (c.segmento || '').trim().toUpperCase() !== segmentoFiltro.trim().toUpperCase()
+    ) {
+      return false
+    }
+    // Vendedor
+    if (
+      vendedorFiltro &&
+      (c.vendedor || '').trim().toUpperCase() !== vendedorFiltro.trim().toUpperCase()
+    ) {
+      return false
+    }
+    // Operador
+    if (operadorFiltro && c.operador !== operadorFiltro) {
+      return false
+    }
+    // Faixa Inatividade
+    if (faixaInatFiltro) {
+      const dias = c.dias_sem_faturar || 0
+      if (faixaInatFiltro === '60_89' && (dias < 60 || dias > 89)) return false
+      if (faixaInatFiltro === '90_179' && (dias < 90 || dias > 179)) return false
+      if (faixaInatFiltro === '180_365' && (dias < 180 || dias > 365)) return false
+      if (faixaInatFiltro === '365_plus' && dias <= 365) return false
+      if (faixaInatFiltro === 'menos_60' && dias >= 60) return false
+    }
+    // Faixa Score
+    if (faixaScoreFiltro) {
+      const s = c.score || 0
+      if (faixaScoreFiltro === 'baixo' && s >= 30) return false
+      if (faixaScoreFiltro === 'medio' && (s < 30 || s > 60)) return false
+      if (faixaScoreFiltro === 'alto' && s <= 60) return false
+    }
+    // Faixa Faturamento Histórico
+    if (faixaFatFiltro) {
+      const fat = c.fat_12m_reais || 0
+      if (faixaFatFiltro === 'zero' && fat > 0) return false
+      if (faixaFatFiltro === 'ate_10k' && fat > 10000) return false
+      if (faixaFatFiltro === '10k_50k' && (fat <= 10000 || fat > 50000)) return false
+      if (faixaFatFiltro === '50k_150k' && (fat <= 50000 || fat > 150000)) return false
+      if (faixaFatFiltro === 'mais_150k' && fat <= 150000) return false
+    }
+    // Desfecho / Estado
+    if (desfechoFiltro) {
+      if (desfechoFiltro === 'reativado' && c.estado !== 'reativado') return false
+      if (desfechoFiltro === 'reagendado' && c.estado !== 'reagendado') return false
+      if (
+        desfechoFiltro === 'venda_perdida' &&
+        !['compra_terceiros', 'nao_quer_negociar', 'sem_contato'].includes(c.estado || '')
+      )
+        return false
+      if (
+        desfechoFiltro === 'em_atendimento' &&
+        !['em_atendimento', 'reservado'].includes(c.estado || '')
+      )
+        return false
+      if (desfechoFiltro === 'na_base' && c.estado !== 'na_base') return false
+      if (desfechoFiltro === 'contatado' && c.estado !== 'contatado') return false
+    }
+    return true
+  }
+
+  // Filtragem de interações por região e filtros combinados
   const isInteracaoMatchingRegion = (it: Interacao): boolean => {
+    // Filtro de Operador direto na interação
+    if (operadorFiltro && it.operador !== operadorFiltro) {
+      return false
+    }
+    // Filtro de Desfecho direto na interação
+    if (desfechoFiltro) {
+      const d = it.desfecho || ''
+      if (
+        desfechoFiltro === 'reativado' &&
+        !['reativado', 'reativado_com_pedido', 'fechou_pedido'].includes(d) &&
+        !it.numero_pedido
+      )
+        return false
+      if (desfechoFiltro === 'reagendado' && d !== 'reagendado' && !it.reagendado_para) return false
+      if (
+        desfechoFiltro === 'venda_perdida' &&
+        !['compra_terceiros', 'nao_quer_negociar', 'sem_contato'].includes(d)
+      )
+        return false
+      if (desfechoFiltro === 'contatado' && d !== 'contatado') return false
+    }
+
+    const cliente = it.expand?.cliente
+    if (cliente && !isClienteMatchingFilters(cliente)) {
+      return false
+    }
+
     if (!regiaoFiltro || regiaoFiltro === 'todas') return true
-    const clienteRegiao = it.expand?.cliente?.regiao
+    const clienteRegiao = cliente?.regiao
     if (clienteRegiao) {
       return matchRegiao(clienteRegiao, regiaoFiltro)
     }
@@ -488,9 +602,9 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
   }
 
   const interacoesValidas = interacoes.filter(isInteracaoMatchingRegion)
-
   // Follow-ups no período e reagendados
   const isReagendadoMatchingRegion = (c: Cliente): boolean => {
+    if (!isClienteMatchingFilters(c)) return false
     if (!regiaoFiltro || regiaoFiltro === 'todas') return true
     if (c.regiao) {
       return matchRegiao(c.regiao, regiaoFiltro)
@@ -739,6 +853,11 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
 
     clientesIdsProcessados.add(c.id)
 
+    // Validar se cliente atende aos filtros adicionais
+    if (!isClienteMatchingFilters(c)) {
+      continue
+    }
+
     // Extrair motivo e observação
     const motivoBruto =
       c.motivo_ativo_fora_base || it?.motivo || it?.conteudo || 'Motivo não informado'
@@ -822,6 +941,54 @@ export async function fetchClientesAtivosRemovidos(options?: {
  * Consulta agregações e contagens reais da base de clientes diretamente no servidor (SQLite).
  * Substitui o download de 23k+ registros pelo navegador, entregando contagens e totais em milissegundos.
  */
+/**
+ * Consulta agregações e cruzamentos de dados avançados da base de clientes
+ * com filtros combinados (AND) calculados diretamente no backend SQLite.
+ */
+export async function fetchReportsAnalytics(
+  filtros?: import('@/types').FiltrosRelatoriosAvancados,
+): Promise<import('@/types').ReportsAnalyticsResponse> {
+  const params = new URLSearchParams()
+  if (filtros?.regiao && filtros.regiao !== 'todas') params.set('regiao', filtros.regiao)
+  if (filtros?.segmento && filtros.segmento !== 'todos') params.set('segmento', filtros.segmento)
+  if (filtros?.vendedor && filtros.vendedor !== 'todos') params.set('vendedor', filtros.vendedor)
+  if (filtros?.operador && filtros.operador !== 'todos') params.set('operador', filtros.operador)
+  if (filtros?.faixaInatividade && filtros.faixaInatividade !== 'todas')
+    params.set('faixaInatividade', filtros.faixaInatividade)
+  if (filtros?.faixaScore && filtros.faixaScore !== 'todas')
+    params.set('faixaScore', filtros.faixaScore)
+  if (filtros?.faixaFaturamento && filtros.faixaFaturamento !== 'todas')
+    params.set('faixaFaturamento', filtros.faixaFaturamento)
+  if (filtros?.desfecho && filtros.desfecho !== 'todos') params.set('desfecho', filtros.desfecho)
+  if (filtros?.periodo) params.set('periodo', filtros.periodo)
+
+  const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
+  const queryStr = params.toString()
+  const url = `${basePbUrl}/backend/v1/metrics/reports-analytics${queryStr ? `?${queryStr}` : ''}`
+
+  const token = pb.authStore.token || ''
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = token
+  }
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers,
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(
+      err.error ||
+        err.message ||
+        `Falha ao calcular análises e cruzamentos de relatórios (${res.status})`,
+    )
+  }
+
+  return res.json()
+}
+
 export async function fetchMetricasBaseKpis(options?: {
   regiao?: string
 }): Promise<import('@/types').MetricasBaseKpisResponse> {

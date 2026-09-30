@@ -303,9 +303,30 @@ function extrairMotivoDeDesfecho(
 export async function fetchRelatorioDiagnostico(options?: {
   periodo?: PeriodoAtendimentoFiltro
   regiao?: string
+  segmento?: string
+  vendedor?: string
+  operador?: string
+  faixaInatividade?: string
+  faixaScore?: string
+  faixaFaturamento?: string
+  desfecho?: string
 }): Promise<RelatorioDiagnosticoCompleto> {
   const periodo = options?.periodo || 'total'
   const regiaoFiltro = options?.regiao && options.regiao !== 'todas' ? options.regiao : null
+  const segmentoFiltro = options?.segmento && options.segmento !== 'todos' ? options.segmento : null
+  const vendedorFiltro = options?.vendedor && options.vendedor !== 'todos' ? options.vendedor : null
+  const operadorFiltro = options?.operador && options.operador !== 'todos' ? options.operador : null
+  const faixaInatFiltro =
+    options?.faixaInatividade && options.faixaInatividade !== 'todas'
+      ? options.faixaInatividade
+      : null
+  const faixaScoreFiltro =
+    options?.faixaScore && options.faixaScore !== 'todas' ? options.faixaScore : null
+  const faixaFatFiltro =
+    options?.faixaFaturamento && options.faixaFaturamento !== 'todas'
+      ? options.faixaFaturamento
+      : null
+  const desfechoFiltro = options?.desfecho && options.desfecho !== 'todos' ? options.desfecho : null
 
   const now = new Date()
   const hojeStr = getBrasiliaDateStr(now)
@@ -438,6 +459,65 @@ export async function fetchRelatorioDiagnostico(options?: {
     return true
   }
 
+  // Verificador se cliente do diagnóstico atende a todos os filtros combinados adicionais
+  const isClienteMatchingFilters = (c?: Cliente): boolean => {
+    if (!c) return true
+    if (
+      segmentoFiltro &&
+      (c.segmento || '').trim().toUpperCase() !== segmentoFiltro.trim().toUpperCase()
+    ) {
+      return false
+    }
+    if (
+      vendedorFiltro &&
+      (c.vendedor || '').trim().toUpperCase() !== vendedorFiltro.trim().toUpperCase()
+    ) {
+      return false
+    }
+    if (operadorFiltro && c.operador !== operadorFiltro) {
+      return false
+    }
+    if (faixaInatFiltro) {
+      const dias = c.dias_sem_faturar || 0
+      if (faixaInatFiltro === '60_89' && (dias < 60 || dias > 89)) return false
+      if (faixaInatFiltro === '90_179' && (dias < 90 || dias > 179)) return false
+      if (faixaInatFiltro === '180_365' && (dias < 180 || dias > 365)) return false
+      if (faixaInatFiltro === '365_plus' && dias <= 365) return false
+      if (faixaInatFiltro === 'menos_60' && dias >= 60) return false
+    }
+    if (faixaScoreFiltro) {
+      const s = c.score || 0
+      if (faixaScoreFiltro === 'baixo' && s >= 30) return false
+      if (faixaScoreFiltro === 'medio' && (s < 30 || s > 60)) return false
+      if (faixaScoreFiltro === 'alto' && s <= 60) return false
+    }
+    if (faixaFatFiltro) {
+      const fat = c.fat_12m_reais || 0
+      if (faixaFatFiltro === 'zero' && fat > 0) return false
+      if (faixaFatFiltro === 'ate_10k' && fat > 10000) return false
+      if (faixaFatFiltro === '10k_50k' && (fat <= 10000 || fat > 50000)) return false
+      if (faixaFatFiltro === '50k_150k' && (fat <= 50000 || fat > 150000)) return false
+      if (faixaFatFiltro === 'mais_150k' && fat <= 150000) return false
+    }
+    if (desfechoFiltro) {
+      if (desfechoFiltro === 'reativado' && c.estado !== 'reativado') return false
+      if (desfechoFiltro === 'reagendado' && c.estado !== 'reagendado') return false
+      if (
+        desfechoFiltro === 'venda_perdida' &&
+        !['compra_terceiros', 'nao_quer_negociar', 'sem_contato'].includes(c.estado || '')
+      )
+        return false
+      if (
+        desfechoFiltro === 'em_atendimento' &&
+        !['em_atendimento', 'reservado'].includes(c.estado || '')
+      )
+        return false
+      if (desfechoFiltro === 'na_base' && c.estado !== 'na_base') return false
+      if (desfechoFiltro === 'contatado' && c.estado !== 'contatado') return false
+    }
+    return true
+  }
+
   // 1. Processar respostas dos formulários
   for (const resp of respostasList) {
     const dataRegistro = resp.created
@@ -449,6 +529,14 @@ export async function fetchRelatorioDiagnostico(options?: {
       resp.expand?.operador || (resp.operador ? usersMap.get(resp.operador) : undefined)
     const operadorNome = opUser?.name || opUser?.email || 'Operador'
     const opRegiao = opUser?.regioes?.[0]
+
+    if (operadorFiltro && resp.operador !== operadorFiltro) {
+      continue
+    }
+
+    if (cliente && !isClienteMatchingFilters(cliente)) {
+      continue
+    }
 
     if (!matchesFilter(dataRegistro, regiao, opRegiao)) {
       continue
@@ -526,6 +614,14 @@ export async function fetchRelatorioDiagnostico(options?: {
     const opUser = it.expand?.operador || (it.operador ? usersMap.get(it.operador) : undefined)
     const operadorNome = opUser?.name || opUser?.email || 'Operador'
     const opRegiao = opUser?.regioes?.[0]
+
+    if (operadorFiltro && it.operador !== operadorFiltro) {
+      continue
+    }
+
+    if (cliente && !isClienteMatchingFilters(cliente)) {
+      continue
+    }
 
     if (!matchesFilter(dataRegistro, regiao, opRegiao)) {
       continue

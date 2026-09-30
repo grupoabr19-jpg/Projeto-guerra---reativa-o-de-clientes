@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T19:30:17.956Z",
+  "generatedAt": "2026-09-30T19:36:20.599Z",
   "collections": [
     {
       "name": "users",
@@ -407,7 +407,11 @@
         "CREATE INDEX idx_clientes_score ON clientes (score DESC)",
         "CREATE INDEX idx_clientes_operador ON clientes (operador)",
         "CREATE INDEX `idx_clientes_reagendado_prioridade` ON `clientes` (reagendado_operador, prioridade_transferencia, reagendado_para)",
-        "CREATE INDEX `idx_clientes_ativo_fora_base` ON `clientes` (ativo_fora_base)"
+        "CREATE INDEX `idx_clientes_ativo_fora_base` ON `clientes` (ativo_fora_base)",
+        "CREATE INDEX `idx_clientes_segmento` ON `clientes` (segmento)",
+        "CREATE INDEX `idx_clientes_vendedor` ON `clientes` (vendedor)",
+        "CREATE INDEX `idx_clientes_dias_sem_faturar` ON `clientes` (dias_sem_faturar)",
+        "CREATE INDEX `idx_clientes_fat_12m` ON `clientes` (fat_12m_reais)"
       ]
     },
     {
