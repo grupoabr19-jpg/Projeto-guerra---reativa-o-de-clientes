@@ -76,6 +76,8 @@ routerAdd(
         "estado != 'ativo_fora_base' AND (ativo_fora_base IS NULL OR ativo_fora_base = 0)"
 
       // 1. Contagens agregadas gerais e valores recuperados
+      // No PocketBase JSVM (Goja), dbx.Query.one() requer um DynamicModel com a estrutura dos campos.
+      // O acesso às propriedades geradas no DynamicModel é feito em lowerCamelCase.
       const kpisQuery = `
         SELECT
           COUNT(*) as total_base,
@@ -94,14 +96,27 @@ routerAdd(
         WHERE ${baseFilterSql} ${regiaoCondition}
       `
 
-      let kpiRow = {}
+      const kpiModel = new DynamicModel({
+        total_base: 0,
+        na_base: 0,
+        reservado: 0,
+        em_atendimento: 0,
+        reagendado: 0,
+        contatado: 0,
+        reativado: 0,
+        compra_terceiros: 0,
+        nao_quer_negociar: 0,
+        sem_contato: 0,
+        valor_recuperado: -0,
+        toneladas_recuperadas: -0,
+      })
+
       try {
         const queryBuilder = $app.db().newQuery(kpisQuery)
         if (params && Object.keys(params).length > 0) {
           queryBuilder.bind(params)
         }
-        const rows = queryBuilder.all() || []
-        kpiRow = rows.length > 0 ? rows[0] : {}
+        queryBuilder.one(kpiModel)
       } catch (dbErr) {
         console.log(
           '[metrics_base_kpis] Erro na query de KPIs: ' +
@@ -114,18 +129,25 @@ routerAdd(
         })
       }
 
-      const totalBase = Number(kpiRow.total_base || 0)
-      const naBaseCount = Number(kpiRow.na_base || 0)
-      const reservadoCount = Number(kpiRow.reservado || 0)
-      const emAtendimentoCount = Number(kpiRow.em_atendimento || 0)
-      const reagendadoCount = Number(kpiRow.reagendado || 0)
-      const contatadoCount = Number(kpiRow.contatado || 0)
-      const reativadoCount = Number(kpiRow.reativado || 0)
-      const compraTerceirosCount = Number(kpiRow.compra_terceiros || 0)
-      const naoQuerNegociarCount = Number(kpiRow.nao_quer_negociar || 0)
-      const semContatoCount = Number(kpiRow.sem_contato || 0)
-      const valorRecuperado = Number(kpiRow.valor_recuperado || 0)
-      const toneladasRecuperadas = Number(kpiRow.toneladas_recuperadas || 0)
+      // Propriedades acessíveis no DynamicModel (lowerCamelCase ou nome do campo)
+      const totalBase = Number(kpiModel.total_base || kpiModel.totalBase || 0)
+      const naBaseCount = Number(kpiModel.na_base || kpiModel.naBase || 0)
+      const reservadoCount = Number(kpiModel.reservado || 0)
+      const emAtendimentoCount = Number(kpiModel.em_atendimento || kpiModel.emAtendimento || 0)
+      const reagendadoCount = Number(kpiModel.reagendado || 0)
+      const contatadoCount = Number(kpiModel.contatado || 0)
+      const reativadoCount = Number(kpiModel.reativado || 0)
+      const compraTerceirosCount = Number(
+        kpiModel.compra_terceiros || kpiModel.compraTerceiros || 0,
+      )
+      const naoQuerNegociarCount = Number(
+        kpiModel.nao_quer_negociar || kpiModel.naoQuerNegociar || 0,
+      )
+      const semContatoCount = Number(kpiModel.sem_contato || kpiModel.semContato || 0)
+      const valorRecuperado = Number(kpiModel.valor_recuperado || kpiModel.valorRecuperado || 0)
+      const toneladasRecuperadas = Number(
+        kpiModel.toneladas_recuperadas || kpiModel.toneladasRecuperadas || 0,
+      )
 
       // Na fila: 'na_base' + 'reservado' (ou clientes disponíveis para alocação)
       const naFila = naBaseCount + reservadoCount
@@ -152,19 +174,29 @@ routerAdd(
         ORDER BY total DESC
       `
 
-      let regioesRows = []
+      const regioesRows = arrayOf(
+        new DynamicModel({
+          regiao_nome: '',
+          total: 0,
+          score_sum: -0,
+        }),
+      )
+
       try {
-        regioesRows = $app.db().newQuery(regioesQuery).all() || []
+        $app.db().newQuery(regioesQuery).all(regioesRows)
       } catch (regErr) {
-        console.log('[metrics_base_kpis] Erro na query de regioes: ' + regErr.message)
+        console.log(
+          '[metrics_base_kpis] Erro na query de regioes: ' +
+            (regErr && regErr.message ? regErr.message : String(regErr)),
+        )
       }
 
       const regioesMap = {}
       for (let i = 0; i < regioesRows.length; i++) {
         const r = regioesRows[i]
-        const rName = r.regiao_nome || 'Sem Região'
+        const rName = r.regiao_nome || r.regiaoNome || 'Sem Região'
         const rTotal = Number(r.total || 0)
-        const rScoreSum = Number(r.score_sum || 0)
+        const rScoreSum = Number(r.score_sum || r.scoreSum || 0)
         regioesMap[rName] = {
           total: rTotal,
           scoreSum: rScoreSum,
