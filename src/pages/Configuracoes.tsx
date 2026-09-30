@@ -1421,6 +1421,25 @@ export default function ConfiguracoesPage() {
               </form>
 
               {/* Tabela de Usuários */}
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-slate-500">
+                  Total de contas ativas:{' '}
+                  <span className="font-bold text-slate-800 font-mono">{usersList.length}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadUsers}
+                  disabled={loadingUsers}
+                  className="h-7 text-xs text-slate-600"
+                >
+                  <RefreshCw
+                    className={`h-3 w-3 mr-1 ${loadingUsers ? 'animate-spin text-blue-600' : ''}`}
+                  />
+                  Atualizar Lista
+                </Button>
+              </div>
+
               <div className="overflow-x-auto border border-slate-200 rounded-lg">
                 <table className="w-full text-xs text-left">
                   <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
@@ -1428,6 +1447,7 @@ export default function ConfiguracoesPage() {
                       <th className="py-2.5 px-3">Nome</th>
                       <th className="py-2.5 px-3">E-mail</th>
                       <th className="py-2.5 px-3">Perfil</th>
+                      <th className="py-2.5 px-3">Status de Acesso</th>
                       <th className="py-2.5 px-3">Regiões Autorizadas</th>
                       <th className="py-2.5 px-3 text-right">Ação</th>
                     </tr>
@@ -1436,10 +1456,21 @@ export default function ConfiguracoesPage() {
                     {usersList.map((u) => (
                       <tr key={u.id} className="hover:bg-slate-50">
                         <td className="py-2.5 px-3 font-semibold text-slate-800">{u.name}</td>
-                        <td className="py-2.5 px-3 text-slate-500 font-mono">{u.email}</td>
+                        <td className="py-2.5 px-3 text-slate-700 font-mono font-medium">
+                          {u.email ? (
+                            <span>{u.email}</span>
+                          ) : (
+                            <span className="text-amber-600 italic">E-mail oculto</span>
+                          )}
+                        </td>
                         <td className="py-2.5 px-3">
                           <Badge variant="outline" className="uppercase font-mono text-[10px]">
                             {u.role}
+                          </Badge>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <Badge className="bg-emerald-50 text-emerald-700 border-emerald-300 font-normal text-[10px]">
+                            Ativo (ABR@2026)
                           </Badge>
                         </td>
                         <td className="py-2.5 px-3 text-slate-600">
