@@ -53,7 +53,7 @@ import {
 import pb from '@/lib/pocketbase/client'
 import type { User, Configuracao, Regiao } from '@/types'
 import { REGIOES_PADRAO, TODAS_REGIOES_FILTRO } from '@/types'
-import { MapPin, Info, Edit2, Check, AlertCircle } from 'lucide-react'
+import { MapPin, Info, Edit2, Check, AlertCircle, ShieldCheck } from 'lucide-react'
 import { BasesReferenciaTab } from '@/components/BasesReferenciaTab'
 
 import { useNavigate } from 'react-router-dom'

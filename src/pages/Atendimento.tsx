@@ -21,6 +21,7 @@ import {
   History,
   RotateCcw,
   Sparkles,
+  Users,
 } from 'lucide-react'
 import {
   Card,
@@ -57,7 +58,7 @@ import {
 } from '@/services/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { toast } from '@/hooks/use-toast'
-import type { Cliente, Interacao, ClienteEstado } from '@/types'
+import type { Cliente, Interacao, ClienteEstado, User } from '@/types'
 import { SEGMENTOS_OFICIAIS } from '@/lib/segmentos'
 
 export default function AtendimentoPage() {

@@ -7,6 +7,7 @@ import type {
   Importacao,
   Configuracao,
   Regiao,
+  User,
 } from '@/types'
 
 export async function fetchClientes(params?: {
