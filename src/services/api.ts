@@ -780,5 +780,6 @@ export async function fetchClientesAtivosRemovidos(options?: {
   )
 }
 
-// Re-export gamificação APIs
+// Re-export diagnóstico e gamificação APIs
+export * from './diagnostico'
 export * from './gamificacao'

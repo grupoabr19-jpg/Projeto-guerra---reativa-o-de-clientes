@@ -109,7 +109,7 @@ const App = () => (
             <Route
               path="/relatorios"
               element={
-                <RoleRoute allowedRoles={['supervisor', 'admin']}>
+                <RoleRoute allowedRoles={['supervisor', 'admin', 'lider']}>
                   <RelatoriosPage />
                 </RoleRoute>
               }

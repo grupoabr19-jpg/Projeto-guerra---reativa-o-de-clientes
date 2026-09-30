@@ -118,6 +118,11 @@ export interface RespostaFormulario {
   toneladas_potencial?: number
   anexos?: string[]
   created: string
+  expand?: {
+    cliente?: Cliente
+    operador?: User
+    interacao?: Interacao
+  }
 }
 
 export type ModoImportacao = 'base_mestre' | 'faturamento_reconciliacao' | 'enriquecimento_margem'
@@ -360,4 +365,68 @@ export interface MetricasAtivosRemovidos {
   total: number
   breakdown: Record<string, number>
   itens: ClienteAtivoRemovidoItem[]
+}
+
+// Categoria diagnóstica para "Por que o cliente não está comprando?"
+export type CategoriaDiagnostico =
+  | 'preco_condicoes'
+  | 'concorrencia'
+  | 'credito_capital'
+  | 'sem_necessidade_obra'
+  | 'frete_prazo'
+  | 'qualidade_operacional'
+  | 'relacionamento_vendedor'
+  | 'nao_localizado_telefone'
+  | 'recusa_formal'
+  | 'ativo_outro_cadastro'
+  | 'outros'
+
+export interface DiagnosticoItemMotivo {
+  id: string
+  categoria: CategoriaDiagnostico
+  titulo: string
+  descricao: string
+  corBadge: string
+  icone: string
+  totalOcorrencias: number
+  percentual: number
+  // Distribuições
+  porRegiao: Record<string, number>
+  porVendedorOrigem: Record<string, number>
+  porPeriodo: {
+    hoje: number
+    ultimos7dias: number
+    ultimos30dias: number
+    anterior30dias: number
+  }
+  // Amostra de clientes para drill-down
+  clientes: Array<{
+    id: string
+    codigo: string
+    nome: string
+    regiao: string
+    vendedorOrigem?: string
+    operadorNome: string
+    dataRegistro: string
+    desfecho: string
+    perguntaOrigem: string
+    respostaBruta: string
+    observacao?: string
+    valorPotencial?: number
+    toneladasPotencial?: number
+  }>
+}
+
+export interface RelatorioDiagnosticoCompleto {
+  totalRespondidos: number
+  totalClientesAnalisados: number
+  rankingMotivos: DiagnosticoItemMotivo[]
+  distribuicaoPorRegiao: Record<string, number>
+  distribuicaoPorVendedorOrigem: Record<string, number>
+  evolucaoTemporal: {
+    hoje: number
+    ultimos7dias: number
+    ultimos30dias: number
+    total: number
+  }
 }

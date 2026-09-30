@@ -180,7 +180,7 @@ export default function Layout() {
             href: '/ranking',
             icon: Trophy,
           },
-          ...(hasRole(['supervisor', 'admin'])
+          ...(hasRole(['supervisor', 'admin', 'lider'])
             ? [
                 {
                   title: 'Relatórios',
