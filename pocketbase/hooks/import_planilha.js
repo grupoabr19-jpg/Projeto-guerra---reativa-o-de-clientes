@@ -267,6 +267,8 @@ routerAdd(
             mudou = true
           }
 
+          let diasCalculados = targetRec.getInt('dias_sem_faturar')
+
           if (dataPedido) {
             const parsed = new Date(dataPedido)
             if (!isNaN(parsed.getTime())) {
@@ -285,13 +287,15 @@ routerAdd(
                 mudou = true
               }
               const diffMs = now.getTime() - parsed.getTime()
-              const dias = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
-              if (targetRec.getInt('dias_sem_faturar') !== dias) {
-                targetRec.set('dias_sem_faturar', dias)
+              diasCalculados = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
+              if (targetRec.getInt('dias_sem_faturar') !== diasCalculados) {
+                targetRec.set('dias_sem_faturar', diasCalculados)
                 mudou = true
               }
-              if (dias < 60 && targetRec.getString('faixa') !== 'recente') {
-                targetRec.set('faixa', 'recente')
+              const novaFaixa =
+                diasCalculados < 60 ? 'recente' : diasCalculados <= 89 ? '60_89' : '90_plus'
+              if (targetRec.getString('faixa') !== novaFaixa) {
+                targetRec.set('faixa', novaFaixa)
                 mudou = true
               }
             }
@@ -319,14 +323,26 @@ routerAdd(
             }
           }
 
-          // Reconciliação imediata: faturou sai da fila de reativação
+          // Reconciliação: APENAS clientes com faturamento recente (<60 dias) saem da fila (estado = 'reativado').
+          // Clientes com última compra há 60 dias ou mais permanecem elegíveis para a esteira de reativação ('na_base').
           const estadoAtual = targetRec.getString('estado')
-          if (estadoAtual !== 'reativado') {
-            targetRec.set('estado', 'reativado')
-            targetRec.set('operador', '')
-            targetRec.set('lock_timestamp', null)
-            countReconciliadosFaturaram++
-            mudou = true
+          const isRecente = diasCalculados < 60
+          if (isRecente) {
+            if (estadoAtual !== 'reativado') {
+              targetRec.set('estado', 'reativado')
+              targetRec.set('operador', '')
+              targetRec.set('lock_timestamp', null)
+              countReconciliadosFaturaram++
+              mudou = true
+            }
+          } else {
+            // Se tem 60+ dias, e estava marcado indevidamente como 'reativado', restaura para 'na_base'
+            if (estadoAtual === 'reativado') {
+              targetRec.set('estado', 'na_base')
+              targetRec.set('operador', '')
+              targetRec.set('lock_timestamp', null)
+              mudou = true
+            }
           }
 
           // Validação de divergência de pedido de reativação salvo

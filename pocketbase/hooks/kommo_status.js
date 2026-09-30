@@ -189,8 +189,11 @@ routerAdd(
                 },
               },
             })
-            currentCfg.set('valor', currentVal)
-            $app.save(currentCfg)
+            $app
+              .db()
+              .newQuery('UPDATE configuracoes SET valor = {:v} WHERE id = {:id}')
+              .bind({ v: JSON.stringify(currentVal), id: currentCfg.id })
+              .execute()
           }
         } catch (eInspecao) {
           console.error('Falha ao rodar inspeção automática:', eInspecao.message)

@@ -215,8 +215,12 @@ routerAdd(
           baseFilter += ` && ${regiaoFilter}`
         }
         if (isRepescagem) {
-          // Repescagem: somente mais de 90 dias sem faturar
+          // Repescagem: rota transversal para clientes com 90+ dias sem faturar (excluindo os contatados pelo vendedor original)
           baseFilter += " && (faixa = '90_plus' || dias_sem_faturar >= 90)"
+        } else {
+          // Rotas normais (regionais):
+          // Regra do negócio: prioriza e atende clientes na faixa "60-89 dias" (até 60-89 dias sem faturar)
+          // Clientes "Sem Venda" (sem data de última compra) entram também na fila da região com prioridade normal/baixa
         }
         if (filtroSegmento && filtroSegmento !== 'todos') {
           baseFilter += ` && segmento ~ '${filtroSegmento}'`
@@ -225,21 +229,10 @@ routerAdd(
         // Evita telefones marcados como inválidos
         baseFilter += ' && telefone_invalido != true'
 
-        const pool = $app.findRecordsByFilter('clientes', baseFilter, sortExpr, 100, 0)
+        const pool = $app.findRecordsByFilter('clientes', baseFilter, sortExpr, 150, 0)
         if (pool && pool.length > 0) {
-          if (ordenacaoEscolhida === 'score' && modoCriterio === 'modo_c') {
-            // Ponderar bônus faixa 90+ se ordenação por score
-            pool.sort((a, b) => {
-              const scoreA =
-                (a.getInt('score') || 0) + (a.getString('faixa') === '90_plus' ? bonusFaixa90 : 0)
-              const scoreB =
-                (b.getInt('score') || 0) + (b.getString('faixa') === '90_plus' ? bonusFaixa90 : 0)
-              return scoreB - scoreA
-            })
-          }
-
-          // Se for operador Repescagem, percorre e escolhe o primeiro que NÃO tenha contato do vendedor original
           if (isRepescagem) {
+            // Repescagem: percorre e escolhe o primeiro com 90+ dias que NÃO tenha contato prévio do vendedor original
             for (let m = 0; m < pool.length; m++) {
               const item = pool[m]
               if (!jaContatadoPeloVendedorOriginal(item)) {
@@ -248,7 +241,49 @@ routerAdd(
               }
             }
           } else {
-            cand = pool[0]
+            // Rotas normais regionais:
+            // Regra do Projeto Guerra: clientes com até 60-89 dias sem faturamento (faixa '60_89')
+            // têm prioridade absoluta nas rotas regionais.
+            // Se houver clientes 60-89 dias, seleciona o melhor deles.
+            // Em segundo lugar, se não houver clientes 60-89 dias disponíveis, atende clientes com 90+ dias da região ou Sem Venda.
+            const clientesFaixa60_89 = pool.filter((c) => {
+              const f = c.getString('faixa')
+              const d = c.getInt('dias_sem_faturar')
+              return f === '60_89' || (d >= 60 && d <= 89)
+            })
+
+            if (clientesFaixa60_89.length > 0) {
+              if (ordenacaoEscolhida === 'antigos') {
+                clientesFaixa60_89.sort(
+                  (a, b) =>
+                    (b.getInt('dias_sem_faturar') || 0) - (a.getInt('dias_sem_faturar') || 0),
+                )
+              } else if (ordenacaoEscolhida === 'novos') {
+                clientesFaixa60_89.sort(
+                  (a, b) =>
+                    (a.getInt('dias_sem_faturar') || 0) - (b.getInt('dias_sem_faturar') || 0),
+                )
+              } else {
+                clientesFaixa60_89.sort(
+                  (a, b) => (b.getInt('score') || 0) - (a.getInt('score') || 0),
+                )
+              }
+              cand = clientesFaixa60_89[0]
+            } else {
+              // Se não há na faixa 60-89, pega da pool geral da região
+              if (ordenacaoEscolhida === 'score' && modoCriterio === 'modo_c') {
+                pool.sort((a, b) => {
+                  const scoreA =
+                    (a.getInt('score') || 0) +
+                    (a.getString('faixa') === '90_plus' ? bonusFaixa90 : 0)
+                  const scoreB =
+                    (b.getInt('score') || 0) +
+                    (b.getString('faixa') === '90_plus' ? bonusFaixa90 : 0)
+                  return scoreB - scoreA
+                })
+              }
+              cand = pool[0]
+            }
           }
         }
       }

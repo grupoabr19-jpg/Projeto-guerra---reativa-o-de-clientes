@@ -137,55 +137,55 @@ cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
           const reativacaoPipeline = pipelines.find((p) => p.name.toLowerCase().includes('reativa'))
 
           if (cfg) {
-            cfg.set(
-              'valor',
-              Object.assign({}, val, {
-                ultimo_teste_ok: accRes.statusCode >= 200 && accRes.statusCode < 300,
-                ultimo_sync: now.toISOString(),
-                inspecao: {
-                  account_id: accData.id,
-                  account_name: accData.name,
-                  subdomain: accData.subdomain,
-                  country: accData.country,
-                  currency: accData.currency,
-                  created_at: accData.created_at,
-                  pipelines_count: pipelines.length,
-                  pipelines: pipelines,
-                  users_count: users.length,
-                  users: users,
-                  contact_fields_count: contactFields.length,
-                  contact_fields: contactFields,
-                  lead_fields_count: leadFields.length,
-                  lead_fields: leadFields,
-                  has_companies:
-                    (compRes.statusCode === 200 &&
-                      compRes.json?._embedded?.companies?.length > 0) ||
-                    false,
-                  has_contacts:
-                    (contactsCountRes.statusCode === 200 &&
-                      contactsCountRes.json?._embedded?.contacts?.length > 0) ||
-                    false,
-                  has_leads:
-                    (leadsCountRes.statusCode === 200 &&
-                      leadsCountRes.json?._embedded?.leads?.length > 0) ||
-                    false,
-                  has_reativacao_pipeline: Boolean(reativacaoPipeline),
-                  reativacao_pipeline: reativacaoPipeline || null,
-                  secret_checks: {
-                    field_origin: $os.getenv('KOMMO_FIELD_ORIGIN') || '',
-                    field_segment: $os.getenv('KOMMO_FIELD_SEGMENT') || '',
-                    field_temperature: $os.getenv('KOMMO_FIELD_TEMPERATURE') || '',
-                    pipeline_excluir_liderancas:
-                      $os.getenv('KOMMO_PIPELINE_EXCLUIR_LIDERANCAS') || '',
-                    stage_excluir_comunicacao:
-                      $os.getenv('KOMMO_STAGE_EXCLUIR_COMUNICACAO_INTERNA') || '',
-                    status_id_comunicacao_interna:
-                      $os.getenv('KOMMO_STATUS_ID_COMUNICACAO_INTERNA') || '',
-                  },
+            const novoVal = Object.assign({}, val, {
+              ultimo_teste_ok: accRes.statusCode >= 200 && accRes.statusCode < 300,
+              ultimo_sync: now.toISOString(),
+              inspecao: {
+                account_id: accData.id,
+                account_name: accData.name,
+                subdomain: accData.subdomain,
+                country: accData.country,
+                currency: accData.currency,
+                created_at: accData.created_at,
+                pipelines_count: pipelines.length,
+                pipelines: pipelines,
+                users_count: users.length,
+                users: users,
+                contact_fields_count: contactFields.length,
+                contact_fields: contactFields,
+                lead_fields_count: leadFields.length,
+                lead_fields: leadFields,
+                has_companies:
+                  (compRes.statusCode === 200 && compRes.json?._embedded?.companies?.length > 0) ||
+                  false,
+                has_contacts:
+                  (contactsCountRes.statusCode === 200 &&
+                    contactsCountRes.json?._embedded?.contacts?.length > 0) ||
+                  false,
+                has_leads:
+                  (leadsCountRes.statusCode === 200 &&
+                    leadsCountRes.json?._embedded?.leads?.length > 0) ||
+                  false,
+                has_reativacao_pipeline: Boolean(reativacaoPipeline),
+                reativacao_pipeline: reativacaoPipeline || null,
+                secret_checks: {
+                  field_origin: $os.getenv('KOMMO_FIELD_ORIGIN') || '',
+                  field_segment: $os.getenv('KOMMO_FIELD_SEGMENT') || '',
+                  field_temperature: $os.getenv('KOMMO_FIELD_TEMPERATURE') || '',
+                  pipeline_excluir_liderancas:
+                    $os.getenv('KOMMO_PIPELINE_EXCLUIR_LIDERANCAS') || '',
+                  stage_excluir_comunicacao:
+                    $os.getenv('KOMMO_STAGE_EXCLUIR_COMUNICACAO_INTERNA') || '',
+                  status_id_comunicacao_interna:
+                    $os.getenv('KOMMO_STATUS_ID_COMUNICACAO_INTERNA') || '',
                 },
-              }),
-            )
-            $app.save(cfg)
+              },
+            })
+            $app
+              .db()
+              .newQuery('UPDATE configuracoes SET valor = {:v} WHERE id = {:id}')
+              .bind({ v: JSON.stringify(novoVal), id: cfg.id })
+              .execute()
           }
         }
       }
@@ -240,7 +240,8 @@ cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
 
 // 2. Cron diário (1x por dia, às 03:00 UTC / 00:00 BRT):
 // - Recalcula dias sem faturar, faixa (60-89 / 90+) e score de todos os clientes
-// - Faz reconciliação com os dados de faturamento já importados: quem faturou recentemente (<60 dias) sai da fila (estado = 'reativado')
+// - Faz reconciliação: apenas quem faturou recentemente (<60 dias comprovados) sai da fila (estado = 'reativado')
+// - Clientes com 60+ dias ou sem venda que foram marcados indevidamente como reativados são restabelecidos para 'na_base'
 // - Libera reservas expiradas (timeout de atendimento abandonado)
 // - Grava registro da execução em eventos_log
 cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
@@ -308,7 +309,7 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
 
         // Recalcular dias sem faturar a partir de ultima_compra ou ultimo_faturamento_data
         let ultimaDataStr = c.getString('ultimo_faturamento_data') || c.getString('ultima_compra')
-        let dias = c.getInt('dias_sem_faturar') || 90
+        let dias = c.getInt('dias_sem_faturar')
 
         if (ultimaDataStr) {
           const parsed = new Date(ultimaDataStr)
@@ -317,11 +318,17 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
             dias = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
             c.set('dias_sem_faturar', dias)
           }
+        } else if (!dias && dias !== 0) {
+          dias = 180
+          c.set('dias_sem_faturar', dias)
         }
 
-        // Determinar faixa
+        // Determinar faixa:
+        // - Recente: < 60 dias com faturamento real
+        // - 60_89: 60 até 89 dias
+        // - 90_plus: 90 dias ou mais, ou clientes sem data de última compra ("Sem Venda")
         let faixa = '90_plus'
-        if (dias < 60) {
+        if (ultimaDataStr && dias < 60) {
           faixa = 'recente'
         } else if (dias >= 60 && dias <= 89) {
           faixa = '60_89'
@@ -330,19 +337,25 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
         }
         c.set('faixa', faixa)
 
-        // Reconciliação: quem faturou sai da fila de reativação automaticamente
+        // Reconciliação:
+        // 1. Quem faturou recentemente (<60 dias comprovados) sai da fila de reativação automaticamente
+        // 2. Quem tem 60+ dias ou é Sem Venda e estava como 'reativado' (ex: por engano na importação) volta para 'na_base'
         const estadoAtual = c.getString('estado')
-        if (faixa === 'recente') {
+        if (faixa === 'recente' && ultimaDataStr) {
           if (estadoAtual !== 'reativado') {
             c.set('estado', 'reativado')
             c.set('operador', '')
             c.set('lock_timestamp', null)
             totalReconciliados++
           }
+        } else if ((faixa === '60_89' || faixa === '90_plus') && estadoAtual === 'reativado') {
+          // Se o cliente tem mais de 60 dias sem faturar, ele DEVE estar ativo na base de reativação
+          c.set('estado', 'na_base')
+          c.set('operador', '')
+          c.set('lock_timestamp', null)
         }
 
-        // Recalcular score ponderado
-        const scoreRecencia = Math.min(100, Math.round((dias / 180) * 100))
+        // Recalcular score ponderado        const scoreRecencia = Math.min(100, Math.round((dias / 180) * 100))
         const comprasCount = c.getInt('compras_count') || c.getInt('frequencia_compras_12m') || 1
         const scoreFreq = Math.min(100, comprasCount * 12)
         const valHist = c.getFloat('valor_historico') || c.getFloat('fat_12m_reais') || 0
