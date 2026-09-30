@@ -287,8 +287,8 @@ export default function ConfiguracoesPage() {
     try {
       await pb.collection('users').create({
         email: novoEmail,
-        password: 'Skip@Pass',
-        passwordConfirm: 'Skip@Pass',
+        password: 'ABR@2026',
+        passwordConfirm: 'ABR@2026',
         name: novoNome,
         role: novoRole,
         regioes: novasRegioesSelected,
@@ -299,7 +299,7 @@ export default function ConfiguracoesPage() {
       setNovoNome('')
       setNovasRegioesSelected(['POÇOS DE CALDAS'])
       loadUsers()
-      alert('Usuário criado com sucesso! Senha inicial: Skip@Pass')
+      alert('Usuário criado com sucesso! Senha inicial: ABR@2026')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao criar usuário'
       alert(`Erro: ${msg}`)
@@ -1343,9 +1343,20 @@ export default function ConfiguracoesPage() {
                 onSubmit={handleCreateUser}
                 className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3"
               >
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                  Cadastrar Novo Membro da Equipe / Vendedor
-                </span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                    Cadastrar Novo Membro da Equipe / Vendedor
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Senha inicial:{' '}
+                    <code className="px-1.5 py-0.5 rounded bg-slate-200/70 text-slate-800 font-mono text-[10px] font-bold">
+                      ABR@2026
+                    </code>{' '}
+                    <span className="text-slate-400 text-[10px]">
+                      (o usuário deve trocá-la no primeiro acesso)
+                    </span>
+                  </span>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs text-slate-600">Nome Completo</Label>
