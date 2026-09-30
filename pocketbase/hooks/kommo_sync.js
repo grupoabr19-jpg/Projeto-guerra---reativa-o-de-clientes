@@ -101,30 +101,27 @@ routerAdd(
           } catch (_) {}
         }
 
+        const customFieldsValues = []
+        if (clienteRegiao) {
+          customFieldsValues.push({
+            field_name: 'Região',
+            values: [{ value: clienteRegiao }],
+          })
+        }
+        if (vendedorRef) {
+          customFieldsValues.push({
+            field_name: 'Vendedor Externo',
+            values: [{ value: vendedorRef }],
+          })
+        }
+
         const leadPayload = {
           name: `Reativação: [${cliente.getString('codigo')}] ${cliente.getString('nome')}`,
           price: cliente.getInt('valor_ultima_compra') || 0,
           _embedded: {
             contacts: [{ id: parseInt(kommoId, 10) }],
           },
-          custom_fields_values: [
-            ...(clienteRegiao
-              ? [
-                  {
-                    field_name: 'Região',
-                    values: [{ value: clienteRegiao }],
-                  },
-                ]
-              : []),
-            ...(vendedorRef
-              ? [
-                  {
-                    field_name: 'Vendedor Externo',
-                    values: [{ value: vendedorRef }],
-                  },
-                ]
-              : []),
-          ],
+          custom_fields_values: customFieldsValues,
         }
 
         const createLeadRes = $http.send({

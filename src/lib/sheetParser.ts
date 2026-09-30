@@ -511,6 +511,8 @@ async function parseWithMainThreadSheetJS(
     processedRows: primaryAba?.total_linhas || maxLinhasOverall,
   })
 
+  // Se houver opções de targetSheet ou se for modo full_rows sem targetSheet explícito,
+  // usa primaryAba que já calculou a melhor aba de dados brutos
   const chosenAba = options?.targetSheet
     ? analiseAbas.find((a) => a.nome === options.targetSheet) || primaryAba
     : primaryAba

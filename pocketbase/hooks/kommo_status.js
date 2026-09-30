@@ -144,8 +144,7 @@ routerAdd(
           const reativacaoPipeline = pipelines.find((p) => p.name.toLowerCase().includes('reativa'))
 
           if (currentCfg) {
-            currentVal = {
-              ...currentVal,
+            currentVal = Object.assign({}, currentVal, {
               ultimo_teste_ok: accRes.statusCode >= 200 && accRes.statusCode < 300,
               ultimo_sync: new Date().toISOString(),
               inspecao: {
@@ -189,7 +188,7 @@ routerAdd(
                     $os.getenv('KOMMO_STATUS_ID_COMUNICACAO_INTERNA') || '',
                 },
               },
-            }
+            })
             currentCfg.set('valor', currentVal)
             $app.save(currentCfg)
           }

@@ -137,51 +137,54 @@ cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
           const reativacaoPipeline = pipelines.find((p) => p.name.toLowerCase().includes('reativa'))
 
           if (cfg) {
-            cfg.set('valor', {
-              ...val,
-              ultimo_teste_ok: accRes.statusCode >= 200 && accRes.statusCode < 300,
-              ultimo_sync: now.toISOString(),
-              inspecao: {
-                account_id: accData.id,
-                account_name: accData.name,
-                subdomain: accData.subdomain,
-                country: accData.country,
-                currency: accData.currency,
-                created_at: accData.created_at,
-                pipelines_count: pipelines.length,
-                pipelines: pipelines,
-                users_count: users.length,
-                users: users,
-                contact_fields_count: contactFields.length,
-                contact_fields: contactFields,
-                lead_fields_count: leadFields.length,
-                lead_fields: leadFields,
-                has_companies:
-                  (compRes.statusCode === 200 && compRes.json?._embedded?.companies?.length > 0) ||
-                  false,
-                has_contacts:
-                  (contactsCountRes.statusCode === 200 &&
-                    contactsCountRes.json?._embedded?.contacts?.length > 0) ||
-                  false,
-                has_leads:
-                  (leadsCountRes.statusCode === 200 &&
-                    leadsCountRes.json?._embedded?.leads?.length > 0) ||
-                  false,
-                has_reativacao_pipeline: Boolean(reativacaoPipeline),
-                reativacao_pipeline: reativacaoPipeline || null,
-                secret_checks: {
-                  field_origin: $os.getenv('KOMMO_FIELD_ORIGIN') || '',
-                  field_segment: $os.getenv('KOMMO_FIELD_SEGMENT') || '',
-                  field_temperature: $os.getenv('KOMMO_FIELD_TEMPERATURE') || '',
-                  pipeline_excluir_liderancas:
-                    $os.getenv('KOMMO_PIPELINE_EXCLUIR_LIDERANCAS') || '',
-                  stage_excluir_comunicacao:
-                    $os.getenv('KOMMO_STAGE_EXCLUIR_COMUNICACAO_INTERNA') || '',
-                  status_id_comunicacao_interna:
-                    $os.getenv('KOMMO_STATUS_ID_COMUNICACAO_INTERNA') || '',
+            cfg.set(
+              'valor',
+              Object.assign({}, val, {
+                ultimo_teste_ok: accRes.statusCode >= 200 && accRes.statusCode < 300,
+                ultimo_sync: now.toISOString(),
+                inspecao: {
+                  account_id: accData.id,
+                  account_name: accData.name,
+                  subdomain: accData.subdomain,
+                  country: accData.country,
+                  currency: accData.currency,
+                  created_at: accData.created_at,
+                  pipelines_count: pipelines.length,
+                  pipelines: pipelines,
+                  users_count: users.length,
+                  users: users,
+                  contact_fields_count: contactFields.length,
+                  contact_fields: contactFields,
+                  lead_fields_count: leadFields.length,
+                  lead_fields: leadFields,
+                  has_companies:
+                    (compRes.statusCode === 200 &&
+                      compRes.json?._embedded?.companies?.length > 0) ||
+                    false,
+                  has_contacts:
+                    (contactsCountRes.statusCode === 200 &&
+                      contactsCountRes.json?._embedded?.contacts?.length > 0) ||
+                    false,
+                  has_leads:
+                    (leadsCountRes.statusCode === 200 &&
+                      leadsCountRes.json?._embedded?.leads?.length > 0) ||
+                    false,
+                  has_reativacao_pipeline: Boolean(reativacaoPipeline),
+                  reativacao_pipeline: reativacaoPipeline || null,
+                  secret_checks: {
+                    field_origin: $os.getenv('KOMMO_FIELD_ORIGIN') || '',
+                    field_segment: $os.getenv('KOMMO_FIELD_SEGMENT') || '',
+                    field_temperature: $os.getenv('KOMMO_FIELD_TEMPERATURE') || '',
+                    pipeline_excluir_liderancas:
+                      $os.getenv('KOMMO_PIPELINE_EXCLUIR_LIDERANCAS') || '',
+                    stage_excluir_comunicacao:
+                      $os.getenv('KOMMO_STAGE_EXCLUIR_COMUNICACAO_INTERNA') || '',
+                    status_id_comunicacao_interna:
+                      $os.getenv('KOMMO_STATUS_ID_COMUNICACAO_INTERNA') || '',
+                  },
                 },
-              },
-            })
+              }),
+            )
             $app.save(cfg)
           }
         }

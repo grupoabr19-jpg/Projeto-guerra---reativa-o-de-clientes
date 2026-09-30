@@ -227,7 +227,38 @@ self.onmessage = async (e: MessageEvent) => {
 
     // Se o modo for 'full_rows' (usado para importar dados linha a linha na tela de Importação)
     if (mode === 'full_rows') {
-      const sheetName = targetSheet || sheetNames[0]
+      // Se nenhuma aba específica foi solicitada, prioriza abas de dados brutos (ex: "BD", "Base", "Dados", "BD_Meta")
+      // ignorando abas de resumo ou tabelas dinâmicas
+      let sheetName = targetSheet
+      if (!sheetName) {
+        let bestScore = -1
+        let bestName = sheetNames[0]
+        for (const sName of sheetNames) {
+          const lower = sName.toLowerCase().trim()
+          let score = 0
+          if (lower === 'bd' || lower === 'base' || lower === 'dados' || lower === 'faturamento') {
+            score += 10000
+          } else if (
+            lower.startsWith('bd_') ||
+            lower.startsWith('base_') ||
+            lower.startsWith('dados_')
+          ) {
+            score += 5000
+          } else if (
+            lower.includes('resumo') ||
+            lower.includes('desvio') ||
+            lower.includes('tabela')
+          ) {
+            score -= 1000
+          }
+          if (score > bestScore) {
+            bestScore = score
+            bestName = sName
+          }
+        }
+        sheetName = bestName
+      }
+
       const worksheet = workbook.Sheets[sheetName]
       if (!worksheet) {
         throw new Error(`Aba "${sheetName}" não encontrada no arquivo.`)

@@ -396,35 +396,59 @@ export default function ImportacaoPage() {
     }
 
     // Template 3: Margem GABR (Enriquecimento)
-    const hasMargemCol = normalizedHeaders.some(
-      (h) => h.norm.includes('margem') || h.norm.includes('mb %') || h.norm.includes('mrg'),
-    )
-    if (hasMargemCol) {
+    const isMargemFile =
+      (file?.name && /margem/i.test(file.name)) ||
+      normalizedHeaders.some(
+        (h) =>
+          h.norm.includes('margem') ||
+          h.norm.includes('mb %') ||
+          h.norm.includes('mrg') ||
+          h.norm.includes('rentabilidade') ||
+          h.norm.includes('lucro') ||
+          (h.norm.includes('mb') && h.norm.includes('reais')),
+      )
+    if (isMargemFile) {
       setDetectedLayout({
-        nome: 'Margem GABR (Enriquecimento Opcional)',
+        nome: 'Margem GABR (Enriquecimento)',
         tipo_base: 'margem',
         descricao:
-          'Planilha de Margem detectada: atualização opcional de margem média (%) e valor em clientes existentes (sem criar novos clientes nem alterar fila).',
+          'Planilha de Margem detectada: atualização de margem média (%) e margem em reais em clientes existentes (sem criar novos clientes nem alterar fila de atendimento).',
       })
 
       const findHeader = (predicate: (norm: string) => boolean) =>
         normalizedHeaders.find((h) => predicate(h.norm))?.original || ''
 
       return {
-        codigo: findHeader((n) => n.includes('cod') && n.includes('cliente')),
-        nome: findHeader((n) => n.includes('cliente') || n.includes('nome') || n.includes('razao')),
+        codigo: findHeader(
+          (n) =>
+            (n.includes('cod') && n.includes('cliente')) || n === 'codigo' || n === 'cod_cliente',
+        ),
+        nome: findHeader(
+          (n) =>
+            (n.includes('cliente') && !n.includes('cod') && !n.includes('tipo')) ||
+            n.includes('nome') ||
+            n.includes('razao'),
+        ),
         telefone: '',
         whatsapp: '',
         email: '',
-        cidade: findHeader((n) => n === 'cidade'),
+        cidade: findHeader((n) => n === 'cidade' || n.includes('municipio')),
         estado_uf: findHeader((n) => n === 'uf' || n === 'estado'),
-        regiao: findHeader((n) => n === 'regiao'),
-        vendedor: findHeader((n) => n === 'vendedor'),
-        segmento: '',
+        regiao: findHeader(
+          (n) => n === 'regiao' || (n.includes('regiao') && !n.includes('codigo')),
+        ),
+        vendedor: findHeader(
+          (n) => n === 'vendedor' || (n.includes('vendedor') && !n.includes('tipo')),
+        ),
+        segmento: findHeader((n) => n.includes('segmento')),
         ultima_compra: '',
         valor_ultima_compra: '',
-        toneladas_historico: '',
-        valor_historico: '',
+        toneladas_historico: findHeader(
+          (n) => n.includes('peso nf') || n.includes('peso') || n.includes('volume'),
+        ),
+        valor_historico: findHeader(
+          (n) => n.includes('fat r') || n.includes('faturamento') || n.includes('valor'),
+        ),
         compras_count: '',
         pedido: '',
         dias_sem_faturar: '',
@@ -496,13 +520,17 @@ export default function ImportacaoPage() {
       const autoMap = matchTemplate(parsed.colunasDetectadas)
       setMapping(autoMap)
 
-      // Inferência inicial de modo com base no layout e mapeamento
-      if (autoMap.codigo && autoMap.nome) {
+      // Inferência inicial de modo com base no layout detectado e mapeamento
+      // Note que se o arquivo for de Margem ou contiver layout 'margem', deve priorizar Enriquecimento (Margem)
+      const isMargem =
+        (f.name && /margem/i.test(f.name)) ||
+        parsed.colunasDetectadas.some((c) => /margem|mb %|mrg/i.test(c))
+      if (isMargem) {
+        setModoImportacao('enriquecimento_margem')
+      } else if (autoMap.codigo && autoMap.nome) {
         setModoImportacao('base_mestre')
       } else if (!autoMap.codigo && autoMap.nome) {
         setModoImportacao('faturamento_reconciliacao')
-      } else if (parsed.colunasDetectadas.some((c) => c.toLowerCase().includes('margem'))) {
-        setModoImportacao('enriquecimento_margem')
       }
     } catch (err: unknown) {
       console.error('Erro ao ler planilha na Importação:', err)
@@ -516,9 +544,11 @@ export default function ImportacaoPage() {
   // Determinar o modo efetivo de importação: se o usuário não escolheu explicitamente, inferir
   const getEffectiveModo = () => {
     if (modoAlteradoManualmente) return modoImportacao
+    if (detectedLayout?.tipo_base === 'margem' || (file?.name && /margem/i.test(file.name))) {
+      return 'enriquecimento_margem'
+    }
     if (mapping.codigo && mapping.nome) return 'base_mestre'
     if (!mapping.codigo && mapping.nome) return 'faturamento_reconciliacao'
-    if (detectedLayout?.tipo_base === 'margem') return 'enriquecimento_margem'
     return modoImportacao
   }
 

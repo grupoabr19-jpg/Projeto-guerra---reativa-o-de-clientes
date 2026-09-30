@@ -169,7 +169,7 @@ routerAdd(
         false
 
       // Análise cruzada dos secrets configurados vs objetos encontrados no Kommo
-      const allFields = [...contactFields, ...leadFields]
+      const allFields = contactFields.concat(leadFields)
       const secretChecks = {
         subdomain: {
           configuredValue: subdomain,
@@ -219,7 +219,9 @@ routerAdd(
           matchingStage:
             pipelines
               .flatMap((p) =>
-                p.statuses.map((s) => ({ ...s, pipeline_id: p.id, pipeline_name: p.name })),
+                p.statuses.map((s) =>
+                  Object.assign({}, s, { pipeline_id: p.id, pipeline_name: p.name }),
+                ),
               )
               .find((s) => String(s.id) === String(statusIdComunSecret)) || null,
         },
@@ -265,42 +267,44 @@ routerAdd(
         const configRec = $app.findFirstRecordByData('configuracoes', 'chave', 'kommo_config')
         if (configRec) {
           const currentVal = configRec.get('valor') || {}
-          configRec.set('valor', {
-            ...currentVal,
-            ultimo_teste_ok: true,
-            ultimo_sync: new Date().toISOString(),
-            inspecao: {
-              account_name: accData.name,
-              account_id: accData.id,
-              subdomain: accData.subdomain,
-              tested_at: inspectionResult.testedAt,
-              has_reativacao_pipeline: Boolean(reativacaoPipeline),
-              pipelines: pipelines.map((p) => ({
-                id: p.id,
-                name: p.name,
-                is_main: p.is_main,
-                stages_count: p.statuses.length,
-                statuses: p.statuses,
-              })),
-              users_count: users.length,
-              users_summary: users.map((u) => ({ id: u.id, name: u.name, email: u.email })),
-              contact_fields_count: contactFields.length,
-              contact_fields: contactFields.map((f) => ({
-                id: f.id,
-                name: f.name,
-                type: f.type,
-                code: f.code,
-              })),
-              lead_fields_count: leadFields.length,
-              lead_fields: leadFields.map((f) => ({
-                id: f.id,
-                name: f.name,
-                type: f.type,
-                code: f.code,
-              })),
-              secret_checks: secretChecks,
-            },
-          })
+          configRec.set(
+            'valor',
+            Object.assign({}, currentVal, {
+              ultimo_teste_ok: true,
+              ultimo_sync: new Date().toISOString(),
+              inspecao: {
+                account_name: accData.name,
+                account_id: accData.id,
+                subdomain: accData.subdomain,
+                tested_at: inspectionResult.testedAt,
+                has_reativacao_pipeline: Boolean(reativacaoPipeline),
+                pipelines: pipelines.map((p) => ({
+                  id: p.id,
+                  name: p.name,
+                  is_main: p.is_main,
+                  stages_count: p.statuses.length,
+                  statuses: p.statuses,
+                })),
+                users_count: users.length,
+                users_summary: users.map((u) => ({ id: u.id, name: u.name, email: u.email })),
+                contact_fields_count: contactFields.length,
+                contact_fields: contactFields.map((f) => ({
+                  id: f.id,
+                  name: f.name,
+                  type: f.type,
+                  code: f.code,
+                })),
+                lead_fields_count: leadFields.length,
+                lead_fields: leadFields.map((f) => ({
+                  id: f.id,
+                  name: f.name,
+                  type: f.type,
+                  code: f.code,
+                })),
+                secret_checks: secretChecks,
+              },
+            }),
+          )
           $app.save(configRec)
         }
       } catch (saveErr) {
