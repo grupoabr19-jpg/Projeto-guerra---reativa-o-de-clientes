@@ -422,7 +422,18 @@ export default function ClientesPage() {
                         className="p-2.5 rounded bg-slate-50 border border-slate-200 text-xs space-y-1"
                       >
                         <div className="flex justify-between text-[11px] text-slate-400">
-                          <span className="uppercase font-semibold text-slate-600">{ci.tipo}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="uppercase font-semibold text-slate-600">
+                              {ci.tipo}
+                            </span>
+                            {ci.expand?.operador?.name ? (
+                              <span className="text-slate-500 font-medium">
+                                por {ci.expand.operador.name}
+                              </span>
+                            ) : ci.operador ? (
+                              <span className="text-slate-400 italic">(Usuário removido)</span>
+                            ) : null}
+                          </div>
                           <span>{new Date(ci.created).toLocaleString('pt-BR')}</span>
                         </div>
                         <p className="text-slate-800">{ci.conteudo}</p>

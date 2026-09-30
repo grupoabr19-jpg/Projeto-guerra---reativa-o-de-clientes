@@ -53,7 +53,18 @@ import {
 import pb from '@/lib/pocketbase/client'
 import type { User, Configuracao, Regiao } from '@/types'
 import { REGIOES_PADRAO, TODAS_REGIOES_FILTRO } from '@/types'
-import { MapPin, Info, Edit2, Check, AlertCircle, ShieldCheck } from 'lucide-react'
+import { MapPin, Info, Edit2, Check, AlertCircle, ShieldCheck, Trash2 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { deleteUser } from '@/services/api'
 import { BasesReferenciaTab } from '@/components/BasesReferenciaTab'
 
 import { useNavigate } from 'react-router-dom'
@@ -131,6 +142,11 @@ export default function ConfiguracoesPage() {
   const [editUserRole, setEditUserRole] = useState<'operador' | 'supervisor' | 'admin'>('operador')
   const [editUserRegioes, setEditUserRegioes] = useState<string[]>([])
   const [savingUserRegioes, setSavingUserRegioes] = useState(false)
+
+  // Exclusão de Usuário (Admin)
+  const [userToDelete, setUserToDelete] = useState<User | null>(null)
+  const [deletingUser, setDeletingUser] = useState(false)
+  const [deleteErrorMessage, setDeleteErrorMessage] = useState<string | null>(null)
 
   const [savingConfig, setSavingConfig] = useState(false)
 
@@ -347,6 +363,31 @@ export default function ConfiguracoesPage() {
       alert(`Erro: ${msg}`)
     } finally {
       setSavingUserRegioes(false)
+    }
+  }
+
+  const handleOpenDeleteUser = (u: User) => {
+    setDeleteErrorMessage(null)
+    setUserToDelete(u)
+  }
+
+  const handleConfirmDeleteUser = async () => {
+    if (!userToDelete) return
+    setDeletingUser(true)
+    setDeleteErrorMessage(null)
+    try {
+      await deleteUser(userToDelete.id)
+      setUserToDelete(null)
+      await loadUsers()
+    } catch (err: unknown) {
+      console.error('Erro ao excluir usuário:', err)
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Falha ao excluir usuário. Verifique se possui permissão de administrador.'
+      setDeleteErrorMessage(msg)
+    } finally {
+      setDeletingUser(false)
     }
   }
 
@@ -1522,15 +1563,38 @@ export default function ConfiguracoesPage() {
                           )}
                         </td>
                         <td className="py-2.5 px-3 text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleOpenEditUser(u)}
-                            className="h-7 text-xs text-blue-600 hover:text-blue-700 font-medium"
-                          >
-                            <Edit2 className="h-3 w-3 mr-1" />
-                            {user?.role === 'admin' ? 'Editar Papel & Regiões' : 'Editar Regiões'}
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleOpenEditUser(u)}
+                              className="h-7 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                            >
+                              <Edit2 className="h-3 w-3 mr-1" />
+                              {user?.role === 'admin' ? 'Editar Papel & Regiões' : 'Editar Regiões'}
+                            </Button>
+
+                            {user?.role === 'admin' &&
+                              (u.id === user.id ? (
+                                <span
+                                  className="text-[10px] text-slate-400 italic px-2 py-1"
+                                  title="Você não pode excluir a sua própria conta ativa"
+                                >
+                                  (Sua conta)
+                                </span>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleOpenDeleteUser(u)}
+                                  className="h-7 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 font-medium"
+                                  title={`Excluir conta de ${u.name}`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                                  Excluir
+                                </Button>
+                              ))}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1705,6 +1769,74 @@ export default function ConfiguracoesPage() {
           </div>
         </div>
       )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE USUÁRIO (ALERTDIALOG) */}
+      <AlertDialog
+        open={Boolean(userToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deletingUser) {
+            setUserToDelete(null)
+            setDeleteErrorMessage(null)
+          }
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-rose-600" />
+              <span>Excluir Usuário do Sistema</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600 space-y-3 pt-1">
+              <p>Tem certeza que deseja excluir esta conta de usuário permanentemente?</p>
+
+              {userToDelete && (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1">
+                  <div className="font-semibold text-slate-900">{userToDelete.name}</div>
+                  <div className="text-slate-600 font-mono text-[11px]">{userToDelete.email}</div>
+                  <div className="pt-1">
+                    <Badge variant="outline" className="text-[10px] uppercase font-mono">
+                      Perfil: {userToDelete.role}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-[11px] leading-relaxed">
+                <strong>Atenção (Ação irreversível):</strong>
+                <ul className="list-disc list-inside mt-1 space-y-0.5">
+                  <li>O acesso deste usuário será revogado de imediato.</li>
+                  <li>
+                    Contatos reservados ou em atendimento por ele serão liberados de volta para a
+                    fila da região.
+                  </li>
+                  <li>O histórico de contatos anteriores será preservado para auditoria.</li>
+                </ul>
+              </div>
+
+              {deleteErrorMessage && (
+                <div className="p-2.5 bg-rose-50 border border-rose-300 rounded text-rose-800 text-xs font-medium">
+                  {deleteErrorMessage}
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="pt-2">
+            <AlertDialogCancel disabled={deletingUser} className="text-xs h-8">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleConfirmDeleteUser()
+              }}
+              disabled={deletingUser}
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs h-8 font-semibold"
+            >
+              {deletingUser ? 'Excluindo...' : 'Confirmar Exclusão'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* MODAL DE EDIÇÃO DE REGIÕES E PAPEL (ROLE) DO USUÁRIO */}
       {editingUser && (

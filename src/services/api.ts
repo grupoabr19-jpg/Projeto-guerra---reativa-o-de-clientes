@@ -181,6 +181,10 @@ export async function updateUserProfile(userId: string, data: Partial<User>) {
   return pb.collection('users').update<User>(userId, data)
 }
 
+export async function deleteUser(userId: string) {
+  return pb.collection('users').delete(userId)
+}
+
 // Kommo API calls
 export async function checkKommoStatus() {
   try {

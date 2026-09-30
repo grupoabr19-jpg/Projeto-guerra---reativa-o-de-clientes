@@ -1411,9 +1411,18 @@ export default function AtendimentoPage() {
                           className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 space-y-1"
                         >
                           <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-semibold text-slate-700 uppercase">
-                              {item.tipo}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-slate-700 uppercase">
+                                {item.tipo}
+                              </span>
+                              {item.expand?.operador?.name ? (
+                                <span className="text-slate-500 font-medium">
+                                  por {item.expand.operador.name}
+                                </span>
+                              ) : item.operador ? (
+                                <span className="text-slate-400 italic">(Usuário removido)</span>
+                              ) : null}
+                            </div>
                             <span className="text-slate-400 font-mono">
                               {new Date(item.created).toLocaleString('pt-BR')}
                             </span>
