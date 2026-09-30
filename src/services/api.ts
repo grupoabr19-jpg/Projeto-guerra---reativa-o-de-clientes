@@ -826,18 +826,22 @@ export async function fetchMetricasBaseKpis(options?: {
   regiao?: string
 }): Promise<import('@/types').MetricasBaseKpisResponse> {
   const params = new URLSearchParams()
-  if (options?.regiao && options.regiao !== 'todas') {
-    params.set('regiao', options.regiao)
+  const regiao = options?.regiao?.trim()
+  if (regiao && regiao.toLowerCase() !== 'todas') {
+    params.set('regiao', regiao)
   }
-  const url = `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/metrics/base-kpis${
-    params.toString() ? `?${params.toString()}` : ''
-  }`
+  const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
+  const queryStr = params.toString()
+  const url = `${basePbUrl}/backend/v1/metrics/base-kpis${queryStr ? `?${queryStr}` : ''}`
+
+  const headers: Record<string, string> = {}
+  if (pb.authStore.token) {
+    headers['Authorization'] = pb.authStore.token
+  }
 
   const res = await fetch(url, {
     method: 'GET',
-    headers: {
-      Authorization: pb.authStore.token,
-    },
+    headers,
   })
 
   if (!res.ok) {
@@ -845,7 +849,36 @@ export async function fetchMetricasBaseKpis(options?: {
     throw new Error(err.error || err.message || 'Falha ao buscar KPIs de base no servidor')
   }
 
-  return res.json()
+  const data = await res.json()
+  // Normalização defensiva da resposta (garante kpis.totalBase e kpis.naFila tanto em camelCase quanto snake_case)
+  const kpisRaw = data?.kpis || {}
+  const totalBase = Number(
+    kpisRaw.totalBase ?? kpisRaw.total_base ?? data.totalBase ?? data.total_base ?? 0,
+  )
+  const naFila = Number(kpisRaw.naFila ?? kpisRaw.na_fila ?? data.naFila ?? data.na_fila ?? 0)
+  const reativados = Number(kpisRaw.reativados ?? kpisRaw.reativado ?? data.reativados ?? 0)
+  const taxaReativacao = Number(
+    kpisRaw.taxaReativacao ?? kpisRaw.taxa_reativacao ?? data.taxaReativacao ?? 0,
+  )
+  const valorRecuperado = Number(
+    kpisRaw.valorRecuperado ?? kpisRaw.valor_recuperado ?? data.valorRecuperado ?? 0,
+  )
+  const toneladasRecuperadas = Number(
+    kpisRaw.toneladasRecuperadas ?? kpisRaw.toneladas_recuperadas ?? data.toneladasRecuperadas ?? 0,
+  )
+
+  return {
+    kpis: {
+      totalBase,
+      naFila,
+      reativados,
+      taxaReativacao,
+      valorRecuperado,
+      toneladasRecuperadas,
+    },
+    estadosContagem: data.estadosContagem || {},
+    regioesMap: data.regioesMap || {},
+  }
 }
 
 // Re-export diagnóstico e gamificação APIs

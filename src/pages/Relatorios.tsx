@@ -222,9 +222,21 @@ export default function RelatoriosPage() {
     }
   }
 
-  // Totais agregados no servidor
-  const totalBase = baseKpis?.kpis.totalBase || 0
-  const elegiveisNaFila = baseKpis?.kpis.naFila || 0
+  // Totais agregados no servidor (com suporte snake_case e camelCase)
+  const totalBase = Number(
+    baseKpis?.kpis?.totalBase ??
+      (baseKpis?.kpis as any)?.total_base ??
+      (baseKpis as any)?.totalBase ??
+      (baseKpis as any)?.total_base ??
+      0,
+  )
+  const elegiveisNaFila = Number(
+    baseKpis?.kpis?.naFila ??
+      (baseKpis?.kpis as any)?.na_fila ??
+      (baseKpis as any)?.naFila ??
+      (baseKpis as any)?.na_fila ??
+      0,
+  )
 
   // Clientes ativos removidos
   const ativosRemovidosData: MetricasAtivosRemovidos = metricasAtendimento?.ativosRemovidos || {

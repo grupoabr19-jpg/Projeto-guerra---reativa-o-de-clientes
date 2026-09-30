@@ -129,24 +129,50 @@ routerAdd(
         })
       }
 
-      // Propriedades acessíveis no DynamicModel (lowerCamelCase ou nome do campo)
-      const totalBase = Number(kpiModel.total_base || kpiModel.totalBase || 0)
-      const naBaseCount = Number(kpiModel.na_base || kpiModel.naBase || 0)
+      // Propriedades acessíveis no DynamicModel (Goja armazena nos campos nomeados da struct/objeto)
+      const totalBase = Number(
+        kpiModel.total_base !== undefined && kpiModel.total_base !== null
+          ? kpiModel.total_base
+          : kpiModel.totalBase || 0,
+      )
+      const naBaseCount = Number(
+        kpiModel.na_base !== undefined && kpiModel.na_base !== null
+          ? kpiModel.na_base
+          : kpiModel.naBase || 0,
+      )
       const reservadoCount = Number(kpiModel.reservado || 0)
-      const emAtendimentoCount = Number(kpiModel.em_atendimento || kpiModel.emAtendimento || 0)
+      const emAtendimentoCount = Number(
+        kpiModel.em_atendimento !== undefined && kpiModel.em_atendimento !== null
+          ? kpiModel.em_atendimento
+          : kpiModel.emAtendimento || 0,
+      )
       const reagendadoCount = Number(kpiModel.reagendado || 0)
       const contatadoCount = Number(kpiModel.contatado || 0)
       const reativadoCount = Number(kpiModel.reativado || 0)
       const compraTerceirosCount = Number(
-        kpiModel.compra_terceiros || kpiModel.compraTerceiros || 0,
+        kpiModel.compra_terceiros !== undefined && kpiModel.compra_terceiros !== null
+          ? kpiModel.compra_terceiros
+          : kpiModel.compraTerceiros || 0,
       )
       const naoQuerNegociarCount = Number(
-        kpiModel.nao_quer_negociar || kpiModel.naoQuerNegociar || 0,
+        kpiModel.nao_quer_negociar !== undefined && kpiModel.nao_quer_negociar !== null
+          ? kpiModel.nao_quer_negociar
+          : kpiModel.naoQuerNegociar || 0,
       )
-      const semContatoCount = Number(kpiModel.sem_contato || kpiModel.semContato || 0)
-      const valorRecuperado = Number(kpiModel.valor_recuperado || kpiModel.valorRecuperado || 0)
+      const semContatoCount = Number(
+        kpiModel.sem_contato !== undefined && kpiModel.sem_contato !== null
+          ? kpiModel.sem_contato
+          : kpiModel.semContato || 0,
+      )
+      const valorRecuperado = Number(
+        kpiModel.valor_recuperado !== undefined && kpiModel.valor_recuperado !== null
+          ? kpiModel.valor_recuperado
+          : kpiModel.valorRecuperado || 0,
+      )
       const toneladasRecuperadas = Number(
-        kpiModel.toneladas_recuperadas || kpiModel.toneladasRecuperadas || 0,
+        kpiModel.toneladas_recuperadas !== undefined && kpiModel.toneladas_recuperadas !== null
+          ? kpiModel.toneladas_recuperadas
+          : kpiModel.toneladasRecuperadas || 0,
       )
 
       // Na fila: 'na_base' + 'reservado' (ou clientes disponíveis para alocação)
@@ -207,7 +233,9 @@ routerAdd(
       return e.json(200, {
         kpis: {
           totalBase: totalBase,
+          total_base: totalBase,
           naFila: naFila,
+          na_fila: naFila,
           reativados: reativadoCount,
           taxaReativacao: taxaReativacao,
           valorRecuperado: valorRecuperado,

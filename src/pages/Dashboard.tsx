@@ -139,13 +139,35 @@ export default function Dashboard() {
     }
   }
 
-  // KPIs consolidados via agregação real no servidor
-  const totalBase = baseKpisData?.kpis.totalBase || 0
-  const naFila = baseKpisData?.kpis.naFila || 0
-  const reativados = baseKpisData?.kpis.reativados || 0
-  const taxaReativacao = baseKpisData?.kpis.taxaReativacao || 0
-  const valorRecuperado = baseKpisData?.kpis.valorRecuperado || 0
-  const toneladasRecuperadas = baseKpisData?.kpis.toneladasRecuperadas || 0
+  // KPIs consolidados via agregação real no servidor (com suporte snake_case e camelCase)
+  const totalBase = Number(
+    baseKpisData?.kpis?.totalBase ??
+      (baseKpisData?.kpis as any)?.total_base ??
+      (baseKpisData as any)?.totalBase ??
+      (baseKpisData as any)?.total_base ??
+      0,
+  )
+  const naFila = Number(
+    baseKpisData?.kpis?.naFila ??
+      (baseKpisData?.kpis as any)?.na_fila ??
+      (baseKpisData as any)?.naFila ??
+      (baseKpisData as any)?.na_fila ??
+      0,
+  )
+  const reativados = Number(
+    baseKpisData?.kpis?.reativados ?? (baseKpisData?.kpis as any)?.reativado ?? 0,
+  )
+  const taxaReativacao = Number(
+    baseKpisData?.kpis?.taxaReativacao ?? (baseKpisData?.kpis as any)?.taxa_reativacao ?? 0,
+  )
+  const valorRecuperado = Number(
+    baseKpisData?.kpis?.valorRecuperado ?? (baseKpisData?.kpis as any)?.valor_recuperado ?? 0,
+  )
+  const toneladasRecuperadas = Number(
+    baseKpisData?.kpis?.toneladasRecuperadas ??
+      (baseKpisData?.kpis as any)?.toneladas_recuperadas ??
+      0,
+  )
 
   // Distribuição por estado via agregação real no servidor
   const estadosContagem = baseKpisData?.estadosContagem || {
