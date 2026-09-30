@@ -316,7 +316,16 @@ routerAdd(
             mudou = true
           }
           if (row.regiao) {
-            const regStr = String(row.regiao).trim().toUpperCase()
+            let regStr = String(row.regiao).trim().toUpperCase()
+            if (regStr === 'BRAGANÇA PAULISTA' || regStr === 'BRAGANCA PAULISTA') {
+              regStr = 'BRAGANÇA'
+            } else if (
+              regStr === 'MICRO-REGIÃO' ||
+              regStr === 'MICRO REGIAO' ||
+              regStr === 'MICRO-REGIAO'
+            ) {
+              regStr = 'CAMBUÍ'
+            }
             if (regStr && stringsDifferent(targetRec.getString('regiao'), regStr)) {
               targetRec.set('regiao', regStr)
               mudou = true
@@ -560,6 +569,15 @@ routerAdd(
 
           const rawReg = String(row.regiao || '').trim()
           let parsedReg = rawReg ? rawReg.toUpperCase() : 'Sem Região'
+          if (parsedReg === 'BRAGANÇA PAULISTA' || parsedReg === 'BRAGANCA PAULISTA') {
+            parsedReg = 'BRAGANÇA'
+          } else if (
+            parsedReg === 'MICRO-REGIÃO' ||
+            parsedReg === 'MICRO REGIAO' ||
+            parsedReg === 'MICRO-REGIAO'
+          ) {
+            parsedReg = 'CAMBUÍ'
+          }
           rec.set('regiao', parsedReg)
 
           let vendedorRow = String(row.vendedor || '').trim()
@@ -752,7 +770,16 @@ routerAdd(
           }
 
           const rawReg = String(row.regiao || '').trim()
-          const parsedReg = rawReg ? rawReg.toUpperCase() : 'Sem Região'
+          let parsedReg = rawReg ? rawReg.toUpperCase() : 'Sem Região'
+          if (parsedReg === 'BRAGANÇA PAULISTA' || parsedReg === 'BRAGANCA PAULISTA') {
+            parsedReg = 'BRAGANÇA'
+          } else if (
+            parsedReg === 'MICRO-REGIÃO' ||
+            parsedReg === 'MICRO REGIAO' ||
+            parsedReg === 'MICRO-REGIAO'
+          ) {
+            parsedReg = 'CAMBUÍ'
+          }
           if (stringsDifferent(rec.getString('regiao'), parsedReg)) {
             rec.set('regiao', parsedReg)
             mudou = true

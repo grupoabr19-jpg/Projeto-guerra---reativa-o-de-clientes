@@ -60,101 +60,138 @@ routerAdd(
       const todayStr = now.toISOString().slice(0, 10)
       const endOfToday = `${todayStr} 23:59:59.999Z`
 
-      // Constrói filtro de regiões
+      // Constrói filtro de regiões flexível (incluindo variações históricas como BRAGANÇA PAULISTA e MICRO-REGIÃO)
+      const buildRegiaoCondition = (regiaoStr) => {
+        const upper = String(regiaoStr).trim().toUpperCase()
+        if (upper === 'BRAGANÇA' || upper === 'BRAGANCA') {
+          return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA' || regiao ~ 'BRAGANÇA')"
+        }
+        if (upper === 'CAMBUÍ' || upper === 'CAMBUI') {
+          return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao = 'MICRO REGIAO' || regiao = 'MICRO-REGIAO' || regiao ~ 'CAMBUÍ')"
+        }
+        if (upper === 'BRAGANÇA PAULISTA' || upper === 'BRAGANCA PAULISTA') {
+          return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao ~ 'BRAGANÇA')"
+        }
+        if (upper === 'MICRO-REGIÃO' || upper === 'MICRO REGIAO' || upper === 'MICRO-REGIAO') {
+          return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao ~ 'CAMBUÍ')"
+        }
+        return `(regiao = '${upper}' || regiao ~ '${upper}')`
+      }
+
       let regiaoFilter = ''
       if (isRepescagem) {
         // Rota Repescagem é transversal: ignora restrição de uma única região (busca em todas as regiões)
         regiaoFilter = ''
       } else if (userRole === 'operador') {
         if (Array.isArray(userRegioes) && userRegioes.length > 0) {
-          const parts = userRegioes.map((r) => {
-            const upper = String(r).trim().toUpperCase()
-            return `regiao = '${upper}'`
-          })
+          const parts = userRegioes.map((r) => buildRegiaoCondition(r))
           regiaoFilter = `(${parts.join(' || ')})`
         } else {
-          regiaoFilter = "regiao = 'Sem Regiao' || regiao = 'Sem Região'"
+          regiaoFilter =
+            "(regiao = 'Sem Regiao' || regiao = 'Sem Região' || regiao = '' || regiao = null)"
         }
       } else {
         // Supervisor ou admin: se tiver regiões cadastradas filtra, senão todas
         if (Array.isArray(userRegioes) && userRegioes.length > 0) {
-          const parts = userRegioes.map((r) => {
-            const upper = String(r).trim().toUpperCase()
-            return `regiao = '${upper}'`
-          })
+          const parts = userRegioes.map((r) => buildRegiaoCondition(r))
           regiaoFilter = `(${parts.join(' || ')})`
         }
       }
 
       // Função auxiliar inline para verificar se o cliente já foi contatado pelo vendedor original da rota
       // Regra da Repescagem: clientes já contatados pelo vendedor original NÃO entram na Repescagem.
+      // Totalmente defensiva: se qualquer lookup de operador/contato falhar, trata como não contatado e nunca quebra com 500.
       const jaContatadoPeloVendedorOriginal = (clienteRec) => {
-        const cId = clienteRec.id
-        const vendedorOriginal = clienteRec.getString('vendedor').trim().toUpperCase()
+        try {
+          const cId = clienteRec.id
+          const vendedorOriginal = (clienteRec.getString('vendedor') || '').trim().toUpperCase()
 
-        // Também busca o vendedor_externo da região se não estiver no cliente
-        let vendedorRegiao = ''
-        const regNome = clienteRec.getString('regiao').trim().toUpperCase()
-        if (regNome) {
+          // Também busca o vendedor_externo da região se não estiver no cliente
+          let vendedorRegiao = ''
+          let regNome = (clienteRec.getString('regiao') || '').trim().toUpperCase()
+          // Normaliza apelidos de região para busca na tabela de regiões oficiais
+          if (regNome === 'BRAGANÇA PAULISTA' || regNome === 'BRAGANCA PAULISTA') {
+            regNome = 'BRAGANÇA'
+          } else if (
+            regNome === 'MICRO-REGIÃO' ||
+            regNome === 'MICRO REGIAO' ||
+            regNome === 'MICRO-REGIAO'
+          ) {
+            regNome = 'CAMBUÍ'
+          }
+
+          if (regNome) {
+            try {
+              const rRec = $app.findFirstRecordByData('regioes', 'nome', regNome)
+              if (rRec) {
+                vendedorRegiao = (rRec.getString('vendedor_externo') || '').trim().toUpperCase()
+              }
+            } catch (_) {}
+          }
+
+          // Busca histórico de interações do cliente
+          let interacoes = []
           try {
-            const rRec = $app.findFirstRecordByData('regioes', 'nome', regNome)
-            if (rRec) {
-              vendedorRegiao = rRec.getString('vendedor_externo').trim().toUpperCase()
+            interacoes = $app.findRecordsByFilter(
+              'interacoes',
+              `cliente = '${cId}'`,
+              '-created',
+              50,
+              0,
+            )
+          } catch (_) {
+            return false
+          }
+
+          if (!interacoes || interacoes.length === 0) {
+            return false
+          }
+
+          for (let i = 0; i < interacoes.length; i++) {
+            const it = interacoes[i]
+            const opId = it.getString('operador')
+            if (!opId) continue
+
+            try {
+              // PocketBase Goja: coleção 'users' (nunca '_pb_users_auth_')
+              const opUser = $app.findRecordById('users', opId)
+              if (opUser) {
+                const opNome = (opUser.getString('name') || '').trim().toUpperCase()
+                const opEmail = (opUser.getString('email') || '').trim().toUpperCase()
+
+                // Compara com o vendedor original registrado ou da região
+                if (vendedorOriginal) {
+                  if (
+                    opNome === vendedorOriginal ||
+                    opNome.includes(vendedorOriginal) ||
+                    vendedorOriginal.includes(opNome) ||
+                    opEmail.includes(vendedorOriginal)
+                  ) {
+                    return true
+                  }
+                }
+
+                if (vendedorRegiao) {
+                  if (
+                    opNome === vendedorRegiao ||
+                    opNome.includes(vendedorRegiao) ||
+                    vendedorRegiao.includes(opNome) ||
+                    opEmail.includes(vendedorRegiao)
+                  ) {
+                    return true
+                  }
+                }
+              }
+            } catch (_) {
+              // Se lookup de um usuário falhar, segue para a próxima interação
             }
-          } catch (_) {}
-        }
+          }
 
-        // Busca histórico de interações do cliente
-        const interacoes = $app.findRecordsByFilter(
-          'interacoes',
-          `cliente = '${cId}'`,
-          '-created',
-          50,
-          0,
-        )
-
-        if (!interacoes || interacoes.length === 0) {
+          return false
+        } catch (_) {
+          // Trata como não contatado em caso de qualquer exceção imprevista
           return false
         }
-
-        for (let i = 0; i < interacoes.length; i++) {
-          const it = interacoes[i]
-          const opId = it.getString('operador')
-          if (!opId) continue
-
-          try {
-            const opUser = $app.findRecordById('_pb_users_auth_', opId)
-            if (opUser) {
-              const opNome = opUser.getString('name').trim().toUpperCase()
-              const opEmail = opUser.getString('email').trim().toUpperCase()
-
-              // Compara com o vendedor original registrado ou da região
-              if (vendedorOriginal) {
-                if (
-                  opNome === vendedorOriginal ||
-                  opNome.includes(vendedorOriginal) ||
-                  vendedorOriginal.includes(opNome) ||
-                  opEmail.includes(vendedorOriginal)
-                ) {
-                  return true
-                }
-              }
-
-              if (vendedorRegiao) {
-                if (
-                  opNome === vendedorRegiao ||
-                  opNome.includes(vendedorRegiao) ||
-                  vendedorRegiao.includes(opNome) ||
-                  opEmail.includes(vendedorRegiao)
-                ) {
-                  return true
-                }
-              }
-            }
-          } catch (_) {}
-        }
-
-        return false
       }
 
       let cand = null

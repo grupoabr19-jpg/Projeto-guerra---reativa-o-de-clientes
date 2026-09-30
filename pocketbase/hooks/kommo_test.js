@@ -302,11 +302,8 @@ routerAdd(
               secret_checks: secretChecks,
             },
           })
-          $app
-            .db()
-            .newQuery('UPDATE configuracoes SET valor = {:v} WHERE id = {:id}')
-            .bind({ v: JSON.stringify(novoVal), id: configRec.id })
-            .execute()
+          configRec.set('valor', novoVal)
+          $app.save(configRec)
         }
       } catch (saveErr) {
         // Se falhar ao salvar no banco, não interrompe a resposta

@@ -54,6 +54,7 @@ import {
   reserveNextQueueClient,
 } from '@/services/api'
 import { useAuth } from '@/contexts/AuthContext'
+import { toast } from '@/hooks/use-toast'
 import type { Cliente, Interacao, ClienteEstado } from '@/types'
 import { SEGMENTOS_OFICIAIS } from '@/lib/segmentos'
 
@@ -102,6 +103,7 @@ export default function AtendimentoPage() {
   const checkExistingLockOrIdle = async () => {
     setLoading(true)
     try {
+      // Se o operador já possuir um cliente em atendimento ou reservado, o backend retorna com ja_reservado = true
       const res = await reserveNextQueueClient({
         segmento: filtroSegmento === 'todos' ? undefined : filtroSegmento,
         ordenacao: filtroOrdenacao,
@@ -129,12 +131,47 @@ export default function AtendimentoPage() {
       if (res.cliente) {
         await loadCliente(res.cliente.id)
         navigate(`/atendimento/${res.cliente.id}`, { replace: true })
+        if (res.ja_reservado) {
+          toast({
+            title: 'Atendimento retomado',
+            description:
+              res.message || 'Você já possuía este contato em andamento. Atendimento reaberto.',
+          })
+        } else {
+          toast({
+            title: 'Cliente reservado',
+            description: res.message || 'Novo contato reservado com sucesso.',
+          })
+        }
       } else {
-        alert(res.message || 'Nenhum cliente disponível para atendimento no momento.')
+        // Distingue fila vazia de erro de forma clara e amigável
+        toast({
+          variant: 'default',
+          title: 'Nenhum cliente elegível na sua fila',
+          description:
+            res.message ||
+            'Não encontramos nenhum cliente elegível disponível na sua rota no momento. Tente trocar os filtros ou tente novamente mais tarde.',
+        })
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Falha ao reservar próximo cliente'
-      alert(msg)
+      const rawMsg = err instanceof Error ? err.message : String(err)
+      const isServer500 =
+        rawMsg.includes('500') || rawMsg.toLowerCase().includes('internal server error')
+      const isAuthError = rawMsg.toLowerCase().includes('autentica') || rawMsg.includes('401')
+
+      toast({
+        variant: 'destructive',
+        title: isAuthError
+          ? 'Sessão expirada'
+          : isServer500
+            ? 'Erro no servidor'
+            : 'Atenção na reserva',
+        description: isAuthError
+          ? 'Sua sessão expirou. Por favor, recarregue a página ou faça login novamente.'
+          : isServer500
+            ? 'Ocorreu uma instabilidade no servidor ao reservar o cliente. O erro foi reportado; por favor, tente novamente em instantes.'
+            : rawMsg || 'Não foi possível reservar um cliente neste momento.',
+      })
     } finally {
       setReservandoNovo(false)
     }

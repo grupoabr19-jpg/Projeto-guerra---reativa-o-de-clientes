@@ -181,11 +181,8 @@ cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
                 },
               },
             })
-            $app
-              .db()
-              .newQuery('UPDATE configuracoes SET valor = {:v} WHERE id = {:id}')
-              .bind({ v: JSON.stringify(novoVal), id: cfg.id })
-              .execute()
+            cfg.set('valor', novoVal)
+            $app.save(cfg)
           }
         }
       }
