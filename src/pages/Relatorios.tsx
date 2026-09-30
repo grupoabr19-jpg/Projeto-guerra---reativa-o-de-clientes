@@ -50,14 +50,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
-  fetchClientes,
   fetchImportacoes,
   fetchRegioes,
   fetchMetricasAtendimentosDashboard,
   fetchRelatorioDiagnostico,
+  fetchMetricasBaseKpis,
 } from '@/services/api'
 import type {
-  Cliente,
   Importacao,
   Regiao,
   PeriodoAtendimentoFiltro,
@@ -65,6 +64,7 @@ import type {
   MetricasAtendimentosDashboard,
   RelatorioDiagnosticoCompleto,
   DiagnosticoItemMotivo,
+  MetricasBaseKpisResponse,
 } from '@/types'
 import { TODAS_REGIOES_FILTRO } from '@/types'
 import { useNavigate } from 'react-router-dom'
@@ -85,7 +85,7 @@ export default function RelatoriosPage() {
   const [regioesList, setRegioesList] = useState<string[]>([...TODAS_REGIOES_FILTRO])
 
   // Estados de dados
-  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [baseKpis, setBaseKpis] = useState<MetricasBaseKpisResponse | null>(null)
   const [importacoes, setImportacoes] = useState<Importacao[]>([])
   const [metricasAtendimento, setMetricasAtendimento] =
     useState<MetricasAtendimentosDashboard | null>(null)
@@ -145,12 +145,12 @@ export default function RelatoriosPage() {
   const loadBaseData = async () => {
     setLoadingGeral(true)
     try {
-      const [resC, resI, resRegioes] = await Promise.all([
-        fetchClientes({ perPage: 250 }),
+      const [resKpis, resI, resRegioes] = await Promise.all([
+        fetchMetricasBaseKpis({ regiao: selectedRegiao }),
         fetchImportacoes().catch(() => [] as Importacao[]),
         fetchRegioes().catch(() => [] as Regiao[]),
       ])
-      setClientes(resC.items)
+      setBaseKpis(resKpis)
       setImportacoes(resI)
       if (resRegioes.length > 0) {
         setRegioesList(resRegioes.map((r) => r.nome))
@@ -166,9 +166,10 @@ export default function RelatoriosPage() {
     const regiaoParam = selectedRegiao !== 'todas' ? selectedRegiao : undefined
     setLoadingAtendimentos(true)
     setLoadingDiagnostico(true)
+    setLoadingGeral(true)
 
     try {
-      const [dadosAtendimento, dadosDiagnostico] = await Promise.all([
+      const [dadosAtendimento, dadosDiagnostico, dadosBase] = await Promise.all([
         fetchMetricasAtendimentosDashboard({
           periodo: selectedPeriodo,
           regiao: regiaoParam,
@@ -177,27 +178,25 @@ export default function RelatoriosPage() {
           periodo: selectedPeriodo,
           regiao: regiaoParam,
         }),
+        fetchMetricasBaseKpis({
+          regiao: selectedRegiao,
+        }),
       ])
       setMetricasAtendimento(dadosAtendimento)
       setDiagnostico(dadosDiagnostico)
+      setBaseKpis(dadosBase)
     } catch (err) {
       console.error('Erro ao processar relatórios gerenciais:', err)
     } finally {
       setLoadingAtendimentos(false)
       setLoadingDiagnostico(false)
+      setLoadingGeral(false)
     }
   }
 
-  // Filtragem de clientes de base
-  const clientesFiltrados = clientes.filter((c) => {
-    if (selectedRegiao !== 'todas' && c.regiao !== selectedRegiao) return false
-    return true
-  })
-
-  const totalBase = clientesFiltrados.length
-  const elegiveisNaFila = clientesFiltrados.filter(
-    (c) => c.estado === 'na_base' || c.estado === 'reservado',
-  ).length
+  // Totais agregados no servidor
+  const totalBase = baseKpis?.kpis.totalBase || 0
+  const elegiveisNaFila = baseKpis?.kpis.naFila || 0
 
   // Clientes ativos removidos
   const ativosRemovidosData: MetricasAtivosRemovidos = metricasAtendimento?.ativosRemovidos || {
@@ -256,15 +255,11 @@ export default function RelatoriosPage() {
     link.click()
   }
 
-  // Exportar Geral da Operação
-  const handleExportGeralCSV = () => {
+  // Exportar Geral da Operação (amostra de auditoria)
+  const handleExportGeralCSV = async () => {
     let csv =
-      'Codigo;Nome;Regiao;Vendedor;Segmento;Dias_Sem_Faturar;Faixa;Score;Status;Valor_Recuperado\n'
-    clientesFiltrados.forEach((c) => {
-      csv += `${c.codigo};${c.nome};${c.regiao};${c.vendedor || ''};${c.segmento || ''};${
-        c.dias_sem_faturar || 0
-      };${c.faixa};${c.score || 0};${c.estado};${c.estado === 'reativado' ? c.valor_ultima_compra || 0 : 0}\n`
-    })
+      'Total_Base;Elegiveis_Fila;Reativados;Taxa_Recuperacao;Valor_Recuperado;Regiao_Filtro\n'
+    csv += `${totalBase};${elegiveisNaFila};${baseKpis?.kpis.reativados || 0};"${baseKpis?.kpis.taxaReativacao || 0}%";${baseKpis?.kpis.valorRecuperado || 0};"${selectedRegiao}"\n`
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')

@@ -780,6 +780,36 @@ export async function fetchClientesAtivosRemovidos(options?: {
   )
 }
 
+/**
+ * Consulta agregações e contagens reais da base de clientes diretamente no servidor (SQLite).
+ * Substitui o download de 23k+ registros pelo navegador, entregando contagens e totais em milissegundos.
+ */
+export async function fetchMetricasBaseKpis(options?: {
+  regiao?: string
+}): Promise<import('@/types').MetricasBaseKpisResponse> {
+  const params = new URLSearchParams()
+  if (options?.regiao && options.regiao !== 'todas') {
+    params.set('regiao', options.regiao)
+  }
+  const url = `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/metrics/base-kpis${
+    params.toString() ? `?${params.toString()}` : ''
+  }`
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: pb.authStore.token,
+    },
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || err.message || 'Falha ao buscar KPIs de base no servidor')
+  }
+
+  return res.json()
+}
+
 // Re-export diagnóstico e gamificação APIs
 export * from './diagnostico'
 export * from './gamificacao'

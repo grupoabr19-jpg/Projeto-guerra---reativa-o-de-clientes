@@ -431,3 +431,32 @@ export interface RelatorioDiagnosticoCompleto {
     total: number
   }
 }
+
+export interface MetricasBaseKpisResponse {
+  kpis: {
+    totalBase: number
+    naFila: number
+    reativados: number
+    taxaReativacao: number
+    valorRecuperado: number
+    toneladasRecuperadas: number
+  }
+  estadosContagem: {
+    na_base: number
+    em_atendimento: number
+    reagendado: number
+    contatado: number
+    reativado: number
+    compra_terceiros: number
+    nao_quer_negociar: number
+    sem_contato: number
+  }
+  regioesMap: Record<
+    string,
+    {
+      total: number
+      scoreSum: number
+      avgScore?: number
+    }
+  >
+}

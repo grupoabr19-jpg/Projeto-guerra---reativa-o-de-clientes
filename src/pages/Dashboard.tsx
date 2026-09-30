@@ -37,18 +37,18 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  fetchClientes,
   fetchImportacoes,
   fetchRegioes,
   fetchMetricasAtendimentosDashboard,
+  fetchMetricasBaseKpis,
 } from '@/services/api'
 import type {
-  Cliente,
   Importacao,
   Regiao,
   PeriodoAtendimentoFiltro,
   MetricasAtendimentosDashboard,
   MetricasAtendimentoOperador,
+  MetricasBaseKpisResponse,
 } from '@/types'
 import { TODAS_REGIOES_FILTRO } from '@/types'
 
@@ -60,7 +60,6 @@ export default function Dashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
 
-  const [clientes, setClientes] = useState<Cliente[]>([])
   const [importacoes, setImportacoes] = useState<Importacao[]>([])
   const [regioesList, setRegioesList] = useState<string[]>([...TODAS_REGIOES_FILTRO])
   const [loading, setLoading] = useState(true)
@@ -69,6 +68,7 @@ export default function Dashboard() {
   const [selectedPeriodo, setSelectedPeriodo] = useState<PeriodoAtendimentoFiltro>('hoje')
   const [metricasAtendimento, setMetricasAtendimento] =
     useState<MetricasAtendimentosDashboard | null>(null)
+  const [baseKpisData, setBaseKpisData] = useState<MetricasBaseKpisResponse | null>(null)
 
   // Ordenação da tabela por operador
   const [sortField, setSortField] = useState<
@@ -86,11 +86,12 @@ export default function Dashboard() {
     }
   }, [user, navigate])
 
+  // Recarregar dados de base quando a região muda
   useEffect(() => {
     if (user && user.role !== 'operador' && user.role !== 'lider') {
-      loadData()
+      loadDataBase()
     }
-  }, [user])
+  }, [user, selectedRegion])
 
   // Recarregar métricas de atendimento quando filtros mudam
   useEffect(() => {
@@ -103,21 +104,21 @@ export default function Dashboard() {
     return null
   }
 
-  const loadData = async () => {
+  const loadDataBase = async () => {
     setLoading(true)
     try {
-      const [resClientes, resImp, resRegioes] = await Promise.all([
-        fetchClientes({ perPage: 200 }),
+      const [resKpis, resImp, resRegioes] = await Promise.all([
+        fetchMetricasBaseKpis({ regiao: selectedRegion }),
         fetchImportacoes(),
         fetchRegioes().catch(() => [] as Regiao[]),
       ])
-      setClientes(resClientes.items)
+      setBaseKpisData(resKpis)
       setImportacoes(resImp)
       if (resRegioes.length > 0) {
         setRegioesList(resRegioes.map((r) => r.nome))
       }
     } catch (err) {
-      console.error('Erro ao carregar métricas:', err)
+      console.error('Erro ao carregar métricas de base:', err)
     } finally {
       setLoading(false)
     }
@@ -138,50 +139,28 @@ export default function Dashboard() {
     }
   }
 
-  // Filtragem
-  const filteredClientes = clientes.filter((c) => {
-    if (selectedRegion !== 'todas' && c.regiao !== selectedRegion) return false
-    return true
-  })
+  // KPIs consolidados via agregação real no servidor
+  const totalBase = baseKpisData?.kpis.totalBase || 0
+  const naFila = baseKpisData?.kpis.naFila || 0
+  const reativados = baseKpisData?.kpis.reativados || 0
+  const taxaReativacao = baseKpisData?.kpis.taxaReativacao || 0
+  const valorRecuperado = baseKpisData?.kpis.valorRecuperado || 0
+  const toneladasRecuperadas = baseKpisData?.kpis.toneladasRecuperadas || 0
 
-  // KPIs
-  const totalBase = filteredClientes.length
-  const naFila = filteredClientes.filter(
-    (c) => c.estado === 'na_base' || c.estado === 'reservado',
-  ).length
-  const reativados = filteredClientes.filter((c) => c.estado === 'reativado').length
-  const taxaReativacao = totalBase > 0 ? Math.round((reativados / totalBase) * 100) : 0
-
-  const valorRecuperado = filteredClientes
-    .filter((c) => c.estado === 'reativado')
-    .reduce((acc, c) => acc + (c.valor_ultima_compra || 0), 0)
-
-  const toneladasRecuperadas = filteredClientes
-    .filter((c) => c.estado === 'reativado')
-    .reduce((acc, c) => acc + (c.toneladas_historico || 0), 0)
-
-  // Distribuição por estado
-  const estadosContagem = {
-    na_base: filteredClientes.filter((c) => c.estado === 'na_base').length,
-    em_atendimento: filteredClientes.filter(
-      (c) => c.estado === 'em_atendimento' || c.estado === 'reservado',
-    ).length,
-    reagendado: filteredClientes.filter((c) => c.estado === 'reagendado').length,
-    contatado: filteredClientes.filter((c) => c.estado === 'contatado').length,
-    reativado: reativados,
-    compra_terceiros: filteredClientes.filter((c) => c.estado === 'compra_terceiros').length,
-    nao_quer_negociar: filteredClientes.filter((c) => c.estado === 'nao_quer_negociar').length,
-    sem_contato: filteredClientes.filter((c) => c.estado === 'sem_contato').length,
+  // Distribuição por estado via agregação real no servidor
+  const estadosContagem = baseKpisData?.estadosContagem || {
+    na_base: 0,
+    em_atendimento: 0,
+    reagendado: 0,
+    contatado: 0,
+    reativado: 0,
+    compra_terceiros: 0,
+    nao_quer_negociar: 0,
+    sem_contato: 0,
   }
 
-  // Agrupamento por região
-  const regioesMap: Record<string, { total: number; scoreSum: number }> = {}
-  filteredClientes.forEach((c) => {
-    const r = c.regiao || 'Sem Região'
-    if (!regioesMap[r]) regioesMap[r] = { total: 0, scoreSum: 0 }
-    regioesMap[r].total += 1
-    regioesMap[r].scoreSum += c.score || 0
-  })
+  // Agrupamento por região da base inteira
+  const regioesMap = baseKpisData?.regioesMap || {}
 
   const ativosRemovidosData = metricasAtendimento?.ativosRemovidos || {
     total: 0,
@@ -278,7 +257,7 @@ export default function Dashboard() {
             variant="outline"
             size="sm"
             onClick={() => {
-              loadData()
+              loadDataBase()
               loadMetricasAtendimento()
             }}
             disabled={loading || loadingAtendimentos}
