@@ -74,7 +74,15 @@ export default function ConfiguracoesPage() {
     ok: boolean
     status: string
     message: string
-    account?: string
+    account?: any
+    stats?: any
+    pipelines?: any[]
+    users?: any[]
+    contact_fields?: any[]
+    lead_fields?: any[]
+    secretChecks?: any
+    hasReativacaoPipeline?: boolean
+    reativacaoPipeline?: any
     testedAt: string
   } | null>(null)
 
@@ -150,6 +158,38 @@ export default function ConfiguracoesPage() {
     try {
       const status = await checkKommoStatus()
       setKommoStatus(status)
+      if (status.inspecao) {
+        setTestResult({
+          ok: Boolean(status.connected),
+          status: status.status,
+          message: status.message,
+          account: status.inspecao.account_name
+            ? {
+                id: status.inspecao.account_id,
+                name: status.inspecao.account_name,
+                subdomain: status.inspecao.subdomain,
+                country: status.inspecao.country,
+                currency: status.inspecao.currency,
+              }
+            : undefined,
+          stats: {
+            total_pipelines: status.inspecao.pipelines_count,
+            total_users: status.inspecao.users_count,
+            total_contact_fields: status.inspecao.contact_fields_count,
+            total_lead_fields: status.inspecao.lead_fields_count,
+            has_companies: status.inspecao.has_companies,
+            has_contacts: status.inspecao.has_contacts,
+            has_leads: status.inspecao.has_leads,
+          },
+          pipelines: status.inspecao.pipelines,
+          users: status.inspecao.users,
+          contact_fields: status.inspecao.contact_fields,
+          lead_fields: status.inspecao.lead_fields,
+          hasReativacaoPipeline: status.inspecao.has_reativacao_pipeline,
+          reativacaoPipeline: status.inspecao.reativacao_pipeline,
+          testedAt: status.inspecao.tested_at || status.ultimoSync || new Date().toISOString(),
+        })
+      }
 
       const configs = await fetchConfiguracoes()
       const pesosCfg = configs.find((c) => c.chave === 'pesos_score')
@@ -562,28 +602,286 @@ export default function ConfiguracoesPage() {
               </div>
 
               {testResult && (
-                <Alert
-                  className={
-                    testResult.ok
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
-                      : 'bg-rose-50 border-rose-300 text-rose-900'
-                  }
-                >
-                  {testResult.ok ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                  ) : (
-                    <XCircle className="h-4 w-4 text-rose-600" />
+                <div className="space-y-4">
+                  <Alert
+                    className={
+                      testResult.ok
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                        : 'bg-rose-50 border-rose-300 text-rose-900'
+                    }
+                  >
+                    {testResult.ok ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-rose-600" />
+                    )}
+                    <AlertTitle className="text-xs font-bold">
+                      {testResult.ok
+                        ? 'Teste de Conexão Bem-Sucedido!'
+                        : 'Falha na Conexão com a API'}
+                    </AlertTitle>
+                    <AlertDescription className="text-xs mt-1">
+                      {testResult.message}
+                      {testResult.account && typeof testResult.account === 'object'
+                        ? ` — Conta: "${testResult.account.name || testResult.account.subdomain}" (ID: ${testResult.account.id || '—'}, Moeda: ${testResult.account.currency || 'BRL'})`
+                        : testResult.account && ` (Conta: ${testResult.account})`}
+                    </AlertDescription>
+                  </Alert>
+
+                  {/* Detalhamento dos Dados Coletados da API do Kommo */}
+                  {testResult.ok && (
+                    <div className="space-y-4 border border-slate-200 rounded-lg p-4 bg-slate-50/50">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                          <span>Diagnóstico Completo da API do Kommo</span>
+                        </h4>
+                        <Badge variant="outline" className="text-[10px] font-mono bg-white">
+                          Testado em: {new Date(testResult.testedAt).toLocaleTimeString('pt-BR')}
+                        </Badge>
+                      </div>
+
+                      {/* Métricas e Resumos da Conta */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div className="bg-white p-2.5 rounded border border-slate-200 text-center">
+                          <div className="text-[10px] text-slate-500 uppercase">
+                            Pipelines (Funis)
+                          </div>
+                          <div className="text-base font-bold text-slate-900 font-mono">
+                            {testResult.stats?.total_pipelines ?? testResult.pipelines?.length ?? 0}
+                          </div>
+                        </div>
+                        <div className="bg-white p-2.5 rounded border border-slate-200 text-center">
+                          <div className="text-[10px] text-slate-500 uppercase">Usuários Kommo</div>
+                          <div className="text-base font-bold text-slate-900 font-mono">
+                            {testResult.stats?.total_users ?? testResult.users?.length ?? 0}
+                          </div>
+                        </div>
+                        <div className="bg-white p-2.5 rounded border border-slate-200 text-center">
+                          <div className="text-[10px] text-slate-500 uppercase">Campos Lead</div>
+                          <div className="text-base font-bold text-slate-900 font-mono">
+                            {testResult.stats?.total_lead_fields ??
+                              testResult.lead_fields?.length ??
+                              0}
+                          </div>
+                        </div>
+                        <div className="bg-white p-2.5 rounded border border-slate-200 text-center">
+                          <div className="text-[10px] text-slate-500 uppercase">Campos Contato</div>
+                          <div className="text-base font-bold text-slate-900 font-mono">
+                            {testResult.stats?.total_contact_fields ??
+                              testResult.contact_fields?.length ??
+                              0}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Alerta de Funil "Reativação" */}
+                      <div className="p-3 rounded-lg border text-xs flex items-start gap-2.5 bg-white">
+                        {testResult.hasReativacaoPipeline ? (
+                          <>
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                            <div>
+                              <strong className="text-emerald-800">
+                                Funil "Reativação" Encontrado!{' '}
+                              </strong>
+                              <span className="text-slate-700">
+                                O funil de Reativação já está criado no Kommo (ID:{' '}
+                                <code>{testResult.reativacaoPipeline?.id}</code>) com{' '}
+                                {testResult.reativacaoPipeline?.statuses?.length || 0} estágios
+                                configurados.
+                              </span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                            <div>
+                              <strong className="text-amber-800">
+                                Funil "Reativação" ainda não existe no Kommo:{' '}
+                              </strong>
+                              <span className="text-slate-700">
+                                O sistema não cria o funil automaticamente para preservar seu CRM.
+                                Por favor, crie no Kommo um funil chamado{' '}
+                                <strong>"Reativação"</strong> com os estágios recomendados (ex.:{' '}
+                                <em>
+                                  Lead Criado, Tentativa de Contato, Reagendado, Reativado, Perdido
+                                </em>
+                                ) ou aponte os leads para um dos funis existentes abaixo.
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Lista de Pipelines e Estágios */}
+                      {testResult.pipelines && testResult.pipelines.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="text-xs font-semibold text-slate-800">
+                            Pipelines e Estágios no Kommo:
+                          </div>
+                          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                            {testResult.pipelines.map((pip: any) => (
+                              <div
+                                key={pip.id}
+                                className="p-2.5 bg-white rounded border border-slate-200 text-xs"
+                              >
+                                <div className="flex items-center justify-between pb-1 mb-1 border-b border-slate-100">
+                                  <span className="font-bold text-slate-900">
+                                    {pip.name}{' '}
+                                    {pip.is_main && (
+                                      <span className="text-[10px] text-blue-600 font-normal">
+                                        (Principal)
+                                      </span>
+                                    )}
+                                  </span>
+                                  <Badge variant="secondary" className="text-[10px] font-mono">
+                                    ID: {pip.id}
+                                  </Badge>
+                                </div>
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {(pip.statuses || []).map((st: any) => (
+                                    <Badge
+                                      key={st.id}
+                                      variant="outline"
+                                      className="text-[10px] font-normal border-slate-200 bg-slate-50 text-slate-700"
+                                      title={`ID: ${st.id}`}
+                                    >
+                                      {st.name}{' '}
+                                      <span className="text-slate-400 text-[9px] ml-1">
+                                        ({st.id})
+                                      </span>
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Usuários do Kommo para match com a equipe */}
+                      {testResult.users && testResult.users.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="text-xs font-semibold text-slate-800">
+                            Equipe no Kommo ({testResult.users.length} usuários detectados):
+                          </div>
+                          <div className="max-h-40 overflow-y-auto border border-slate-200 rounded bg-white">
+                            <table className="w-full text-xs text-left">
+                              <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 text-[10px]">
+                                <tr>
+                                  <th className="py-1.5 px-2.5">Nome no Kommo</th>
+                                  <th className="py-1.5 px-2.5">Email</th>
+                                  <th className="py-1.5 px-2.5 text-right">ID</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {testResult.users.slice(0, 30).map((u: any) => (
+                                  <tr key={u.id} className="hover:bg-slate-50">
+                                    <td className="py-1.5 px-2.5 font-medium text-slate-800">
+                                      {u.name}
+                                    </td>
+                                    <td className="py-1.5 px-2.5 text-slate-600 font-mono text-[11px]">
+                                      {u.email || '—'}
+                                    </td>
+                                    <td className="py-1.5 px-2.5 text-right font-mono text-[10px] text-slate-400">
+                                      {u.id}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Validação Cruzada de Secrets de Mapeamento */}
+                      {testResult.secretChecks && (
+                        <div className="space-y-2 pt-2 border-t border-slate-200">
+                          <div className="text-xs font-semibold text-slate-800">
+                            Auditoria dos Secrets de Mapeamento (Custom Fields & IDs):
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            <div className="p-2 bg-white rounded border border-slate-200">
+                              <div className="text-slate-500 text-[10px]">KOMMO_FIELD_SEGMENT</div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {testResult.secretChecks.fieldSegment?.foundInKommo ? (
+                                  <Badge className="bg-emerald-600 text-white text-[10px] py-0">
+                                    Encontrado no Kommo
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-amber-400 text-amber-700 bg-amber-50 text-[10px] py-0"
+                                  >
+                                    ID não localizado no CRM
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="p-2 bg-white rounded border border-slate-200">
+                              <div className="text-slate-500 text-[10px]">KOMMO_FIELD_ORIGIN</div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {testResult.secretChecks.fieldOrigin?.foundInKommo ? (
+                                  <Badge className="bg-emerald-600 text-white text-[10px] py-0">
+                                    Encontrado no Kommo
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-amber-400 text-amber-700 bg-amber-50 text-[10px] py-0"
+                                  >
+                                    ID não localizado no CRM
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="p-2 bg-white rounded border border-slate-200">
+                              <div className="text-slate-500 text-[10px]">
+                                KOMMO_FIELD_TEMPERATURE
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {testResult.secretChecks.fieldTemperature?.foundInKommo ? (
+                                  <Badge className="bg-emerald-600 text-white text-[10px] py-0">
+                                    Encontrado no Kommo
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-amber-400 text-amber-700 bg-amber-50 text-[10px] py-0"
+                                  >
+                                    ID não localizado no CRM
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="p-2 bg-white rounded border border-slate-200">
+                              <div className="text-slate-500 text-[10px]">
+                                KOMMO_PIPELINE_EXCLUIR_LIDERANCAS
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {testResult.secretChecks.pipelineExcluirLiderancas?.foundInKommo ? (
+                                  <Badge className="bg-emerald-600 text-white text-[10px] py-0">
+                                    Pipeline Válida
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-slate-300 text-slate-600 bg-slate-50 text-[10px] py-0"
+                                  >
+                                    Não localizado ou não informado
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
-                  <AlertTitle className="text-xs font-bold">
-                    {testResult.ok
-                      ? 'Teste de Conexão Bem-Sucedido!'
-                      : 'Falha na Conexão com a API'}
-                  </AlertTitle>
-                  <AlertDescription className="text-xs mt-1">
-                    {testResult.message}
-                    {testResult.account && ` (Conta: ${testResult.account})`}
-                  </AlertDescription>
-                </Alert>
+                </div>
               )}
 
               <div className="text-xs text-slate-500 bg-blue-50/70 p-3 rounded-lg border border-blue-200">

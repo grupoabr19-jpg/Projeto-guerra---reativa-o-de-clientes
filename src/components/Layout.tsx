@@ -24,7 +24,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { useAuth } from '@/contexts/AuthContext'
-import { checkKommoStatus } from '@/services/api'
+import { checkKommoStatus, testKommoConnection } from '@/services/api'
 
 export default function Layout() {
   const { user, logout, hasRole } = useAuth()
@@ -33,6 +33,7 @@ export default function Layout() {
 
   const [kommoStatus, setKommoStatus] = useState<{
     configured: boolean
+    connected?: boolean
     subdomain: string
     status: string
     message: string
@@ -75,6 +76,9 @@ export default function Layout() {
   useEffect(() => {
     if (user) {
       refreshKommo()
+      if (hasRole(['admin', 'supervisor'])) {
+        testKommoConnection().catch(() => {})
+      }
       const interval = setInterval(refreshKommo, 60000)
       return () => clearInterval(interval)
     }
@@ -95,8 +99,8 @@ export default function Layout() {
   // Definição estrita de permissões de menu:
   // Operador vê SOMENTE: "Meu Painel", "Atendimento" e "Ranking" (SEM Fila, SEM Clientes, SEM Dashboard, SEM Relatórios, SEM Importação, SEM Configurações).
   // Supervisor e Admin têm acesso ampliado conforme sua função.
-  const isOperador = user.role === 'operador' || !user.role
 
+  const isOperador = user.role === 'operador' || !user.role
   const navItems = isOperador
     ? [
         {
@@ -306,10 +310,15 @@ export default function Layout() {
                   <span className="font-medium text-slate-600">Kommo CRM:</span>
                   {isCheckingKommo ? (
                     <RefreshCw className="h-3.5 w-3.5 text-blue-500 animate-spin" />
-                  ) : kommoStatus?.configured ? (
+                  ) : kommoStatus?.connected ? (
                     <span className="flex items-center text-emerald-600 font-semibold space-x-1">
                       <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
                       <span>Conectado</span>
+                    </span>
+                  ) : kommoStatus?.configured ? (
+                    <span className="flex items-center text-blue-600 font-medium space-x-1">
+                      <span className="h-2 w-2 rounded-full bg-blue-500"></span>
+                      <span>Secrets OK</span>
                     </span>
                   ) : (
                     <span className="flex items-center text-amber-600 font-medium space-x-1">

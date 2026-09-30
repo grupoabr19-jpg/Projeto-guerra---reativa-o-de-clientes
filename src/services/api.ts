@@ -156,9 +156,15 @@ export async function checkKommoStatus() {
   })
   return res.json() as Promise<{
     configured: boolean
+    connected?: boolean
     subdomain: string
+    hasAccessToken: boolean
+    hasOAuth: boolean
+    hasCustomFieldSecrets: boolean
     status: string
     message: string
+    inspecao?: Record<string, any>
+    ultimoSync?: string | null
   }>
 }
 
@@ -173,7 +179,34 @@ export async function testKommoConnection() {
     ok: boolean
     status: string
     message: string
-    account?: string
+    account?: {
+      id?: number
+      name?: string
+      subdomain?: string
+      country?: string
+      currency?: string
+    }
+    stats?: {
+      total_pipelines?: number
+      total_users?: number
+      total_contact_fields?: number
+      total_lead_fields?: number
+      has_companies?: boolean
+      has_contacts?: boolean
+      has_leads?: boolean
+    }
+    pipelines?: Array<{
+      id: number
+      name: string
+      is_main?: boolean
+      statuses: Array<{ id: number; name: string; color?: string }>
+    }>
+    users?: Array<{ id: number; name: string; email?: string }>
+    contact_fields?: Array<{ id: number; name: string; type: string; code?: string }>
+    lead_fields?: Array<{ id: number; name: string; type: string; code?: string }>
+    secretChecks?: Record<string, any>
+    hasReativacaoPipeline?: boolean
+    reativacaoPipeline?: any
     testedAt: string
   }>
 }
