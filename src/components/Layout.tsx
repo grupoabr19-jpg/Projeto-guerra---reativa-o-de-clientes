@@ -21,6 +21,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { useAuth } from '@/contexts/AuthContext'
 import { checkKommoStatus, testKommoConnection } from '@/services/api'
+import { ExpedienteStatusBadge } from '@/components/ExpedienteStatusBadge'
 
 export default function Layout() {
   const { user, logout, hasRole } = useAuth()
@@ -359,11 +360,8 @@ export default function Layout() {
               </TooltipContent>
             </Tooltip>
 
-            {/* Fuso / Expediente Info */}
-            <div className="hidden md:flex items-center space-x-1.5 text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md">
-              <span className="inline-block h-2 w-2 rounded-full bg-blue-500"></span>
-              <span>Expediente: 08h às 18h (BRT)</span>
-            </div>
+            {/* Indicador de status do Expediente */}
+            <ExpedienteStatusBadge showHorarioAtual className="hidden sm:inline-flex" />
           </div>
         </header>
 

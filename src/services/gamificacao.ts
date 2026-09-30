@@ -1,4 +1,5 @@
 import pb from '@/lib/pocketbase/client'
+import { getBrasiliaDateStr } from '@/lib/expediente'
 import type {
   User,
   Interacao,
@@ -162,15 +163,15 @@ export async function calculateRankingData(options?: {
     return true
   })
 
-  // Janela de data para o período
+  // Janela de data para o período no fuso de Brasília (America/Sao_Paulo)
   const now = new Date()
-  const hojeStr = now.toISOString().slice(0, 10)
+  const hojeStr = getBrasiliaDateStr(now)
 
   const isWithinPeriod = (dateStr?: string): boolean => {
     if (!dateStr) return false
     if (periodo === 'total') return true
-    if (periodo === 'hoje') return dateStr.slice(0, 10) === hojeStr
     const d = new Date(dateStr)
+    if (periodo === 'hoje') return getBrasiliaDateStr(d) === hojeStr
     const diffDays = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)
     if (periodo === '7dias') return diffDays <= 7
     if (periodo === '30dias') return diffDays <= 30

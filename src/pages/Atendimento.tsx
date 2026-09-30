@@ -60,6 +60,11 @@ import { useAuth } from '@/contexts/AuthContext'
 import { toast } from '@/hooks/use-toast'
 import type { Cliente, Interacao, ClienteEstado, User } from '@/types'
 import { SEGMENTOS_OFICIAIS } from '@/lib/segmentos'
+import {
+  ajustarParaExpediente,
+  getSugestaoReagendamentoHtml,
+  formatarDataHoraBrasilia,
+} from '@/lib/expediente'
 
 export default function AtendimentoPage() {
   const { clientId } = useParams<{ clientId?: string }>()
@@ -88,6 +93,7 @@ export default function AtendimentoPage() {
   const [obsAtivoForaBase, setObsAtivoForaBase] = useState('')
   const [observacoes, setObservacoes] = useState('')
   const [reagendarData, setReagendarData] = useState('')
+  const [avisoAjusteExpediente, setAvisoAjusteExpediente] = useState<string | null>(null)
   const [numeroPedido, setNumeroPedido] = useState('')
   const [duplicadoCodigo, setDuplicadoCodigo] = useState('')
   const [isFinalizing, setIsFinalizing] = useState(false)
@@ -475,7 +481,9 @@ export default function AtendimentoPage() {
         updatePayload.pedido_confirmado = false // aguarda confirmação na próxima importação
         updatePayload.quarentena_ate = undefined
       } else if (desfechoFinal === 'reagendado') {
-        updatePayload.reagendado_para = new Date(reagendarData).toISOString()
+        const rawDate = new Date(reagendarData)
+        const ajuste = ajustarParaExpediente(rawDate)
+        updatePayload.reagendado_para = ajuste.dataAjustada.toISOString()
         updatePayload.reagendado_operador = user.id
       } else if (desfechoFinal === 'sem_contato') {
         const currentTentativas = (cliente.tentativas_sem_contato || 0) + 1
@@ -518,7 +526,9 @@ export default function AtendimentoPage() {
             : `Atendimento finalizado com desfecho: ${desfechoFinal.toUpperCase()}.\nObservações: ${observacoes || 'Nenhuma'}${
                 numeroPedido ? `\nPedido: ${numeroPedido}` : ''
               }`,
-        reagendado_para: reagendarData ? new Date(reagendarData).toISOString() : undefined,
+        reagendado_para: reagendarData
+          ? ajustarParaExpediente(new Date(reagendarData)).dataAjustada.toISOString()
+          : undefined,
         numero_pedido: numeroPedido,
         estado_anterior: cliente.estado,
         estado_novo: desfechoFinal,
@@ -1309,15 +1319,58 @@ export default function AtendimentoPage() {
 
                       {desfechoFinal === 'reagendado' && (
                         <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
-                          <Label className="text-xs font-bold text-amber-900">
-                            Data e Horário de Retorno Prioritário
-                          </Label>
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs font-bold text-amber-900">
+                              Data e Horário de Retorno Prioritário (Expediente: 07h às 17h)
+                            </Label>
+                            <span className="text-[10px] text-amber-700 font-medium">
+                              Seg a Sex • Fuso Brasília
+                            </span>
+                          </div>
                           <Input
                             type="datetime-local"
                             value={reagendarData}
-                            onChange={(e) => setReagendarData(e.target.value)}
+                            onChange={(e) => {
+                              const val = e.target.value
+                              setReagendarData(val)
+                              if (val) {
+                                const parsed = new Date(val)
+                                const ajuste = ajustarParaExpediente(parsed)
+                                if (ajuste.foiAjustado) {
+                                  setAvisoAjusteExpediente(
+                                    `Atenção: ${ajuste.motivoAjuste} Ao confirmar, o agendamento será registrado para ${formatarDataHoraBrasilia(
+                                      ajuste.dataAjustada,
+                                    )}.`,
+                                  )
+                                } else {
+                                  setAvisoAjusteExpediente(null)
+                                }
+                              } else {
+                                setAvisoAjusteExpediente(null)
+                              }
+                            }}
                             className="bg-white text-xs"
                           />
+                          {avisoAjusteExpediente && (
+                            <div className="p-2 rounded bg-amber-100 border border-amber-300 text-[11px] text-amber-900">
+                              {avisoAjusteExpediente}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 pt-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const sugestao = getSugestaoReagendamentoHtml()
+                                setReagendarData(sugestao)
+                                setAvisoAjusteExpediente(null)
+                              }}
+                              className="text-[11px] h-7 bg-white text-amber-900 border-amber-300 hover:bg-amber-100"
+                            >
+                              Sugerir próximo horário útil (07h–17h)
+                            </Button>
+                          </div>
                         </div>
                       )}
 

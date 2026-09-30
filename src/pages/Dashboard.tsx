@@ -54,6 +54,7 @@ import { TODAS_REGIOES_FILTRO } from '@/types'
 
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
+import { ExpedienteStatusBadge } from '@/components/ExpedienteStatusBadge'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -193,10 +194,13 @@ export default function Dashboard() {
       {/* Top Section */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-slate-900">
-            Painel Executivo de Reativação
-          </h2>
-          <p className="text-xs text-slate-500">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h2 className="text-xl font-bold tracking-tight text-slate-900">
+              Painel Executivo de Reativação
+            </h2>
+            <ExpedienteStatusBadge showHorarioAtual />
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">
             Acompanhamento de recuperação de carteira inativa e taxa de conversão.
           </p>
         </div>

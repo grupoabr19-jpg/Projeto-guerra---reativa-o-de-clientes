@@ -1,5 +1,6 @@
 import pb from '@/lib/pocketbase/client'
 import { calculateRankingData } from './gamificacao'
+import { getBrasiliaDateStr, getBrasiliaParts, createBrasiliaDate } from '@/lib/expediente'
 import type {
   Cliente,
   Interacao,
@@ -335,21 +336,28 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
   const periodo = options?.periodo || 'hoje'
   const regiaoFiltro = options?.regiao && options.regiao !== 'todas' ? options.regiao : null
 
-  // Construir janelas de data
+  // Construir janelas de data alinhadas ao fuso de Brasília (America/Sao_Paulo)
   const now = new Date()
-  const hojeStr = now.toISOString().slice(0, 10)
+  const hojeStr = getBrasiliaDateStr(now)
 
   // Filtro de data PocketBase para interações
   let pbInteracoesFilter = ''
   if (periodo === 'hoje') {
-    // Interações criadas a partir do início de hoje UTC
-    pbInteracoesFilter = `created >= '${hojeStr} 00:00:00'`
+    // Início de hoje no fuso de Brasília convertido para UTC
+    const inicioHojeBrt = createBrasiliaDate(
+      getBrasiliaParts(now).year,
+      getBrasiliaParts(now).month,
+      getBrasiliaParts(now).day,
+      0,
+      0,
+    )
+    pbInteracoesFilter = `created >= '${inicioHojeBrt.toISOString().replace('T', ' ').slice(0, 19)}'`
   } else if (periodo === '7dias') {
     const seteDiasAtras = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-    pbInteracoesFilter = `created >= '${seteDiasAtras.toISOString().slice(0, 10)} 00:00:00'`
+    pbInteracoesFilter = `created >= '${getBrasiliaDateStr(seteDiasAtras)} 00:00:00'`
   } else if (periodo === '30dias') {
     const trintaDiasAtras = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-    pbInteracoesFilter = `created >= '${trintaDiasAtras.toISOString().slice(0, 10)} 00:00:00'`
+    pbInteracoesFilter = `created >= '${getBrasiliaDateStr(trintaDiasAtras)} 00:00:00'`
   }
 
   // Buscar em paralelo: usuários, interações do período (com expand cliente), clientes reagendados e clientes marcados como ativo_fora_base
@@ -452,16 +460,16 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
 
   const reagendadosValidos = reagendados.filter(isReagendadoMatchingRegion)
 
-  // Follow-ups do dia (reagendados para HOJE)
+  // Follow-ups do dia (reagendados para HOJE no fuso de Brasília)
   const followUpsHojeList = reagendadosValidos.filter((c) => {
     if (!c.reagendado_para) return false
-    return c.reagendado_para.slice(0, 10) === hojeStr
+    return getBrasiliaDateStr(new Date(c.reagendado_para)) === hojeStr
   })
 
   // Follow-ups pendentes (reagendados com data <= hoje que continuam em estado reagendado)
   const followUpsPendentesList = reagendadosValidos.filter((c) => {
     if (!c.reagendado_para) return false
-    return c.reagendado_para.slice(0, 10) <= hojeStr
+    return getBrasiliaDateStr(new Date(c.reagendado_para)) <= hojeStr
   })
 
   // Cálculo por operador
@@ -682,7 +690,7 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
 
     // Checar filtro de período com base na data de remoção
     if (periodo === 'hoje') {
-      if (dataRemocao.slice(0, 10) !== hojeStr) continue
+      if (getBrasiliaDateStr(new Date(dataRemocao)) !== hojeStr) continue
     } else if (periodo === '7dias') {
       const seteDiasAtrasStr = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
       if (dataRemocao < seteDiasAtrasStr) continue

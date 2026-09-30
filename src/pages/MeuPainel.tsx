@@ -28,6 +28,7 @@ import {
   calculateRankingData,
 } from '@/services/api'
 import type { Interacao, Cliente, RankingUserRow } from '@/types'
+import { getBrasiliaDateStr, formatarDataHoraBrasilia } from '@/lib/expediente'
 
 export function MeuPainelPage() {
   const { user } = useAuth()
@@ -62,15 +63,15 @@ export function MeuPainelPage() {
     }
   }
 
-  // Filtrar interações por período
+  // Filtrar interações por período alinhado ao horário de Brasília
   const now = new Date()
-  const hojeStr = now.toISOString().slice(0, 10)
+  const hojeStr = getBrasiliaDateStr(now)
 
   const interacoesFiltradas = interacoes.filter((it) => {
     if (!it.created) return false
     const d = new Date(it.created)
     if (periodo === 'hoje') {
-      return it.created.slice(0, 10) === hojeStr
+      return getBrasiliaDateStr(d) === hojeStr
     }
     const diffDays = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)
     if (periodo === '7dias') return diffDays <= 7
@@ -97,10 +98,10 @@ export function MeuPainelPage() {
 
   const taxaConversao = totalLigacoes > 0 ? Math.round((conversoes / totalLigacoes) * 100) : 0
 
-  // Follow-ups do dia (reagendados para HOJE)
+  // Follow-ups do dia (reagendados para HOJE no horário de Brasília)
   const followUpsHoje = reagendados.filter((c) => {
     if (!c.reagendado_para) return false
-    return c.reagendado_para.slice(0, 10) === hojeStr
+    return getBrasiliaDateStr(new Date(c.reagendado_para)) === hojeStr
   })
 
   // Forecast de reagendados (próximos 7 dias)
@@ -111,12 +112,12 @@ export function MeuPainelPage() {
     return d > now && d <= proximos7Dias
   })
 
-  // Sequência / Streak (atendimentos nos últimos dias)
-  const diasComAtendimento = new Set(interacoes.map((i) => i.created.slice(0, 10)))
+  // Sequência / Streak (atendimentos nos últimos dias no fuso de Brasília)
+  const diasComAtendimento = new Set(interacoes.map((i) => getBrasiliaDateStr(new Date(i.created))))
   let streak = 0
   for (let i = 0; i < 30; i++) {
     const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000)
-    const ds = d.toISOString().slice(0, 10)
+    const ds = getBrasiliaDateStr(d)
     if (diasComAtendimento.has(ds)) {
       streak++
     } else if (i > 0) {
@@ -518,7 +519,7 @@ export function MeuPainelPage() {
                           {dataFmt}
                         </Badge>
                         <span className="block text-[10px] text-slate-400 mt-0.5">
-                          {c.reagendado_para?.slice(11, 16) || 'Horário livre'}
+                          {formatarDataHoraBrasilia(c.reagendado_para, { formatoCurto: true })}
                         </span>
                       </div>
                     </div>
@@ -576,7 +577,7 @@ export function MeuPainelPage() {
                   {interacoesFiltradas.slice(0, 10).map((it) => (
                     <tr key={it.id} className="hover:bg-slate-50/70">
                       <td className="py-2.5 px-4 font-mono text-slate-500 text-[11px] whitespace-nowrap">
-                        {new Date(it.created).toLocaleString('pt-BR')}
+                        {formatarDataHoraBrasilia(it.created)}
                       </td>
                       <td className="py-2.5 px-4 font-medium text-slate-800">
                         {it.expand?.cliente?.nome || 'Cliente'}
