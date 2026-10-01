@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Shield, KeyRound, Mail, ArrowRight, Loader2, Sparkles, AlertCircle } from 'lucide-react'
+import { KeyRound, Mail, ArrowRight, Loader2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -65,17 +65,6 @@ export default function Index() {
       setError(msg)
     } finally {
       setLoading(false)
-    }
-  }
-
-  // Preenchimento rápido para teste
-  const fillSample = (roleEmail: string) => {
-    setEmail(roleEmail)
-    // Se for conta interna institucional da equipe @grupoabr.com.br, a senha é a padrão ABR@2026
-    if (roleEmail.includes('@grupoabr.com.br')) {
-      setPassword('ABR@2026')
-    } else {
-      setPassword('Skip@Pass')
     }
   }
 
@@ -170,57 +159,6 @@ export default function Index() {
                     required
                     className="pl-9 text-sm focus-visible:ring-[#253575]"
                   />
-                </div>
-              </div>
-
-              <div className="bg-[#f4f6fa] border border-[#253575]/15 rounded-lg p-3 space-y-2 text-xs">
-                <span className="font-semibold text-[#253575] block">Acessos de demonstração:</span>
-                <div className="flex flex-wrap gap-1.5">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-[11px] border-slate-300 hover:border-[#253575] hover:bg-white"
-                    onClick={() => fillSample('thiago.almeida@grupoabr.com.br')}
-                  >
-                    Thiago (Admin)
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-[11px] border-slate-300 hover:border-[#253575] hover:bg-white"
-                    onClick={() => fillSample('pietra.leite@grupoabr.com.br')}
-                  >
-                    Pietra (Admin)
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-[11px] border-slate-300 hover:border-[#253575] hover:bg-white"
-                    onClick={() => fillSample('eder.bueno@grupoabr.com.br')}
-                  >
-                    Eder Bueno (Op)
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-[11px] border-slate-300 hover:border-[#253575] hover:bg-white"
-                    onClick={() => fillSample('priscila.faria@grupoabr.com.br')}
-                  >
-                    Priscila (Repesc.)
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-[11px] border-slate-300 hover:border-[#253575] hover:bg-white"
-                    onClick={() => fillSample('dyovana.silva@grupoabr.com.br')}
-                  >
-                    Dyovana (Jundiaí)
-                  </Button>
                 </div>
               </div>
             </CardContent>
