@@ -164,17 +164,19 @@ export async function calculateRankingData(options?: {
   })
 
   // Janela de data para o período no fuso de Brasília (America/Sao_Paulo)
+  // DEFINIÇÃO UNIFICADA: Cortes de 7 e 30 dias pela meia-noite de Brasília
   const now = new Date()
   const hojeStr = getBrasiliaDateStr(now)
+  const seteDiasAtrasStr = getBrasiliaDateStr(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000))
+  const trintaDiasAtrasStr = getBrasiliaDateStr(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000))
 
   const isWithinPeriod = (dateStr?: string): boolean => {
     if (!dateStr) return false
     if (periodo === 'total') return true
-    const d = new Date(dateStr)
-    if (periodo === 'hoje') return getBrasiliaDateStr(d) === hojeStr
-    const diffDays = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)
-    if (periodo === '7dias') return diffDays <= 7
-    if (periodo === '30dias') return diffDays <= 30
+    const dStr = getBrasiliaDateStr(new Date(dateStr))
+    if (periodo === 'hoje') return dStr === hojeStr
+    if (periodo === '7dias') return dStr >= seteDiasAtrasStr
+    if (periodo === '30dias') return dStr >= trintaDiasAtrasStr
     return true
   }
 

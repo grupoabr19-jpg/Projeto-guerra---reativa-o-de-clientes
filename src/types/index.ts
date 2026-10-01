@@ -288,6 +288,18 @@ export interface ConcursoSazonal {
   updated: string
 }
 
+export interface MetaValores {
+  contatos_dia?: number
+  conversoes_semana?: number
+}
+
+export interface MetasOperacionaisConfig {
+  global: MetaValores
+  por_regiao?: Record<string, MetaValores>
+  atualizado_em?: string
+  atualizado_por?: string
+}
+
 export interface PesosGamificacao {
   atendimento_ligacao: number
   atendimento_formulario: number

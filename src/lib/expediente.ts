@@ -76,6 +76,14 @@ export function getBrasiliaDateStr(date: Date = new Date()): string {
 }
 
 /**
+ * Retorna a data correspondente à meia-noite (00:00:00.000) de Brasília do dia especificado.
+ */
+export function getBrasiliaMidnight(date: Date = new Date()): Date {
+  const p = getBrasiliaParts(date)
+  return createBrasiliaDate(p.year, p.month, p.day, 0, 0)
+}
+
+/**
  * Constrói uma data ISO precisa correspondente a (ano, mês, dia, hora, minuto)
  * em America/Sao_Paulo.
  */

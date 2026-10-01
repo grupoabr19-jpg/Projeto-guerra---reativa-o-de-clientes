@@ -14,13 +14,15 @@ import {
   Save,
   Trophy,
   Award,
+  Target,
 } from 'lucide-react'
 import {
   fetchPesosGamificacao,
   updatePesosGamificacao,
   PESOS_GAMIFICACAO_PADRAO,
 } from '@/services/gamificacao'
-import type { PesosGamificacao } from '@/types'
+import type { PesosGamificacao, MetasOperacionaisConfig, MetaValores } from '@/types'
+import { fetchMetasOperacionais, saveMetasOperacionais } from '@/services/api'
 import {
   Card,
   CardContent,
@@ -110,6 +112,17 @@ export default function ConfiguracoesPage() {
   const [pesosGamificacao, setPesosGamificacao] =
     useState<PesosGamificacao>(PESOS_GAMIFICACAO_PADRAO)
   const [savingGamificacao, setSavingGamificacao] = useState(false)
+
+  // Metas Operacionais (Admin)
+  const [metasConfig, setMetasConfig] = useState<MetasOperacionaisConfig>({
+    global: { contatos_dia: 40, conversoes_semana: 5 },
+    por_regiao: {},
+  })
+  const [loadingMetas, setLoadingMetas] = useState(false)
+  const [savingMetas, setSavingMetas] = useState(false)
+  const [regiaoMetaSelecionada, setRegiaoMetaSelecionada] = useState<string>('')
+  const [metaRegiaoContatos, setMetaRegiaoContatos] = useState<number>(40)
+  const [metaRegiaoConversoes, setMetaRegiaoConversoes] = useState<number>(5)
 
   // Motor da Fila
   const [motorFila, setMotorFila] = useState({
@@ -221,6 +234,11 @@ export default function ConfiguracoesPage() {
 
       const pesosGam = await fetchPesosGamificacao()
       setPesosGamificacao(pesosGam)
+
+      const metasRes = await fetchMetasOperacionais()
+      if (metasRes) {
+        setMetasConfig(metasRes)
+      }
     } catch (err) {
       console.error('Erro ao carregar configurações:', err)
     }
@@ -294,6 +312,53 @@ export default function ConfiguracoesPage() {
     } finally {
       setSavingGamificacao(false)
     }
+  }
+
+  const handleSaveMetas = async () => {
+    if (user?.role !== 'admin') {
+      alert('Apenas administradores podem gerenciar metas operacionais.')
+      return
+    }
+    setSavingMetas(true)
+    try {
+      await saveMetasOperacionais(metasConfig)
+      alert('Metas operacionais salvas com sucesso!')
+    } catch (err: unknown) {
+      console.error('Falha ao salvar metas operacionais:', err)
+      const msg = err instanceof Error ? err.message : 'Erro ao salvar metas'
+      alert(`Falha ao salvar metas: ${msg}`)
+    } finally {
+      setSavingMetas(false)
+    }
+  }
+
+  const handleSalvarMetaRegiao = () => {
+    if (!regiaoMetaSelecionada) {
+      alert('Selecione uma região para definir a meta específica.')
+      return
+    }
+    setMetasConfig((prev) => ({
+      ...prev,
+      por_regiao: {
+        ...(prev.por_regiao || {}),
+        [regiaoMetaSelecionada]: {
+          contatos_dia: Math.max(0, metaRegiaoContatos),
+          conversoes_semana: Math.max(0, metaRegiaoConversoes),
+        },
+      },
+    }))
+    setRegiaoMetaSelecionada('')
+  }
+
+  const handleRemoverMetaRegiao = (nomeRegiao: string) => {
+    setMetasConfig((prev) => {
+      const novoPorRegiao = { ...(prev.por_regiao || {}) }
+      delete novoPorRegiao[nomeRegiao]
+      return {
+        ...prev,
+        por_regiao: novoPorRegiao,
+      }
+    })
   }
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -478,6 +543,16 @@ export default function ConfiguracoesPage() {
           >
             <Trophy className="h-3.5 w-3.5 text-amber-500" />
             <span>Pontuação da Gamificação</span>
+          </TabsTrigger>
+          <TabsTrigger value="metas" className="text-xs font-medium flex items-center gap-1.5">
+            <Target className="h-3.5 w-3.5 text-emerald-600" />
+            <span>Metas Operacionais</span>
+            <Badge
+              variant="secondary"
+              className="text-[9px] px-1.5 py-0 bg-emerald-100 text-emerald-800"
+            >
+              Admin
+            </Badge>
           </TabsTrigger>
         </TabsList>
 
@@ -1362,6 +1437,281 @@ export default function ConfiguracoesPage() {
                 {savingGamificacao ? 'Salvando...' : 'Salvar Pesos da Gamificação'}
               </Button>
             </CardFooter>
+          </Card>
+        </TabsContent>
+
+        {/* TAB: METAS OPERACIONAIS (EXCLUSIVO ADMIN) */}
+        <TabsContent value="metas" className="space-y-4">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="bg-gradient-to-r from-emerald-50/50 via-teal-50/30 to-transparent border-b border-slate-100">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-base font-semibold text-slate-850 flex items-center gap-2">
+                    <Target className="h-5 w-5 text-emerald-600" />
+                    <span>Metas Operacionais da Equipe</span>
+                    <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-200 text-[10px]">
+                      Apenas Administrador
+                    </Badge>
+                  </CardTitle>
+                  <CardDescription className="text-xs text-slate-500 mt-1">
+                    Defina a meta de contatos por dia e conversões por semana. Essas metas abastecem
+                    os cards de desempenho em destaque no &ldquo;Meu Painel&rdquo; de cada operador.
+                  </CardDescription>
+                </div>
+                {user?.role !== 'admin' && (
+                  <Badge
+                    variant="outline"
+                    className="text-amber-700 bg-amber-50 border-amber-200 text-xs"
+                  >
+                    Modo Somente Leitura (Apenas Admin edita)
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-6 space-y-6">
+              {/* Meta Padrão Global */}
+              <div className="p-4 bg-slate-50/70 border border-slate-200 rounded-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-800">
+                      Meta Global (Padrão para todos os operadores)
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      Aplicada automaticamente caso o operador não possua meta específica definida
+                      para sua região.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
+                    Regra Geral
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                  <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-xs space-y-2">
+                    <Label className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+                      <span>Meta de Contatos por Dia</span>
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        por operador / dia
+                      </span>
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={500}
+                        disabled={user?.role !== 'admin' || savingMetas}
+                        value={metasConfig.global?.contatos_dia ?? 0}
+                        onChange={(e) =>
+                          setMetasConfig((prev) => ({
+                            ...prev,
+                            global: {
+                              ...prev.global,
+                              contatos_dia: Math.max(0, parseInt(e.target.value, 10) || 0),
+                            },
+                          }))
+                        }
+                        className="h-9 text-sm font-bold text-slate-800"
+                        placeholder="Ex: 40"
+                      />
+                      <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
+                        contatos / dia
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Exibida no card &ldquo;Meta de Contatos por Dia&rdquo; com percentual atingido
+                      hoje.
+                    </p>
+                  </div>
+
+                  <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-xs space-y-2">
+                    <Label className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+                      <span>Meta de Conversões por Semana</span>
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        por operador / semana
+                      </span>
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={200}
+                        disabled={user?.role !== 'admin' || savingMetas}
+                        value={metasConfig.global?.conversoes_semana ?? 0}
+                        onChange={(e) =>
+                          setMetasConfig((prev) => ({
+                            ...prev,
+                            global: {
+                              ...prev.global,
+                              conversoes_semana: Math.max(0, parseInt(e.target.value, 10) || 0),
+                            },
+                          }))
+                        }
+                        className="h-9 text-sm font-bold text-slate-800"
+                        placeholder="Ex: 5"
+                      />
+                      <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
+                        compras / semana
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Exibida no card &ldquo;Meta de Conversões por Semana&rdquo; considerando
+                      compras da semana corrente.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Metas Personalizadas por Região (Opcional / Suporte Avançado) */}
+              <div className="border border-slate-200 rounded-xl p-4 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-800">
+                      Metas Diferenciadas por Região (Opcional)
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      Defina metas específicas para praças com maior potencial ou características
+                      especiais (ex: ATACADO, Bragança, etc.).
+                    </p>
+                  </div>
+                </div>
+
+                {user?.role === 'admin' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 p-3 bg-slate-50 rounded-lg border border-slate-200 items-end">
+                    <div className="space-y-1 sm:col-span-1">
+                      <Label className="text-[11px] font-semibold text-slate-600">
+                        Região / Rota
+                      </Label>
+                      <Select
+                        value={regiaoMetaSelecionada}
+                        onValueChange={(val) => setRegiaoMetaSelecionada(val)}
+                      >
+                        <SelectTrigger className="h-8 text-xs bg-white">
+                          <SelectValue placeholder="Selecione a região" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TODAS_REGIOES_FILTRO.map((r) => (
+                            <SelectItem key={r} value={r}>
+                              {r}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold text-slate-600">
+                        Contatos / Dia
+                      </Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={metaRegiaoContatos}
+                        onChange={(e) => setMetaRegiaoContatos(parseInt(e.target.value, 10) || 0)}
+                        className="h-8 text-xs bg-white"
+                        placeholder="Ex: 45"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold text-slate-600">
+                        Conversões / Sem
+                      </Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={metaRegiaoConversoes}
+                        onChange={(e) => setMetaRegiaoConversoes(parseInt(e.target.value, 10) || 0)}
+                        className="h-8 text-xs bg-white"
+                        placeholder="Ex: 6"
+                      />
+                    </div>
+
+                    <div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleSalvarMetaRegiao}
+                        className="h-8 text-xs w-full bg-slate-800 hover:bg-slate-900 text-white"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Definir para Região
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Lista de Metas Regionais Ativas */}
+                {Object.keys(metasConfig.por_regiao || {}).length > 0 ? (
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
+                        <tr>
+                          <th className="py-2 px-3">Região</th>
+                          <th className="py-2 px-3">Meta Contatos / Dia</th>
+                          <th className="py-2 px-3">Meta Conversões / Semana</th>
+                          {user?.role === 'admin' && <th className="py-2 px-3 text-right">Ação</th>}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {Object.entries(metasConfig.por_regiao || {}).map(([reg, val]) => (
+                          <tr key={reg} className="hover:bg-slate-50">
+                            <td className="py-2 px-3 font-semibold text-slate-800">{reg}</td>
+                            <td className="py-2 px-3 font-mono font-bold text-slate-700">
+                              {val.contatos_dia ?? metasConfig.global.contatos_dia} contatos
+                            </td>
+                            <td className="py-2 px-3 font-mono font-bold text-emerald-700">
+                              {val.conversoes_semana ?? metasConfig.global.conversoes_semana}{' '}
+                              conversões
+                            </td>
+                            {user?.role === 'admin' && (
+                              <td className="py-2 px-3 text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoverMetaRegiao(reg)}
+                                  className="h-6 text-[11px] text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                                >
+                                  Remover
+                                </Button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 italic py-2">
+                    Nenhuma meta regional específica definida. Todas as regiões seguirão a meta
+                    global acima.
+                  </p>
+                )}
+              </div>
+
+              {metasConfig.atualizado_em && (
+                <div className="text-[11px] text-slate-400">
+                  Última atualização das metas:{' '}
+                  {new Date(metasConfig.atualizado_em).toLocaleString('pt-BR')}
+                </div>
+              )}
+            </CardContent>
+
+            {user?.role === 'admin' && (
+              <CardFooter className="bg-slate-50 border-t border-slate-100 flex items-center justify-between p-4">
+                <span className="text-xs text-slate-500">
+                  As metas salvas passam a valer imediatamente para os cálculos do Meu Painel.
+                </span>
+                <Button
+                  onClick={handleSaveMetas}
+                  disabled={savingMetas}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs"
+                >
+                  <Save className="h-4 w-4 mr-1.5" />
+                  {savingMetas ? 'Salvando...' : 'Salvar Metas Operacionais'}
+                </Button>
+              </CardFooter>
+            )}
           </Card>
         </TabsContent>
 

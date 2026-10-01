@@ -90,6 +90,65 @@ export async function updateConfiguracao(chave: string, valor: Record<string, un
   return pb.collection('configuracoes').update<Configuracao>(existing.id, { valor })
 }
 
+/**
+ * Busca a configuração de metas operacionais (endpoint com fallback para collection).
+ * Acessível a qualquer perfil autenticado (operador, líder, supervisor, admin).
+ */
+export async function fetchMetasOperacionais(): Promise<import('@/types').MetasOperacionaisConfig> {
+  try {
+    const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/metas`, {
+      headers: {
+        Authorization: pb.authStore.token,
+      },
+    })
+    if (res.ok) {
+      return (await res.json()) as import('@/types').MetasOperacionaisConfig
+    }
+  } catch {
+    /* intentionally ignored */
+  }
+
+  // Fallback direto via SDK
+  try {
+    const rec = await pb
+      .collection('configuracoes')
+      .getFirstListItem<Configuracao>("chave = 'metas_operacionais'")
+    if (rec && rec.valor) {
+      return rec.valor as unknown as import('@/types').MetasOperacionaisConfig
+    }
+  } catch {
+    /* intentionally ignored */
+  }
+
+  return {
+    global: { contatos_dia: 0, conversoes_semana: 0 },
+    por_regiao: {},
+  }
+}
+
+/**
+ * Salva a configuração de metas operacionais (exclusivo ADMIN).
+ */
+export async function saveMetasOperacionais(
+  metas: import('@/types').MetasOperacionaisConfig,
+): Promise<{ ok: boolean; message: string }> {
+  const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/metas`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: pb.authStore.token,
+    },
+    body: JSON.stringify(metas),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || err.message || 'Falha ao salvar metas operacionais')
+  }
+
+  return res.json()
+}
+
 // Regiões de Atendimento
 export async function fetchRegioes() {
   return pb.collection('regioes').getFullList<Regiao>({
@@ -133,9 +192,18 @@ export async function fetchInteracoesByOperador(operadorId: string) {
   })
 }
 
+/**
+ * Busca clientes reagendados atribuídos a um operador.
+ * DEFINIÇÃO UNIFICADA (Auditoria de Consistência):
+ * Um cliente reagendado pertence à carteira de follow-up do operador se:
+ * 1. O operador foi quem agendou o follow-up (`reagendado_operador = operadorId`) OU
+ * 2. O cliente foi repassado / atribuído atualmente a ele (`operador = operadorId`),
+ * desde que possua data de reagendamento ativa (`reagendado_para != ''`).
+ * Esta regra unifica exatamente a visão de "Meu Painel" e "Dashboard/Equipe".
+ */
 export async function fetchClientesReagendadosOperador(operadorId: string) {
   return pb.collection('clientes').getFullList<Cliente>({
-    filter: `reagendado_operador = '${operadorId}' && reagendado_para != ''`,
+    filter: `(reagendado_operador = '${operadorId}' || operador = '${operadorId}') && reagendado_para != ''`,
     sort: '-prioridade_transferencia,reagendado_para',
   })
 }

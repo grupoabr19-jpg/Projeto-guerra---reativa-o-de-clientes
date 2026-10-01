@@ -174,7 +174,8 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
           c.set('lock_timestamp', null)
         }
 
-        // Recalcular score ponderado        const scoreRecencia = Math.min(100, Math.round((dias / 180) * 100))
+        // Recalcular score ponderado
+        const scoreRecencia = Math.min(100, Math.round((dias / 180) * 100))
         const comprasCount = c.getInt('compras_count') || c.getInt('frequencia_compras_12m') || 1
         const scoreFreq = Math.min(100, comprasCount * 12)
         const valHist = c.getFloat('valor_historico') || c.getFloat('fat_12m_reais') || 0
