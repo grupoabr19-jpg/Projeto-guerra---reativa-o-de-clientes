@@ -173,7 +173,10 @@ export default function FilaPage() {
         return <Badge className="bg-slate-500 text-white text-[10px]">Sem Contato</Badge>
       default:
         return (
-          <Badge variant="outline" className="border-blue-400 text-blue-700 bg-blue-50 text-[10px]">
+          <Badge
+            variant="outline"
+            className="border-[#253575]/30 text-[#253575] bg-[#253575]/10 text-[10px] font-semibold"
+          >
             Na Fila
           </Badge>
         )
@@ -182,28 +185,36 @@ export default function FilaPage() {
 
   return (
     <div className="space-y-6">
-      {/* Action Header Card */}
-      <div className="bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900 rounded-2xl p-6 text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1.5 max-w-xl">
+      {/* Action Header Card com Azul Petróleo / Azul ABR e Curva Laranja */}
+      <div className="relative overflow-hidden bg-gradient-to-r from-[#142758] via-[#1d2d66] to-[#253575] rounded-2xl p-6 text-white shadow-xl shadow-[#142758]/20 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-white/10">
+        {/* Grafismo curva sutil de fundo */}
+        <div className="absolute top-0 right-0 w-72 h-72 bg-[#F18800]/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-0 left-0 h-1.5 w-full bg-[#142758]">
+          <div className="h-full w-36 bg-[#F18800] rounded-r-full" />
+        </div>
+
+        <div className="space-y-1.5 max-w-xl relative z-10 pt-1">
           <div className="flex items-center space-x-2">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="text-xs uppercase font-bold tracking-wider text-blue-200">
+            <span className="text-xs uppercase font-bold tracking-wider text-orange-300">
               Motor de Fila & Lock Atômico
             </span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold">Fila Dinâmica de Atendimento</h2>
-          <p className="text-xs sm:text-sm text-blue-100/90 leading-relaxed">
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
+            Fila Dinâmica de Atendimento
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-200/90 leading-relaxed">
             Clique no botão ao lado para retirar atomicamente o próximo contato prioritário
             (Reagendados do dia ou maior score regional) sem concorrência com outros operadores.
           </p>
         </div>
 
-        <div className="shrink-0 flex items-center space-x-3">
+        <div className="shrink-0 flex items-center space-x-3 relative z-10">
           <Button
             size="lg"
             onClick={handleNovoContato}
             disabled={reserving}
-            className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-6 py-6 text-sm shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+            className="bg-[#F18800] hover:bg-[#d97b00] text-white font-bold px-6 py-6 text-sm shadow-lg shadow-[#F18800]/30 active:scale-95 transition-all"
           >
             {reserving ? (
               <>
@@ -219,7 +230,6 @@ export default function FilaPage() {
           </Button>
         </div>
       </div>
-
       {/* Filter and Search Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
         <div className="relative w-full sm:w-72">
@@ -274,7 +284,7 @@ export default function FilaPage() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-sm font-semibold text-slate-800 flex items-center space-x-2">
-                <ListOrdered className="h-4 w-4 text-blue-600" />
+                <ListOrdered className="h-4 w-4 text-[#253575]" />
                 <span>Posições da Fila Regional</span>
               </CardTitle>
               <CardDescription className="text-xs text-slate-500">
@@ -331,7 +341,7 @@ export default function FilaPage() {
                         {getFaixaBadge(item.faixa, item.dias_sem_faturar)}
                       </td>
                       <td className="py-3 px-3 text-center">
-                        <div className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold font-mono bg-blue-50 text-blue-700 border border-blue-200">
+                        <div className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold font-mono bg-[#253575]/10 text-[#253575] border border-[#253575]/20">
                           {item.score || 0} pts
                         </div>
                       </td>
@@ -354,7 +364,7 @@ export default function FilaPage() {
                         <Button
                           size="sm"
                           onClick={() => navigate(`/atendimento/${item.id}`)}
-                          className="h-7 text-xs bg-slate-900 hover:bg-slate-800 text-white"
+                          className="h-7 text-xs bg-[#253575] hover:bg-[#1e2b5e] text-white font-medium shadow-xs"
                         >
                           Iniciar
                           <ArrowRight className="ml-1 h-3.5 w-3.5" />

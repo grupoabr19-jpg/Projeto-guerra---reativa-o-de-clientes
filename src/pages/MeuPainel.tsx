@@ -263,7 +263,7 @@ export function MeuPainelPage() {
         <div>
           <div className="flex items-center space-x-2">
             <h1 className="text-xl font-bold tracking-tight text-slate-900">Meu Painel de Ação</h1>
-            <Badge className="bg-blue-600 text-white text-[10px] font-mono">Operador</Badge>
+            <Badge className="bg-[#253575] text-white text-[10px] font-mono">Operador</Badge>
             {meuRanking?.tituloAtual && (
               <Badge
                 variant="outline"
@@ -322,7 +322,7 @@ export function MeuPainelPage() {
             <Link to="/atendimento">
               <Button
                 size="sm"
-                className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm"
+                className="h-8 bg-[#F18800] hover:bg-[#d97b00] text-white text-xs font-semibold shadow-sm shadow-[#F18800]/25"
               >
                 <PhoneCall className="h-3.5 w-3.5 mr-1.5" />
                 Ir para Atendimento
@@ -353,7 +353,7 @@ export function MeuPainelPage() {
                       ? 'bg-slate-200 text-slate-600'
                       : metaContatosAtingida
                         ? 'bg-emerald-500 text-white'
-                        : 'bg-blue-600 text-white'
+                        : 'bg-[#253575] text-white'
                   }`}
                 >
                   <Target className="h-5 w-5" />
@@ -408,7 +408,7 @@ export function MeuPainelPage() {
                 <div className="space-y-1">
                   <Progress
                     value={Math.min(100, percMetaContatos)}
-                    className={`h-2.5 ${metaContatosAtingida ? '[&>div]:bg-emerald-500' : '[&>div]:bg-blue-600'}`}
+                    className={`h-2.5 ${metaContatosAtingida ? '[&>div]:bg-emerald-500' : '[&>div]:bg-[#253575]'}`}
                   />
                   <div className="flex justify-between text-[10px] text-slate-400 font-mono">
                     <span>0 contatos</span>
@@ -529,9 +529,12 @@ export function MeuPainelPage() {
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex items-center space-x-2">
-            <Filter className="h-4 w-4 text-blue-600" />
+            <Filter className="h-4 w-4 text-[#253575]" />
             <h2 className="text-sm font-bold text-slate-800">Histórico & Filtro de Desempenho</h2>
-            <Badge variant="outline" className="text-xs font-normal text-slate-600 bg-slate-50">
+            <Badge
+              variant="outline"
+              className="text-xs font-normal text-[#253575] bg-[#253575]/10 border-[#253575]/20"
+            >
               {getPeriodoLabel()}
             </Badge>
           </div>
@@ -542,7 +545,7 @@ export function MeuPainelPage() {
               onClick={() => aplicarAtalho('mes_atual')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 atalhoPeriodo === 'mes_atual'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-[#253575] text-white shadow-xs'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
             >
@@ -552,7 +555,7 @@ export function MeuPainelPage() {
               onClick={() => aplicarAtalho('mes_anterior')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 atalhoPeriodo === 'mes_anterior'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-[#253575] text-white shadow-xs'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
             >
@@ -562,7 +565,7 @@ export function MeuPainelPage() {
               onClick={() => aplicarAtalho('7dias')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 atalhoPeriodo === '7dias'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-[#253575] text-white shadow-xs'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
             >
@@ -572,7 +575,7 @@ export function MeuPainelPage() {
               onClick={() => aplicarAtalho('30dias')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 atalhoPeriodo === '30dias'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-[#253575] text-white shadow-xs'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
             >
@@ -582,7 +585,7 @@ export function MeuPainelPage() {
               onClick={() => aplicarAtalho('tudo')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 atalhoPeriodo === 'tudo'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-[#253575] text-white shadow-xs'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
             >

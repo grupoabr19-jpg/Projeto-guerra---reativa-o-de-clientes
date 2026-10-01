@@ -709,11 +709,10 @@ export default function RelatoriosPage() {
           <Button
             onClick={handleExportGeralCSV}
             size="sm"
-            variant="outline"
-            className="h-8 text-xs text-slate-700 bg-white font-medium"
+            className="h-8 text-xs bg-[#F18800] hover:bg-[#d97b00] text-white font-semibold shadow-xs shadow-[#F18800]/25"
           >
             <Download className="h-3.5 w-3.5 mr-1.5" />
-            Exportar Geral
+            Exportar Geral (CSV)
           </Button>
         </div>
       </div>
@@ -953,7 +952,7 @@ export default function RelatoriosPage() {
       <section className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center space-x-2.5">
-            <div className="h-8 w-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+            <div className="h-8 w-8 rounded-lg bg-[#253575] text-white flex items-center justify-center shadow-xs">
               <Activity className="h-4 w-4" />
             </div>
             <div>
@@ -963,7 +962,7 @@ export default function RelatoriosPage() {
                 </h2>
                 <Badge
                   variant="outline"
-                  className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] font-mono uppercase"
+                  className="bg-[#253575]/10 text-[#253575] border-[#253575]/20 text-[10px] font-mono uppercase"
                 >
                   {selectedPeriodo === 'hoje'
                     ? 'Hoje (Brasília)'

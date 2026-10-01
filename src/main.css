@@ -1,7 +1,7 @@
 /* Global styles - Theme, font, utilities, animations and global components */
 
-/* CHANGE THE FONT BELOW TO WHATEVER YOU WANT */
-@import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap');
+/* Fonte oficial Grupo ABR: Montserrat (apoio, dados, tabelas e leitura contínua) */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -9,103 +9,111 @@
 
 @layer base {
   :root {
-    /* Change the colors to match the design system */
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Identidade Oficial Grupo ABR
+       - Azul ABR: #253575 -> 228 52% 30% (cor dominante, 60-80%)
+       - Laranja ABR: #F18800 -> 34 100% 47% (energia/ação/CTA, 10-20%)
+       - Azul Petróleo: #142758 -> 223 63% 21% (versões escuras, sidebar, contraste)
+       - Branco/Neutro: 210 20% 98% (organização e respiro)
+    */
+    --background: 210 25% 98%;
+    --foreground: 224 45% 15%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 224 45% 15%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 224 45% 15%;
 
-    --primary: 222.2 84% 4.9%;
-    --primary-foreground: 210 40% 98%;
+    /* Azul ABR (#253575) como Primary */
+    --primary: 228 52% 30%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 98%;
-    --secondary-foreground: 222.2 84% 4.9%;
+    /* Azul Petróleo (#142758) */
+    --petroleo: 223 63% 21%;
+    --petroleo-foreground: 0 0% 100%;
 
-    --muted: 210 40% 98%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Laranja ABR (#F18800) como Accent/CTA */
+    --accent: 34 100% 47%;
+    --accent-foreground: 0 0% 100%;
 
-    --accent: 210 40% 98%;
-    --accent-foreground: 222.2 84% 4.9%;
+    --secondary: 220 25% 94%;
+    --secondary-foreground: 228 52% 25%;
+
+    --muted: 220 20% 94%;
+    --muted-foreground: 220 15% 45%;
 
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 220 18% 88%;
+    --input: 220 18% 88%;
+    --ring: 228 52% 30%;
 
     --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 222.2 84% 4.9%;
-
-    --sidebar-primary: 222.2 84% 4.9%;
-
+    /* Sidebar oficial ABR: Azul Petróleo (#142758) negativo com texto branco */
+    --sidebar-background: 223 63% 21%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 34 100% 47%;
     --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 228 52% 30%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 224 50% 28%;
+    --sidebar-ring: 34 100% 47%;
 
-    --sidebar-accent: 210 40% 98%;
-
-    --sidebar-accent-foreground: 222.2 84% 4.9%;
-
-    --sidebar-border: 214.3 31.8% 91.4%;
-
-    --sidebar-ring: 222.2 84% 4.9%;
-
-    --chart-1: 34 100% 44%;
-    --chart-2: 189 100% 38%;
-    --chart-3: 209 100% 32%;
-    --chart-4: 42 100% 50%;
-    --chart-5: 33 100% 50%;
+    /* Cores de Gráficos Grupo ABR: Azul dominante, Laranja condução, Variações institucionais */
+    --chart-1: 228 52% 30%; /* Azul ABR */
+    --chart-2: 34 100% 47%; /* Laranja ABR */
+    --chart-3: 223 63% 21%; /* Azul Petróleo */
+    --chart-4: 200 80% 40%; /* Azul Claro */
+    --chart-5: 152 65% 38%; /* Verde Sucesso */
   }
 
   .dark {
-    /* Change the colors to match the design system consistent with the dark mode */
-    --background: 222.2 84% 4.9%;
+    --background: 223 63% 14%;
     --foreground: 210 40% 98%;
 
-    --card: 222.2 84% 4.9%;
+    --card: 223 63% 18%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 222.2 84% 4.9%;
+    --popover: 223 63% 18%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 84% 4.9%;
+    --primary: 228 52% 45%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 222.2 84% 4.9%;
+    --petroleo: 223 63% 21%;
+    --petroleo-foreground: 0 0% 100%;
+
+    --accent: 34 100% 47%;
+    --accent-foreground: 0 0% 100%;
+
+    --secondary: 224 45% 24%;
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 222.2 84% 4.9%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-
-    --accent: 222.2 84% 4.9%;
-    --accent-foreground: 210 40% 98%;
+    --muted: 224 45% 24%;
+    --muted-foreground: 215 20% 65%;
 
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 222.2 84% 4.9%;
-    --input: 222.2 84% 4.9%;
-    --ring: 214.3 31.8% 91.4%;
-    --sidebar-background: 222.2 84% 4.9%;
+    --border: 224 45% 26%;
+    --input: 224 45% 26%;
+    --ring: 34 100% 47%;
+    --sidebar-background: 223 63% 16%;
     --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 222.2 84% 4.9%;
+    --sidebar-primary: 34 100% 47%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222.2 84% 4.9%;
+    --sidebar-accent: 228 52% 30%;
     --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 222.2 84% 4.9%;
-    --sidebar-ring: 222.2 84% 4.9%;
+    --sidebar-border: 224 50% 24%;
+    --sidebar-ring: 34 100% 47%;
 
-    --chart-1: 270 100% 44%;
-    --chart-2: 164 100% 38%;
-    --chart-3: 43 100% 32%;
-    --chart-4: 340 100% 50%;
-    --chart-5: 10 100% 50%;
+    --chart-1: 228 52% 45%;
+    --chart-2: 34 100% 47%;
+    --chart-3: 200 80% 50%;
+    --chart-4: 152 65% 45%;
+    --chart-5: 40 90% 55%;
   }
 
   /* NEVER REMOVE THIS */

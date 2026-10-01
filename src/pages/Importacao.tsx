@@ -1774,7 +1774,7 @@ export default function ImportacaoPage() {
             size="sm"
             onClick={handleConfirmImport}
             disabled={!file || rawRows.length === 0 || isProcessing}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-medium"
+            className="bg-[#F18800] hover:bg-[#d97b00] text-white font-semibold shadow-sm shadow-[#F18800]/25"
           >
             {isProcessing ? (
               <>

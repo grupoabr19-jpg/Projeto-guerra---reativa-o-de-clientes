@@ -82,7 +82,7 @@ export function ForgotPassword() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-blue-600 text-white text-xs"
+                className="w-full bg-[#F18800] hover:bg-[#d97b00] text-white text-xs font-semibold shadow-sm shadow-[#F18800]/20"
               >
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -96,7 +96,7 @@ export function ForgotPassword() {
         <div className="p-4 pt-0 text-center">
           <Link
             to="/"
-            className="text-xs text-blue-600 hover:underline flex items-center justify-center"
+            className="text-xs text-[#253575] font-semibold hover:text-[#F18800] hover:underline flex items-center justify-center transition-colors"
           >
             <ArrowLeft className="h-3.5 w-3.5 mr-1" />
             Voltar para o Login
@@ -154,7 +154,10 @@ export function ResetPassword() {
             <CheckCircle2 className="h-6 w-6 text-emerald-600 mx-auto" />
             <p className="text-xs font-semibold text-emerald-800">Senha alterada com sucesso!</p>
             <Link to="/" className="inline-block">
-              <Button size="sm" className="bg-blue-600 text-white text-xs">
+              <Button
+                size="sm"
+                className="bg-[#253575] hover:bg-[#1e2b5e] text-white text-xs font-semibold"
+              >
                 Ir para o Login
               </Button>
             </Link>
@@ -192,7 +195,7 @@ export function ResetPassword() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-blue-600 text-white text-xs"
+                className="w-full bg-[#F18800] hover:bg-[#d97b00] text-white text-xs font-semibold shadow-sm"
               >
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -233,7 +236,10 @@ export function VerifyEmail() {
             <CheckCircle2 className="h-8 w-8 text-emerald-600 mx-auto" />
             <h3 className="text-sm font-bold text-slate-800">E-mail verificado com sucesso!</h3>
             <Link to="/">
-              <Button size="sm" className="bg-blue-600 text-white text-xs mt-2">
+              <Button
+                size="sm"
+                className="bg-[#253575] hover:bg-[#1e2b5e] text-white text-xs font-semibold mt-2"
+              >
                 Acessar Login
               </Button>
             </Link>

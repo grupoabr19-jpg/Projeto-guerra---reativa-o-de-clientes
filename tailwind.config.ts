@@ -27,10 +27,19 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter var', 'SF Pro Display', 'system-ui', 'sans-serif'],
-        display: ['SF Pro Display', 'Inter var', 'system-ui', 'sans-serif'],
+        sans: ['Montserrat', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['Montserrat', 'system-ui', '-apple-system', 'sans-serif'],
       },
       colors: {
+        abr: {
+          blue: '#253575',
+          orange: '#F18800',
+          petroleo: '#142758',
+          'blue-dark': '#1e2b5e',
+          'blue-light': '#32448f',
+          'orange-hover': '#d97b00',
+          'orange-light': '#fff3e0',
+        },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',

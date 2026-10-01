@@ -81,7 +81,11 @@ export default function Layout() {
 
   if (!user && isPublicAuthPage) {
     return (
-      <main className="min-h-screen bg-slate-50 flex flex-col justify-center">
+      <main className="min-h-screen bg-[#f4f6fa] flex flex-col justify-center relative overflow-hidden">
+        {/* Grafismo proprietário: faixa/curva sutil institucional */}
+        <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#253575]">
+          <div className="h-full w-48 bg-[#F18800] rounded-r-full" />
+        </div>
         <Outlet />
       </main>
     )
@@ -201,23 +205,39 @@ export default function Layout() {
         ]
 
   const SidebarContent = () => (
-    <div className="flex flex-col h-full bg-slate-900 text-slate-100">
-      {/* Brand Header */}
-      <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="h-9 w-9 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold tracking-tight shadow-md shadow-blue-500/20">
-            PG
+    <div className="flex flex-col h-full bg-[#142758] text-white relative">
+      {/* Detalhe superior da curva/grafismo laranja ABR */}
+      <div className="h-1 w-full bg-[#253575] flex">
+        <div className="h-full w-24 bg-[#F18800] rounded-r-full" />
+      </div>
+
+      {/* Brand Header com Logo Oficial */}
+      <div className="p-4 border-b border-[#253575]/80 flex items-center space-x-3 bg-[#112048]">
+        <div className="relative shrink-0">
+          <img
+            src="/src/assets/logo-abr-oficial-bf48e.png"
+            alt="Grupo ABR — Seu parceiraço!"
+            className="h-11 w-11 rounded-lg object-contain shadow-md ring-1 ring-white/15 bg-[#253575]"
+          />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center space-x-1.5">
+            <span className="font-bold text-sm tracking-tight text-white leading-tight">
+              GRUPO ABR
+            </span>
+            <span className="text-[10px] uppercase font-bold text-[#F18800] bg-[#F18800]/15 px-1.5 py-0.2 rounded">
+              Guerra
+            </span>
           </div>
-          <div>
-            <h1 className="font-bold text-sm tracking-wide text-white uppercase">Projeto Guerra</h1>
-            <p className="text-[11px] text-slate-400">Reativação de Clientes</p>
-          </div>
+          <p className="text-[11px] text-slate-300 truncate font-medium mt-0.5">
+            Sistema de Reativação
+          </p>
         </div>
       </div>
 
       {/* Nav List */}
       <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-        <div className="text-[10px] uppercase font-semibold text-slate-400 px-3 pb-2 tracking-wider">
+        <div className="text-[10px] uppercase font-bold text-slate-300/80 px-3 pb-2 tracking-wider">
           Menu Operacional
         </div>
         {navItems.map((item) => {
@@ -230,35 +250,48 @@ export default function Layout() {
               key={item.href}
               to={item.href}
               onClick={() => setMobileMenuOpen(false)}
-              className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              className={`group flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all relative ${
                 isActive
-                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                  ? 'bg-[#253575] text-white shadow-sm font-semibold'
+                  : 'text-slate-200 hover:text-white hover:bg-white/10'
               }`}
             >
-              <Icon className="h-4 w-4 shrink-0" />
-              <span>{item.title}</span>
+              {isActive && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#F18800] rounded-r-full" />
+              )}
+              <Icon
+                className={`h-4 w-4 shrink-0 transition-colors ${
+                  isActive ? 'text-[#F18800]' : 'text-slate-300 group-hover:text-white'
+                }`}
+              />
+              <span className="truncate">{item.title}</span>
             </NavLink>
           )
         })}
       </div>
 
+      {/* Curva ABR decorativa discreta no rodapé */}
+      <div className="px-4 py-2 text-[10px] text-slate-300/80 flex items-center justify-between border-t border-[#253575]/60 bg-[#0f1d42]">
+        <span className="truncate">Seu parceiraço! 2026–2027</span>
+        <div className="w-6 h-1 rounded-full bg-[#F18800]" />
+      </div>
+
       {/* User Info & Footer */}
-      <div className="p-4 border-t border-slate-800 bg-slate-950/40">
+      <div className="p-3.5 border-t border-[#253575] bg-[#0c1836]">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3 overflow-hidden">
-            <div className="h-8 w-8 rounded-full bg-slate-700 flex items-center justify-center font-semibold text-xs text-slate-200">
-              {user.name ? user.name.slice(0, 2).toUpperCase() : 'US'}
+          <div className="flex items-center space-x-2.5 overflow-hidden">
+            <div className="h-8 w-8 rounded-full bg-[#253575] border border-white/20 flex items-center justify-center font-bold text-xs text-white shrink-0">
+              {user.name ? user.name.slice(0, 2).toUpperCase() : 'ABR'}
             </div>
             <div className="truncate">
-              <div className="text-xs font-medium text-slate-200 truncate">{user.name}</div>
-              <div className="flex items-center space-x-1.5 mt-0.5">
+              <div className="text-xs font-semibold text-white truncate">{user.name}</div>
+              <div className="flex items-center space-x-1 mt-0.5">
                 <Badge
                   variant="outline"
                   className={
                     user.role === 'lider'
-                      ? 'text-[10px] px-1.5 py-0 h-4 border-amber-600 bg-amber-950/40 text-amber-300 font-semibold flex items-center gap-1'
-                      : 'text-[10px] px-1.5 py-0 h-4 border-slate-700 text-slate-400 uppercase font-mono'
+                      ? 'text-[10px] px-1.5 py-0 h-4 border-[#F18800] bg-[#F18800]/20 text-orange-200 font-semibold flex items-center gap-1'
+                      : 'text-[10px] px-1.5 py-0 h-4 border-[#253575] bg-[#142758] text-slate-200 uppercase font-mono'
                   }
                 >
                   {user.role === 'lider' ? '🚩 Líder de Rota' : user.role}
@@ -272,7 +305,7 @@ export default function Layout() {
                 variant="ghost"
                 size="icon"
                 onClick={logout}
-                className="h-8 w-8 text-slate-400 hover:text-red-400 hover:bg-slate-800"
+                className="h-8 w-8 text-slate-300 hover:text-white hover:bg-red-500/20"
               >
                 <LogOut className="h-4 w-4" />
               </Button>
@@ -285,38 +318,39 @@ export default function Layout() {
   )
 
   return (
-    <div className="flex min-h-screen bg-slate-50 antialiased font-sans">
+    <div className="flex min-h-screen bg-[#f4f6fa] antialiased font-sans text-slate-800">
       {/* Desktop Fixed Sidebar */}
-      <aside className="hidden lg:block w-64 border-r border-slate-200 shrink-0 fixed inset-y-0 left-0 z-30">
+      <aside className="hidden lg:block w-64 border-r border-[#142758]/30 shrink-0 fixed inset-y-0 left-0 z-30 shadow-lg shadow-[#142758]/10">
         <SidebarContent />
       </aside>
 
       {/* Main Container */}
       <div className="flex-1 flex flex-col lg:pl-64 min-w-0">
-        {/* Top Header */}
-        <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-slate-200 h-16 flex items-center justify-between px-4 sm:px-6">
+        {/* Top Header com detalhe de borda institucional */}
+        <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200/80 h-16 flex items-center justify-between px-4 sm:px-6 shadow-sm">
           <div className="flex items-center space-x-3">
             {/* Mobile hamburger */}
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="lg:hidden text-slate-600">
+                <Button variant="ghost" size="icon" className="lg:hidden text-[#253575]">
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="p-0 w-72">
+              <SheetContent side="left" className="p-0 w-72 border-r-0">
                 <SidebarContent />
               </SheetContent>
             </Sheet>
 
-            <div className="flex items-center space-x-2">
-              <span className="font-semibold text-slate-800 text-base">
+            <div className="flex items-center space-x-2.5">
+              <div className="h-5 w-1 bg-[#F18800] rounded-full hidden sm:block" />
+              <span className="font-bold text-[#253575] text-base tracking-tight">
                 {navItems.find((n) => location.pathname.startsWith(n.href))?.title ||
                   'Projeto Guerra'}
               </span>
               {user.regioes && user.regioes.length > 0 && (
                 <Badge
                   variant="secondary"
-                  className="hidden sm:inline-flex text-xs bg-slate-100 text-slate-600"
+                  className="hidden sm:inline-flex text-xs bg-[#253575]/10 text-[#253575] border border-[#253575]/20 font-medium"
                 >
                   Regiões: {user.regioes.join(', ')}
                 </Badge>

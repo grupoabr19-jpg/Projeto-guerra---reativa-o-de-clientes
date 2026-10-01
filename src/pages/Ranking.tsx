@@ -404,10 +404,10 @@ export function RankingPage() {
             <Button
               size="sm"
               onClick={() => setModalNovoConcursoOpen(true)}
-              className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-xs"
+              className="h-8 text-xs bg-[#F18800] hover:bg-[#d97b00] text-white font-semibold shadow-xs shadow-[#F18800]/25"
             >
-              <Plus className="h-3.5 w-3.5 mr-1" />
-              Criar Concurso Sazonal
+              <Trophy className="h-3.5 w-3.5 mr-1.5" />
+              Ver Prêmios do Mês
             </Button>
           )}
 
@@ -690,7 +690,7 @@ export function RankingPage() {
                             key={r.usuario.id}
                             className={`transition-colors ${
                               isSelf
-                                ? 'bg-blue-50/80 font-semibold border-l-4 border-l-blue-600 hover:bg-blue-100/70'
+                                ? 'bg-[#253575]/10 font-semibold border-l-4 border-l-[#253575] hover:bg-[#253575]/15'
                                 : 'hover:bg-slate-50/70'
                             }`}
                           >
@@ -723,7 +723,7 @@ export function RankingPage() {
                                   <div className="font-bold text-slate-900 truncate flex items-center space-x-1.5">
                                     <span>{r.usuario.name || r.usuario.email}</span>
                                     {isSelf && (
-                                      <Badge className="bg-blue-600 text-white text-[9px] px-1 py-0">
+                                      <Badge className="bg-[#253575] text-white text-[9px] px-1 py-0">
                                         Você
                                       </Badge>
                                     )}

@@ -630,7 +630,7 @@ export default function AtendimentoPage() {
               size="sm"
               onClick={handlePuxarNovoAtendimento}
               disabled={reservandoNovo}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-9 px-4 shadow-sm"
+              className="bg-[#F18800] hover:bg-[#d97b00] text-white font-semibold text-xs h-9 px-4 shadow-sm shadow-[#F18800]/25"
             >
               <PhoneCall className={`h-4 w-4 mr-2 ${reservandoNovo ? 'animate-bounce' : ''}`} />
               {reservandoNovo ? 'Reservando Contato...' : 'Novo Atendimento'}
@@ -655,7 +655,7 @@ export default function AtendimentoPage() {
             <Button
               onClick={handlePuxarNovoAtendimento}
               disabled={reservandoNovo}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold mt-2"
+              className="bg-[#F18800] hover:bg-[#d97b00] text-white text-xs font-semibold mt-2 shadow-sm shadow-[#F18800]/25"
             >
               <PhoneCall className="h-3.5 w-3.5 mr-1.5" />
               {user?.regioes?.includes('REPESCAGEM')
@@ -673,7 +673,7 @@ export default function AtendimentoPage() {
                 <div className="flex items-center space-x-2">
                   <Badge
                     variant="outline"
-                    className="font-mono text-xs font-bold text-blue-700 bg-blue-50 border-blue-200"
+                    className="font-mono text-xs font-bold text-[#253575] bg-[#253575]/10 border-[#253575]/20"
                   >
                     {cliente.codigo}
                   </Badge>

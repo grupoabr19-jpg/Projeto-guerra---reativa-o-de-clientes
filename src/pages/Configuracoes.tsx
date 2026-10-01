@@ -1265,7 +1265,7 @@ export default function ConfiguracoesPage() {
               <Button
                 onClick={handleSaveScoreWeights}
                 disabled={savingConfig}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
+                className="bg-[#F18800] hover:bg-[#d97b00] text-white text-xs font-semibold shadow-sm shadow-[#F18800]/25"
               >
                 <Save className="h-3.5 w-3.5 mr-1.5" />
                 {savingConfig ? 'Salvando...' : 'Salvar Pesos e Parâmetros'}
@@ -1431,7 +1431,7 @@ export default function ConfiguracoesPage() {
               <Button
                 onClick={handleSavePesosGamificacao}
                 disabled={savingGamificacao}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
+                className="bg-[#F18800] hover:bg-[#d97b00] text-white text-xs font-semibold shadow-sm shadow-[#F18800]/25"
               >
                 <Save className="h-3.5 w-3.5 mr-1.5" />
                 {savingGamificacao ? 'Salvando...' : 'Salvar Pesos da Gamificação'}

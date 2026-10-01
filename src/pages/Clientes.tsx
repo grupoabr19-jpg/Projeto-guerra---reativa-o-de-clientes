@@ -208,7 +208,7 @@ export default function ClientesPage() {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-semibold text-slate-800 flex items-center space-x-2">
-              <Users className="h-4 w-4 text-blue-600" />
+              <Users className="h-4 w-4 text-[#253575]" />
               <span>Clientes Cadastrados</span>
             </CardTitle>
             <span className="text-xs font-mono text-slate-500">
@@ -269,9 +269,9 @@ export default function ClientesPage() {
                         )}
                       </td>
                       <td className="py-3 px-3 text-center">
-                        <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                          {item.score || 0}
-                        </span>
+                        <span className="font-mono font-bold text-[#253575] bg-[#253575]/10 px-2 py-0.5 rounded border border-[#253575]/20">
+                          {item.codigo}
+                        </span>{' '}
                       </td>
                       <td className="py-3 px-3">
                         <Badge variant="outline" className="text-[10px] uppercase font-mono">
@@ -315,9 +315,12 @@ export default function ClientesPage() {
             <>
               <SheetHeader className="space-y-1">
                 <div className="flex items-center space-x-2">
-                  <Badge variant="outline" className="font-mono text-xs font-bold text-blue-700">
+                  <Badge
+                    variant="outline"
+                    className="font-mono text-xs font-bold text-[#253575] bg-[#253575]/10 border-[#253575]/20"
+                  >
                     {selectedClient.codigo}
-                  </Badge>
+                  </Badge>{' '}
                   <Badge className="text-xs uppercase">
                     {selectedClient.estado.replace('_', ' ')}
                   </Badge>
@@ -449,7 +452,7 @@ export default function ClientesPage() {
                     navigate(`/atendimento/${selectedClient.id}`)
                     setSelectedClient(null)
                   }}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
+                  className="w-full bg-[#F18800] hover:bg-[#d97b00] text-white text-xs font-semibold shadow-sm shadow-[#F18800]/25"
                 >
                   Abrir Tela de Atendimento
                   <ArrowRight className="ml-2 h-3.5 w-3.5" />

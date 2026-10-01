@@ -65,23 +65,44 @@ export default function Index() {
   return (
     <div className="flex min-h-[90vh] items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
-        {/* Brand Hero */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-xl shadow-blue-500/20 mb-1 font-bold text-xl">
-            PG
+        {/* Brand Hero com Logo Oficial Grupo ABR */}
+        <div className="text-center space-y-3">
+          <div className="inline-block relative">
+            <img
+              src="/src/assets/logo-abr-oficial-bf48e.png"
+              alt="Grupo ABR — Seu parceiraço!"
+              className="h-20 w-20 rounded-2xl mx-auto shadow-xl shadow-[#253575]/25 ring-2 ring-[#253575]/20 object-contain bg-[#253575] p-1"
+            />
+            {/* Grafismo curva de destaque */}
+            <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 bg-[#F18800] rounded-full ring-2 ring-white" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Projeto Guerra</h1>
-          <p className="text-sm text-slate-500">
-            Sistema Integrado de Reativação e Gestão de Clientes Inativos
-          </p>
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#253575]/10 text-[#253575] text-[11px] font-semibold tracking-wide uppercase mb-1">
+              <span>Projeto Guerra</span>
+              <span className="text-[#F18800]">•</span>
+              <span>Grupo ABR</span>
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-[#253575]">
+              Sistema de Reativação de Clientes
+            </h1>
+            <p className="text-xs text-slate-600 mt-1">
+              Estrutura para atender. Conhecimento para orientar. Agilidade para entregar.
+            </p>
+          </div>
         </div>
 
-        {/* Login Card */}
-        <Card className="border-slate-200 shadow-xl shadow-slate-200/50">
-          <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-lg font-semibold text-slate-800">Acessar Painel</CardTitle>
+        {/* Login Card com Curva Proprietária no topo */}
+        <Card className="border-slate-200/90 shadow-2xl shadow-[#253575]/10 overflow-hidden relative">
+          {/* Faixa/Curva proprietária no topo do card */}
+          <div className="h-1.5 w-full bg-[#253575] flex">
+            <div className="h-full w-28 bg-[#F18800] rounded-r-full" />
+          </div>
+
+          <CardHeader className="space-y-1 pb-4 pt-5">
+            <CardTitle className="text-lg font-bold text-[#253575]">Acessar Painel</CardTitle>
             <CardDescription className="text-xs text-slate-500">
-              Entre com suas credenciais para gerenciar a fila ou supervisionar operações.
+              Entre com suas credenciais do Grupo ABR para gerenciar a fila ou supervisionar
+              operações.
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
@@ -94,56 +115,56 @@ export default function Index() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-xs font-medium text-slate-700">
-                  E-mail institucional
+                <Label htmlFor="email" className="text-xs font-semibold text-[#253575]">
+                  E-mail institucional (@grupoabr.com.br)
                 </Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <Mail className="absolute left-3 top-2.5 h-4 w-4 text-[#253575]/60" />
                   <Input
                     id="email"
                     type="email"
-                    placeholder="nome@empresa.com.br"
+                    placeholder="nome@grupoabr.com.br"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="pl-9 text-sm"
+                    className="pl-9 text-sm focus-visible:ring-[#253575]"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="password" className="text-xs font-medium text-slate-700">
+                  <Label htmlFor="password" className="text-xs font-semibold text-[#253575]">
                     Senha de acesso
                   </Label>
                   <Link
                     to="/forgot-password"
-                    className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline"
+                    className="text-[11px] text-[#253575] font-semibold hover:text-[#F18800] hover:underline transition-colors"
                   >
                     Esqueceu a senha?
                   </Link>
                 </div>
                 <div className="relative">
-                  <KeyRound className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <KeyRound className="absolute left-3 top-2.5 h-4 w-4 text-[#253575]/60" />
                   <Input
                     id="password"
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="pl-9 text-sm"
+                    className="pl-9 text-sm focus-visible:ring-[#253575]"
                   />
                 </div>
               </div>
 
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2 text-xs">
-                <span className="font-semibold text-slate-600 block">Acessos de demonstração:</span>
+              <div className="bg-[#f4f6fa] border border-[#253575]/15 rounded-lg p-3 space-y-2 text-xs">
+                <span className="font-semibold text-[#253575] block">Acessos de demonstração:</span>
                 <div className="flex flex-wrap gap-1.5">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-7 text-[11px]"
+                    className="h-7 text-[11px] border-slate-300 hover:border-[#253575] hover:bg-white"
                     onClick={() => fillSample('thiago.almeida@grupoabr.com.br')}
                   >
                     Thiago (Admin)
@@ -152,7 +173,7 @@ export default function Index() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-7 text-[11px]"
+                    className="h-7 text-[11px] border-slate-300 hover:border-[#253575] hover:bg-white"
                     onClick={() => fillSample('pietra.leite@grupoabr.com.br')}
                   >
                     Pietra (Admin)
@@ -161,7 +182,7 @@ export default function Index() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-7 text-[11px]"
+                    className="h-7 text-[11px] border-slate-300 hover:border-[#253575] hover:bg-white"
                     onClick={() => fillSample('eder.bueno@grupoabr.com.br')}
                   >
                     Eder Bueno (Op)
@@ -170,7 +191,7 @@ export default function Index() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-7 text-[11px]"
+                    className="h-7 text-[11px] border-slate-300 hover:border-[#253575] hover:bg-white"
                     onClick={() => fillSample('priscila.faria@grupoabr.com.br')}
                   >
                     Priscila (Repesc.)
@@ -179,7 +200,7 @@ export default function Index() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-7 text-[11px]"
+                    className="h-7 text-[11px] border-slate-300 hover:border-[#253575] hover:bg-white"
                     onClick={() => fillSample('dyovana.silva@grupoabr.com.br')}
                   >
                     Dyovana (Jundiaí)
@@ -188,11 +209,12 @@ export default function Index() {
               </div>
             </CardContent>
 
-            <CardFooter className="pt-2">
+            <CardFooter className="pt-2 pb-5">
+              {/* CTA Oficial com Laranja ABR (#F18800) */}
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium"
+                className="w-full bg-[#F18800] hover:bg-[#d97b00] text-white font-semibold text-sm shadow-md shadow-[#F18800]/25 h-11"
               >
                 {loading ? (
                   <>
@@ -211,8 +233,11 @@ export default function Index() {
         </Card>
 
         {/* System info */}
-        <div className="text-center text-xs text-slate-400">
-          Protegido por Lock Atômico de Concorrência & Integração Kommo CRM
+        <div className="text-center space-y-1 text-xs text-slate-500">
+          <p className="font-medium text-[#253575]">Grupo ABR — Seu parceiraço!</p>
+          <p className="text-[11px] text-slate-400">
+            Protegido por Lock Atômico de Concorrência & Integração Kommo CRM
+          </p>
         </div>
       </div>
     </div>

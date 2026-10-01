@@ -247,7 +247,7 @@ export default function Dashboard() {
               onClick={() => setSelectedPeriodo('hoje')}
               className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                 selectedPeriodo === 'hoje'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-[#253575] text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -257,7 +257,7 @@ export default function Dashboard() {
               onClick={() => setSelectedPeriodo('7dias')}
               className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                 selectedPeriodo === '7dias'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-[#253575] text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -267,7 +267,7 @@ export default function Dashboard() {
               onClick={() => setSelectedPeriodo('30dias')}
               className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                 selectedPeriodo === '30dias'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-[#253575] text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -277,7 +277,7 @@ export default function Dashboard() {
               onClick={() => setSelectedPeriodo('total')}
               className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                 selectedPeriodo === 'total'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-[#253575] text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -328,9 +328,9 @@ export default function Dashboard() {
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-2">
           <div className="flex items-center space-x-2">
-            <div className="h-7 w-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
-              <Headphones className="h-4 w-4" />
-            </div>
+            <div className="h-7 w-7 rounded-lg bg-[#253575] text-white flex items-center justify-center shadow-xs">
+              <Layers className="h-4 w-4" />
+            </div>{' '}
             <div>
               <div className="flex items-center space-x-2">
                 <h3 className="text-base font-bold text-slate-900 tracking-tight">
@@ -375,17 +375,17 @@ export default function Dashboard() {
         {/* Cards Nível 1 — 7 KPIs de Atendimento */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
           {/* Total Atendimentos Realizados */}
-          <Card className="border-slate-200 shadow-xs hover:border-blue-300 transition-colors">
+          <Card className="border-slate-200 shadow-xs hover:border-[#253575]/40 transition-colors">
             <CardContent className="p-3.5">
               <div className="flex items-center justify-between text-slate-500 mb-1.5">
                 <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
                   Total Atendimentos
                 </span>
-                <div className="p-1 rounded-md bg-blue-50 text-blue-600 shrink-0">
+                <div className="p-1 rounded-md bg-[#253575]/10 text-[#253575] shrink-0">
                   <Activity className="h-3.5 w-3.5" />
                 </div>
               </div>
-              <div className="text-2xl font-black text-slate-900 font-mono">
+              <div className="text-2xl font-black text-[#253575] font-mono">
                 {loadingAtendimentos ? '—' : metricasAtendimento?.gerais.totalAtendimentos || 0}
               </div>
               <span className="text-[10px] text-slate-400 mt-0.5 block truncate">
@@ -395,17 +395,17 @@ export default function Dashboard() {
           </Card>
 
           {/* Ligações / Contatos Feitos */}
-          <Card className="border-slate-200 shadow-xs hover:border-blue-300 transition-colors">
+          <Card className="border-slate-200 shadow-xs hover:border-[#253575]/40 transition-colors">
             <CardContent className="p-3.5">
               <div className="flex items-center justify-between text-slate-500 mb-1.5">
                 <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
                   Ligações Feitas
                 </span>
-                <div className="p-1 rounded-md bg-blue-50 text-blue-600 shrink-0">
+                <div className="p-1 rounded-md bg-[#253575]/10 text-[#253575] shrink-0">
                   <PhoneCall className="h-3.5 w-3.5" />
                 </div>
               </div>
-              <div className="text-2xl font-black text-blue-700 font-mono">
+              <div className="text-2xl font-black text-[#253575] font-mono">
                 {loadingAtendimentos ? '—' : metricasAtendimento?.gerais.ligacoesFeitas || 0}
               </div>
               <span className="text-[10px] text-slate-400 mt-0.5 block truncate">
@@ -564,7 +564,7 @@ export default function Dashboard() {
                     setSortAsc(false)
                   }
                 }}
-                className={`h-7 px-2.5 text-xs ${sortField === 'atendimentos' ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'text-slate-600'}`}
+                className={`h-7 px-2.5 text-xs ${sortField === 'atendimentos' ? 'bg-[#253575] hover:bg-[#1e2b5e] text-white' : 'text-slate-600'}`}
               >
                 Atendimentos
                 <ArrowUpDown className="h-3 w-3 ml-1 opacity-70" />
@@ -679,7 +679,7 @@ export default function Dashboard() {
                             onClick={() => setSelectedOperadorDetalhe(isSelected ? null : op)}
                             className={`cursor-pointer transition-colors ${
                               isSelected
-                                ? 'bg-blue-50/70 border-l-4 border-l-blue-600 font-medium'
+                                ? 'bg-[#253575]/10 border-l-4 border-l-[#253575] font-medium'
                                 : isTop
                                   ? 'bg-amber-50/40 hover:bg-amber-50/80'
                                   : 'hover:bg-slate-50/80'
@@ -728,7 +728,7 @@ export default function Dashboard() {
                             </td>
 
                             {/* Ligações Feitas */}
-                            <td className="py-2.5 px-3 text-center font-mono text-blue-700">
+                            <td className="py-2.5 px-3 text-center font-mono text-[#253575] font-semibold">
                               {op.ligacoes}
                             </td>
 
@@ -821,12 +821,12 @@ export default function Dashboard() {
 
       {/* Destaque / Detalhe Rápido do Operador Clicado */}
       {selectedOperadorDetalhe && (
-        <Card className="border-blue-200 bg-blue-50/40 shadow-xs animate-in fade-in duration-200">
+        <Card className="border-[#253575]/20 bg-[#253575]/5 shadow-xs animate-in fade-in duration-200">
           <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
               <div className="flex items-center space-x-2">
-                <Badge className="bg-blue-600 text-white text-[10px]">Operador Selecionado</Badge>
-                <h4 className="font-bold text-sm text-slate-900">
+                <Badge className="bg-[#253575] text-white text-[10px]">Operador Selecionado</Badge>
+                <h4 className="font-bold text-sm text-[#253575]">
                   {selectedOperadorDetalhe.operadorNome}
                 </h4>
                 {selectedOperadorDetalhe.tituloGamificacao && (
