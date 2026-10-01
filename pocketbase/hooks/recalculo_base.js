@@ -122,30 +122,29 @@ routerAdd(
             c.set('lock_timestamp', null)
           }
 
-          const scoreRecencia = Math.min(100, Math.round((dias / 180) * 100))
-          const comprasCount = c.getInt('compras_count') || c.getInt('frequencia_compras_12m') || 1
-          const scoreFreq = Math.min(100, comprasCount * 12)
-          const valHist = c.getFloat('valor_historico') || c.getFloat('fat_12m_reais') || 0
-          const ticketMedio =
-            comprasCount > 0 ? valHist / comprasCount : c.getFloat('valor_ultima_compra') || 0
-          const scoreTicket = Math.min(100, Math.round((ticketMedio / 100000) * 100))
-          const scoreSeg = 70
+          var sRecencia = Math.min(100, Math.round((dias / 180) * 100))
+          var cCount = c.getInt('compras_count') || c.getInt('frequencia_compras_12m') || 1
+          var sFreq = Math.min(100, cCount * 12)
+          var vHist = c.getFloat('valor_historico') || c.getFloat('fat_12m_reais') || 0
+          var tMedio = cCount > 0 ? vHist / cCount : c.getFloat('valor_ultima_compra') || 0
+          var sTicket = Math.min(100, Math.round((tMedio / 100000) * 100))
+          var sSeg = 70
 
-          const calcScore = Math.min(
+          var calcScore = Math.min(
             100,
             Math.max(
               0,
               Math.round(
-                (scoreRecencia * (pesos.recencia || 30)) / 100 +
-                  (scoreFreq * (pesos.frequencia || 25)) / 100 +
-                  (scoreTicket * (pesos.ticket_tonelagem || 20)) / 100 +
-                  (scoreSeg * (pesos.segmento || 10)) / 100,
+                (sRecencia * (pesos.recencia || 30)) / 100 +
+                  (sFreq * (pesos.frequencia || 25)) / 100 +
+                  (sTicket * (pesos.ticket_tonelagem || 20)) / 100 +
+                  (sSeg * (pesos.segmento || 10)) / 100,
               ),
             ),
           )
 
-          const tentativas = c.getInt('tentativas_sem_contato') || 0
-          const finalScore = Math.max(0, calcScore - tentativas * 5)
+          var tentativas = c.getInt('tentativas_sem_contato') || 0
+          var finalScore = Math.max(0, calcScore - tentativas * 5)
           c.set('score', finalScore)
 
           $app.save(c)

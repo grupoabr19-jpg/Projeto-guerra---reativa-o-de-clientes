@@ -784,6 +784,9 @@ routerAdd(
             const isClienteFinalComportamento =
               isCpfOuNaoIdentificado &&
               comprasCount <= 2 &&
+              (segNorm === 'cliente final' ||
+                segNorm.includes('cliente final') ||
+                segNorm.includes('consumidor')) &&
               (diasSemFaturar <= 730 || diasSemFaturar === 0)
 
             if (
@@ -947,9 +950,16 @@ routerAdd(
             // Atualização de base_categoria
             const cleanDocExist = String(rec.getString('cpf_cnpj') || '').replace(/\D/g, '')
             const isCpfOuNaoIdentificadoExist = cleanDocExist.length === 11 || !cleanDocExist
+            const segAtualNorm = (rec.getString('segmento') || '')
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
             const isClienteFinalComportamentoExist =
               isCpfOuNaoIdentificadoExist &&
               comprasCount <= 2 &&
+              (segAtualNorm === 'cliente final' ||
+                segAtualNorm.includes('cliente final') ||
+                segAtualNorm.includes('consumidor')) &&
               (diasSemFaturar <= 730 || diasSemFaturar === 0)
 
             let novaBaseCat = rec.getString('base_categoria') || 'normal'
@@ -1263,32 +1273,17 @@ routerAdd(
         }
       }
 
-      // Se substituição total ativada: quem estava na base e não veio na planilha é marcado como 'nao_quer_negociar'
-      // (nota: 'suspenso' não é um valor válido do enum estado; o enum aceita 'na_base', 'reservado', 'em_atendimento',
-      // 'reativado', 'reagendado', 'contatado', 'compra_terceiros', 'nao_quer_negociar', 'duplicado', 'sem_contato', 'ativo_fora_base')
+      // NOTA DE SEGURANÇA SOBRE SUBSTITUIÇÃO TOTAL:
+      // O envio da planilha é particionado em chunks/lotes pelo frontend. Cada lote processa de 1.000 a 2.000 linhas.
+      // Qualquer suspensão em lote isolado causava falso 'sem_contato' nos clientes dos demais lotes.
+      // Para proteger a base contra perda acidental da fila, a desativação só deve ocorrer se todos os códigos
+      // do arquivo completo forem conhecidos em um único conjunto. Como cada requisição recebe apenas seu lote,
+      // a substituição total cega não deve rebaixar os clientes da base para 'sem_contato'.
       if (substituicaoTotal && modoImportacao === 'base_mestre') {
-        try {
-          const allActive = $app.findRecordsByFilter('clientes', "estado = 'na_base'", '', 50000, 0)
-          for (let j = 0; j < allActive.length; j++) {
-            const item = allActive[j]
-            const cod = item.getString('codigo')
-            if (cod && !importedCodigos.has(cod.toUpperCase())) {
-              item.set('estado', 'sem_contato')
-              try {
-                $app.save(item)
-              } catch (substSaveErr) {
-                console.error(
-                  `[import_planilha] Erro ao suspender cliente ${cod} na substituição total:`,
-                  substSaveErr,
-                )
-              }
-            }
-          }
-        } catch (substErr) {
-          console.error('[import_planilha] Erro na rotina de substituição total:', substErr)
-        }
+        console.log(
+          `[import_planilha] Substituição total acionada no lote (${rows.length} linhas processadas). Desativação cega ignorada para preservar integridade da fila entre lotes.`,
+        )
       }
-
       // Registrar histórico da importação
       const impRec = new Record(colImportacoes)
       impRec.set('nome_arquivo', fileName)

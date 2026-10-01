@@ -347,14 +347,38 @@ routerAdd(
         // Se for operador/líder do Varejo (não Atacado nem Repescagem), exclui clientes marcados como sem_dono_equipe
         if (!isAtacado && !isRepescagem && (userRole === 'operador' || userRole === 'lider')) {
           baseFilter += ' && sem_dono_equipe != true'
+          // OTIMIZAÇÃO CRÍTICA: Filtrar diretamente por vendedor no SQL do PocketBase se houver primeiro nome
+          // Isso impede que centenas de clientes de outras rotas/vendedores ocupem todo o LIMIT do pool
+          if (userFirstNameClean && userFirstNameClean.length >= 3) {
+            baseFilter += ` && vendedor ~ '${userFirstNameClean.toUpperCase()}'`
+          }
         }
 
         let pool = []
         try {
-          // Busca um pool maior (300) para poder aplicar matching de carteira e DDD com precisão
-          pool = $app.findRecordsByFilter('clientes', baseFilter, sortExpr, 300, 0)
+          // Busca um pool maior (500) para poder aplicar matching de carteira e DDD com precisão
+          pool = $app.findRecordsByFilter('clientes', baseFilter, sortExpr, 500, 0)
         } catch (findErr) {
           console.log('[queue_reserve] Erro em findRecordsByFilter clientes: ' + findErr.message)
+        }
+
+        // Fallback: se pool do vendedor estiver vazia e havia filtro de vendedor direto, tenta sem filtro de vendedor direto
+        // (caso o nome do vendedor esteja grafado diferente mas seja capturado pelo mapa de donos)
+        if (
+          (!pool || pool.length === 0) &&
+          !isAtacado &&
+          !isRepescagem &&
+          (userRole === 'operador' || userRole === 'lider')
+        ) {
+          try {
+            let broadFilter =
+              "estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'"
+            if (regiaoFilter) broadFilter += ` && ${regiaoFilter}`
+            if (filtroSegmento && filtroSegmento !== 'todos')
+              broadFilter += ` && segmento = '${filtroSegmento}'`
+            broadFilter += ' && sem_dono_equipe != true'
+            pool = $app.findRecordsByFilter('clientes', broadFilter, sortExpr, 500, 0)
+          } catch (_) {}
         }
 
         // Fallback: se pool na região estiver vazia e operador tiver filtro de segmento, tenta sem filtro de segmento
@@ -365,8 +389,11 @@ routerAdd(
             if (regiaoFilter) fallbackFilter += ` && ${regiaoFilter}`
             if (!isAtacado && !isRepescagem && (userRole === 'operador' || userRole === 'lider')) {
               fallbackFilter += ' && sem_dono_equipe != true'
+              if (userFirstNameClean && userFirstNameClean.length >= 3) {
+                fallbackFilter += ` && vendedor ~ '${userFirstNameClean.toUpperCase()}'`
+              }
             }
-            pool = $app.findRecordsByFilter('clientes', fallbackFilter, sortExpr, 300, 0)
+            pool = $app.findRecordsByFilter('clientes', fallbackFilter, sortExpr, 500, 0)
           } catch (_) {}
         }
 

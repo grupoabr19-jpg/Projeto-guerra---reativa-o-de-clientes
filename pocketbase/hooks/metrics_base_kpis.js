@@ -140,7 +140,31 @@ routerAdd(
         if (params && Object.keys(params).length > 0) {
           queryBuilder.bind(params)
         }
-        queryBuilder.one(kpiModel)
+        const row = queryBuilder.oneRecord()
+        if (row) {
+          kpiModel.total_base = row.getInt('total_base')
+          kpiModel.na_base = row.getInt('na_base')
+          kpiModel.reservado = row.getInt('reservado')
+          kpiModel.em_atendimento = row.getInt('em_atendimento')
+          kpiModel.reagendado = row.getInt('reagendado')
+          kpiModel.contatado = row.getInt('contatado')
+          kpiModel.reativado = row.getInt('reativado')
+          kpiModel.reativados_reais = row.getInt('reativados_reais')
+          kpiModel.valor_recuperado_real = row.getFloat('valor_recuperado_real')
+          kpiModel.toneladas_recuperadas_real = row.getFloat('toneladas_recuperadas_real')
+          kpiModel.faturamento_recente_cruzamento = row.getInt('faturamento_recente_cruzamento')
+          kpiModel.valor_faturamento_recente_cruzamento = row.getFloat(
+            'valor_faturamento_recente_cruzamento',
+          )
+          kpiModel.toneladas_faturamento_recente_cruzamento = row.getFloat(
+            'toneladas_faturamento_recente_cruzamento',
+          )
+          kpiModel.compra_terceiros = row.getInt('compra_terceiros')
+          kpiModel.nao_quer_negociar = row.getInt('nao_quer_negociar')
+          kpiModel.sem_contato = row.getInt('sem_contato')
+          kpiModel.valor_recuperado_total = row.getFloat('valor_recuperado_total')
+          kpiModel.toneladas_recuperadas_total = row.getFloat('toneladas_recuperadas_total')
+        }
       } catch (dbErr) {
         console.log(
           '[metrics_base_kpis] Erro na query de KPIs: ' +
@@ -260,34 +284,27 @@ routerAdd(
         ORDER BY total DESC
       `
 
-      const regioesRows = arrayOf(
-        new DynamicModel({
-          regiao_nome: '',
-          total: 0,
-          score_sum: -0,
-        }),
-      )
-
+      const regioesMap = {}
       try {
-        $app.db().newQuery(regioesQuery).all(regioesRows)
+        const rows = $app.db().newQuery(regioesQuery).allRecords()
+        if (rows && rows.length > 0) {
+          for (let i = 0; i < rows.length; i++) {
+            const r = rows[i]
+            const rName = r.getString('regiao_nome') || 'Sem Região'
+            const rTotal = r.getInt('total') || 0
+            const rScoreSum = r.getFloat('score_sum') || 0
+            regioesMap[rName] = {
+              total: rTotal,
+              scoreSum: rScoreSum,
+              avgScore: rTotal > 0 ? Math.round(rScoreSum / rTotal) : 0,
+            }
+          }
+        }
       } catch (regErr) {
         console.log(
           '[metrics_base_kpis] Erro na query de regioes: ' +
             (regErr && regErr.message ? regErr.message : String(regErr)),
         )
-      }
-
-      const regioesMap = {}
-      for (let i = 0; i < regioesRows.length; i++) {
-        const r = regioesRows[i]
-        const rName = r.regiao_nome || r.regiaoNome || 'Sem Região'
-        const rTotal = Number(r.total || 0)
-        const rScoreSum = Number(r.score_sum || r.scoreSum || 0)
-        regioesMap[rName] = {
-          total: rTotal,
-          scoreSum: rScoreSum,
-          avgScore: rTotal > 0 ? Math.round(rScoreSum / rTotal) : 0,
-        }
       }
 
       return e.json(200, {
