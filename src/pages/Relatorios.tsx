@@ -359,6 +359,28 @@ export default function RelatoriosPage() {
       (baseKpis?.kpis as any)?.na_fila ??
       0,
   )
+  const faturamentoCruzamentoCount = Number(
+    reportsAnalytics?.kpis?.faturamentoRecenteCruzamento ??
+      baseKpis?.kpis?.faturamentoRecenteCruzamento ??
+      (baseKpis?.kpis as any)?.faturamento_recente_cruzamento ??
+      0,
+  )
+  const valorFaturamentoCruzamento = Number(
+    reportsAnalytics?.kpis?.valorFaturamentoCruzamento ??
+      baseKpis?.kpis?.valorFaturamentoCruzamento ??
+      (baseKpis?.kpis as any)?.valor_faturamento_recente_cruzamento ??
+      0,
+  )
+  const reativadosReaisCount = Number(
+    reportsAnalytics?.kpis?.reativadosReais ??
+      reportsAnalytics?.kpis?.reativados ??
+      baseKpis?.kpis?.reativadosReais ??
+      baseKpis?.kpis?.reativados ??
+      0,
+  )
+  const valorRecuperadoReal = Number(
+    reportsAnalytics?.kpis?.valorRecuperado ?? baseKpis?.kpis?.valorRecuperado ?? 0,
+  )
 
   // Clientes ativos removidos
   const ativosRemovidosData: MetricasAtivosRemovidos = metricasAtendimento?.ativosRemovidos || {
@@ -1860,6 +1882,41 @@ export default function RelatoriosPage() {
 
           {/* ABA 3: CADASTRO & LIMPEZA DE BASE */}
           <TabsContent value="marketing" className="space-y-4 m-0">
+            {/* Card de Faturamento Recente na Base (Cruzamento) */}
+            <Card className="border-amber-300 bg-gradient-to-br from-amber-50/70 via-white to-orange-50/30 shadow-xs overflow-hidden">
+              <CardHeader className="py-3 px-4 bg-amber-50/60 border-b border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <CardTitle className="text-sm font-bold text-amber-950">
+                      Faturamento Recente na Base (Identificados no Cruzamento ERP)
+                    </CardTitle>
+                    <Badge className="bg-amber-500 text-white text-[10px]">Insumo de Limpeza</Badge>
+                  </div>
+                  <CardDescription className="text-xs text-amber-800">
+                    Clientes que faturaram recentemente segundo a reconciliação automática de notas,
+                    mas não tiveram atendimento registrado por operador
+                  </CardDescription>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-black text-amber-700 font-mono">
+                    {faturamentoCruzamentoCount}
+                  </div>
+                  <span className="text-[11px] font-bold text-amber-900">
+                    R$ {valorFaturamentoCruzamento.toLocaleString('pt-BR')} faturados
+                  </span>
+                </div>
+              </CardHeader>
+              <CardContent className="p-4 text-xs text-slate-600">
+                <p>
+                  Estes <strong>{faturamentoCruzamentoCount}</strong> clientes constavam como
+                  inativos na carteira, mas foram identificados com faturamento recente no
+                  cruzamento com as planilhas do ERP. Este grupo está separado das{' '}
+                  <strong>{reativadosReaisCount}</strong> reativações reais com operador para não
+                  inflar as comissões nem as metas operacionais.
+                </p>
+              </CardContent>
+            </Card>
+
             <Card className="border-slate-200 shadow-xs bg-white overflow-hidden">
               <CardHeader className="py-3 px-4 bg-slate-50 border-b border-slate-200">
                 <div className="flex items-center space-x-2">

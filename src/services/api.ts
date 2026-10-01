@@ -1031,9 +1031,20 @@ export async function fetchMetricasBaseKpis(options?: {
     kpisRaw.totalBase ?? kpisRaw.total_base ?? data.totalBase ?? data.total_base ?? 0,
   )
   const naFila = Number(kpisRaw.naFila ?? kpisRaw.na_fila ?? data.naFila ?? data.na_fila ?? 0)
-  const reativados = Number(kpisRaw.reativados ?? kpisRaw.reativado ?? data.reativados ?? 0)
+  const reativados = Number(
+    kpisRaw.reativadosReais ??
+      kpisRaw.reativados ??
+      kpisRaw.reativado ??
+      data.reativadosReais ??
+      data.reativados ??
+      0,
+  )
   const taxaReativacao = Number(
-    kpisRaw.taxaReativacao ?? kpisRaw.taxa_reativacao ?? data.taxaReativacao ?? 0,
+    kpisRaw.taxaReativacaoFloat ??
+      kpisRaw.taxaReativacao ??
+      kpisRaw.taxa_reativacao ??
+      data.taxaReativacao ??
+      0,
   )
   const valorRecuperado = Number(
     kpisRaw.valorRecuperado ?? kpisRaw.valor_recuperado ?? data.valorRecuperado ?? 0,
@@ -1041,15 +1052,47 @@ export async function fetchMetricasBaseKpis(options?: {
   const toneladasRecuperadas = Number(
     kpisRaw.toneladasRecuperadas ?? kpisRaw.toneladas_recuperadas ?? data.toneladasRecuperadas ?? 0,
   )
+  const faturamentoRecenteCruzamento = Number(
+    kpisRaw.faturamentoRecenteCruzamento ??
+      kpisRaw.faturamento_recente_cruzamento ??
+      data.faturamentoRecenteCruzamento ??
+      data.faturamento_recente_cruzamento ??
+      0,
+  )
+  const valorFaturamentoCruzamento = Number(
+    kpisRaw.valorFaturamentoCruzamento ??
+      kpisRaw.valor_faturamento_recente_cruzamento ??
+      data.valorFaturamentoCruzamento ??
+      data.valor_faturamento_recente_cruzamento ??
+      0,
+  )
+  const toneladasFaturamentoCruzamento = Number(
+    kpisRaw.toneladasFaturamentoCruzamento ??
+      kpisRaw.toneladas_faturamento_recente_cruzamento ??
+      data.toneladasFaturamentoCruzamento ??
+      data.toneladas_faturamento_recente_cruzamento ??
+      0,
+  )
 
   return {
     kpis: {
       totalBase,
       naFila,
       reativados,
+      reativadosReais: reativados,
       taxaReativacao,
+      taxaReativacaoFloat: taxaReativacao,
       valorRecuperado,
       toneladasRecuperadas,
+      faturamentoRecenteCruzamento,
+      valorFaturamentoCruzamento,
+      toneladasFaturamentoCruzamento,
+      reativadosTotalBruto: Number(
+        kpisRaw.reativadosTotalBruto ?? kpisRaw.reativado_total ?? data.reativadosTotalBruto ?? 0,
+      ),
+      valorRecuperadoTotalBruto: Number(
+        kpisRaw.valorRecuperadoTotalBruto ?? data.valorRecuperadoTotalBruto ?? 0,
+      ),
     },
     estadosContagem: data.estadosContagem || {},
     regioesMap: data.regioesMap || {},
