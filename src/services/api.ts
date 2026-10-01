@@ -867,6 +867,7 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
     'Compra por CNPJ de terceiro / coligada': 0,
     'Acompanhamento periódico do vendedor': 0,
     'Cliente ativo em outro cadastro/filial': 0,
+    'Cliente Final — Uso Pessoal': 0,
     'Outros motivos': 0,
   }
 
@@ -874,6 +875,13 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
   const categorizarMotivo = (motivoRaw?: string): string => {
     if (!motivoRaw) return 'Outros motivos'
     const lower = motivoRaw.toLowerCase()
+    if (
+      lower.includes('cliente final') ||
+      lower.includes('uso pessoal') ||
+      lower.includes('cliente_final')
+    ) {
+      return 'Cliente Final — Uso Pessoal'
+    }
     if (lower.includes('cpf')) return 'Compra por CPF de terceiro'
     if (lower.includes('cnpj') || lower.includes('coligada'))
       return 'Compra por CNPJ de terceiro / coligada'

@@ -392,6 +392,7 @@ export type CategoriaDiagnostico =
   | 'nao_localizado_telefone'
   | 'recusa_formal'
   | 'ativo_outro_cadastro'
+  | 'cliente_final'
   | 'outros'
 
 export interface DiagnosticoItemMotivo {

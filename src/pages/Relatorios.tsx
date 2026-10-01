@@ -545,6 +545,8 @@ export default function RelatoriosPage() {
         return <Ban className="h-4 w-4 text-zinc-700" />
       case 'ShieldCheck':
         return <ShieldCheck className="h-4 w-4 text-teal-600" />
+      case 'UserCheck':
+        return <UserCheck className="h-4 w-4 text-sky-600" />
       default:
         return <FileQuestion className="h-4 w-4 text-slate-500" />
     }
@@ -2598,13 +2600,15 @@ export default function RelatoriosPage() {
                       <td className="py-2.5 px-3.5">
                         <Badge
                           className={`text-[10px] font-medium whitespace-nowrap ${
-                            item.motivo_categoria === 'Compra por CPF de terceiro'
-                              ? 'bg-blue-100 text-blue-800 border-blue-200'
-                              : item.motivo_categoria.includes('CNPJ')
-                                ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
-                                : item.motivo_categoria.includes('Acompanhamento')
-                                  ? 'bg-amber-100 text-amber-800 border-amber-200'
-                                  : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                            item.motivo_categoria === 'Cliente Final — Uso Pessoal'
+                              ? 'bg-sky-100 text-sky-800 border-sky-200'
+                              : item.motivo_categoria === 'Compra por CPF de terceiro'
+                                ? 'bg-blue-100 text-blue-800 border-blue-200'
+                                : item.motivo_categoria.includes('CNPJ')
+                                  ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                                  : item.motivo_categoria.includes('Acompanhamento')
+                                    ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                    : 'bg-emerald-100 text-emerald-800 border-emerald-200'
                           }`}
                         >
                           {item.motivo_categoria}

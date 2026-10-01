@@ -85,6 +85,12 @@ const DEFINICOES_CATEGORIAS: Record<
     corBadge: 'bg-teal-50 text-teal-800 border-teal-300',
     icone: 'ShieldCheck',
   },
+  cliente_final: {
+    titulo: 'Cliente Final — Uso Pessoal',
+    descricao: 'Fez uma compra para uso próprio/reforma pontual e não tem recorrência comercial',
+    corBadge: 'bg-sky-50 text-sky-800 border-sky-300',
+    icone: 'UserCheck',
+  },
   outros: {
     titulo: 'Outros Motivos Diversificados',
     descricao:
@@ -247,8 +253,23 @@ function extrairMotivoDeDesfecho(
   if (
     d === 'ativo_fora_base' ||
     combined.includes('ativo fora da base') ||
-    combined.includes('cliente ativo')
+    combined.includes('cliente ativo') ||
+    combined.includes('cliente final')
   ) {
+    const isClienteFinal =
+      combined.includes('cliente final') ||
+      combined.includes('uso pessoal') ||
+      combined.includes('cliente_final')
+
+    if (isClienteFinal) {
+      return {
+        categoria: 'cliente_final',
+        perguntaOrigem: 'Desfecho — Cliente Final (Uso Pessoal)',
+        respostaBruta:
+          motivoRaw || 'Cliente final — Fez uma compra pra uso pessoal e não comprou mais',
+      }
+    }
+
     return {
       categoria: 'ativo_outro_cadastro',
       perguntaOrigem: 'Desfecho — Cliente Ativo Fora da Base',

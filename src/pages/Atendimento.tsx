@@ -502,14 +502,26 @@ export default function AtendimentoPage() {
       } else if (desfechoFinal === 'ativo_fora_base') {
         // Regra da Frente 2: Cliente Ativo — Fora da Base de Inativos
         // Marcação permanente no banco para nunca mais voltar para a fila de inativos
+        const textoMotivoEfetivo =
+          motivoAtivoForaBase === 'cliente_final'
+            ? 'Cliente final — Fez uma compra pra uso pessoal e não comprou mais'
+            : motivoAtivoForaBase
+
         updatePayload.ativo_fora_base = true
-        updatePayload.motivo_ativo_fora_base = `${motivoAtivoForaBase}${obsAtivoForaBase ? ` — ${obsAtivoForaBase}` : ''}`
+        updatePayload.motivo_ativo_fora_base = `${textoMotivoEfetivo}${obsAtivoForaBase ? ` — ${obsAtivoForaBase}` : ''}`
         updatePayload.operador = undefined
         updatePayload.lock_timestamp = undefined
         updatePayload.quarentena_ate = undefined
       }
 
       await updateCliente(cliente.id, updatePayload)
+
+      const textoMotivoFinalizacao =
+        desfechoFinal === 'ativo_fora_base'
+          ? motivoAtivoForaBase === 'cliente_final'
+            ? 'Cliente final — Fez uma compra pra uso pessoal e não comprou mais'
+            : motivoAtivoForaBase
+          : motivoDesfecho
 
       // 3. Registrar interação de encerramento
       await createInteracao({
@@ -519,11 +531,11 @@ export default function AtendimentoPage() {
         desfecho: desfechoFinal,
         motivo:
           desfechoFinal === 'ativo_fora_base'
-            ? `${motivoAtivoForaBase}${obsAtivoForaBase ? ` — ${obsAtivoForaBase}` : ''}`
+            ? `${textoMotivoFinalizacao}${obsAtivoForaBase ? ` — ${obsAtivoForaBase}` : ''}`
             : motivoDesfecho,
         conteudo:
           desfechoFinal === 'ativo_fora_base'
-            ? `Atendimento finalizado: CLIENTE ATIVO — FORA DA BASE DE INATIVOS.\nMotivo: ${motivoAtivoForaBase}\nObservação do operador: ${obsAtivoForaBase || 'Nenhuma'}\n(Cliente removido permanentemente da base de inativos e protegido contra reimportações/recálculo)`
+            ? `Atendimento finalizado: CLIENTE ATIVO — FORA DA BASE DE INATIVOS.\nMotivo: ${textoMotivoFinalizacao}\nObservação do operador: ${obsAtivoForaBase || 'Nenhuma'}\n(Cliente removido permanentemente da base de inativos e protegido contra reimportações/recálculo)`
             : `Atendimento finalizado com desfecho: ${desfechoFinal.toUpperCase()}.\nObservações: ${observacoes || 'Nenhuma'}${
                 numeroPedido ? `\nPedido: ${numeroPedido}` : ''
               }`,
@@ -1433,6 +1445,9 @@ export default function AtendimentoPage() {
                                   className="text-xs"
                                 >
                                   Cliente ativo faturando por outro cadastro/filial
+                                </SelectItem>
+                                <SelectItem value="cliente_final" className="text-xs">
+                                  Cliente final — Fez uma compra pra uso pessoal e não comprou mais
                                 </SelectItem>
                                 <SelectItem
                                   value="outro motivo de cliente ativo"
