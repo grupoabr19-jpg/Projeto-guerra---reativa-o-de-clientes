@@ -22,6 +22,7 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { useAuth } from '@/contexts/AuthContext'
 import { checkKommoStatus, testKommoConnection } from '@/services/api'
 import { ExpedienteStatusBadge } from '@/components/ExpedienteStatusBadge'
+import { LogoAbr } from '@/components/LogoAbr'
 
 export default function Layout() {
   const { user, logout, hasRole } = useAuth()
@@ -214,10 +215,9 @@ export default function Layout() {
       {/* Brand Header com Logo Oficial */}
       <div className="p-4 border-b border-[#253575]/80 flex items-center space-x-3 bg-[#112048]">
         <div className="relative shrink-0">
-          <img
-            src="/src/assets/logo-abr-oficial-bf48e.png"
-            alt="Grupo ABR — Seu parceiraço!"
+          <LogoAbr
             className="h-11 w-11 rounded-lg object-contain shadow-md ring-1 ring-white/15 bg-[#253575]"
+            alt="Grupo ABR — Seu parceiraço!"
           />
         </div>
         <div className="min-w-0 flex-1">

@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useAuth } from '@/contexts/AuthContext'
+import { LogoAbr } from '@/components/LogoAbr'
 
 export default function Index() {
   const { login, user } = useAuth()
@@ -68,10 +69,9 @@ export default function Index() {
         {/* Brand Hero com Logo Oficial Grupo ABR */}
         <div className="text-center space-y-3">
           <div className="inline-block relative">
-            <img
-              src="/src/assets/logo-abr-oficial-bf48e.png"
-              alt="Grupo ABR — Seu parceiraço!"
+            <LogoAbr
               className="h-20 w-20 rounded-2xl mx-auto shadow-xl shadow-[#253575]/25 ring-2 ring-[#253575]/20 object-contain bg-[#253575] p-1"
+              alt="Grupo ABR — Seu parceiraço!"
             />
             {/* Grafismo curva de destaque */}
             <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 bg-[#F18800] rounded-full ring-2 ring-white" />
