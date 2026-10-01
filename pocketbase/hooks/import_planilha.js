@@ -609,9 +609,15 @@ routerAdd(
             }
             if (locStr) rec.set('endereco', locStr)
 
+            const rawCanal = String(row.canal || '')
+              .trim()
+              .toUpperCase()
             const rawReg = String(row.regiao || '').trim()
             let parsedReg = rawReg ? rawReg.toUpperCase() : 'Sem Região'
-            if (parsedReg === 'BRAGANÇA PAULISTA' || parsedReg === 'BRAGANCA PAULISTA') {
+            if (rawCanal === 'ATACADO') {
+              // Regra da Frente 1: canal ATACADO -> regiao ATACADO independente do que vier na planilha
+              parsedReg = 'ATACADO'
+            } else if (parsedReg === 'BRAGANÇA PAULISTA' || parsedReg === 'BRAGANCA PAULISTA') {
               parsedReg = 'BRAGANÇA'
             } else if (
               parsedReg === 'MICRO-REGIÃO' ||
@@ -755,6 +761,82 @@ routerAdd(
 
             rec.set('score', calcScore)
 
+            // Extração de DDD do telefone / whatsapp
+            const telDddRaw = (
+              rec.getString('telefone') ||
+              rec.getString('whatsapp') ||
+              ''
+            ).replace(/\D/g, '')
+            let dddCalculado = ''
+            if (telDddRaw) {
+              let sDdd = telDddRaw
+              if (sDdd.startsWith('0')) sDdd = sDdd.slice(1)
+              if (sDdd.startsWith('55') && sDdd.length >= 12) sDdd = sDdd.slice(2)
+              dddCalculado = sDdd.slice(0, 2)
+            }
+            rec.set('ddd_telefone', dddCalculado)
+
+            // Classificação da base_categoria:
+            // 1. ATACADO fora do mapa: ddd fora de 11,12,13,14,15,16,17,18,19
+            // 2. Base Cliente Final: documento CPF ou não identificado E <= 2 compras nos últimos 24 meses
+            const cleanDoc = String(rec.getString('cpf_cnpj') || '').replace(/\D/g, '')
+            const isCpfOuNaoIdentificado = cleanDoc.length === 11 || !cleanDoc
+            const isClienteFinalComportamento =
+              isCpfOuNaoIdentificado &&
+              comprasCount <= 2 &&
+              (diasSemFaturar <= 730 || diasSemFaturar === 0)
+
+            if (
+              parsedReg === 'ATACADO' &&
+              (!dddCalculado ||
+                !['11', '12', '13', '14', '15', '16', '17', '18', '19'].includes(dddCalculado))
+            ) {
+              rec.set('base_categoria', 'atacado_fora_mapa')
+            } else if (isClienteFinalComportamento) {
+              rec.set('base_categoria', 'cliente_final')
+            } else {
+              rec.set('base_categoria', 'normal')
+            }
+
+            // Marcação de órfão se vendedor não estiver na equipe
+            const vendUp = vendedorRow
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .toUpperCase()
+            const equipeNomesAtivos = [
+              'ALESSANDRO',
+              'LEIZ',
+              'HELOA',
+              'DYOVANA',
+              'JOSIANE',
+              'KAYLANE',
+              'PETERSON',
+              'BRUNA',
+              'THAIS',
+              'PAOLA',
+              'VITORIA',
+              'JOSE',
+              'FELIPE',
+              'MILENA',
+              'CAMILA',
+              'JENNIFER',
+              'GABRIELA',
+              'JESSICA',
+              'GUSTAVO',
+              'INAYARA',
+              'TAINARA',
+              'JULIANO',
+              'EDMILA',
+              'ARIANE',
+              'MATHEUS',
+              'JULIO',
+              'LARISSA',
+              'WILSON',
+              'PRISCILA',
+            ]
+            const temDonoNaEquipe = !vendUp || equipeNomesAtivos.some((n) => vendUp.includes(n))
+            rec.set('sem_dono_equipe', !temDonoNaEquipe)
+
             if (faixa === 'recente') {
               rec.set('estado', 'reativado')
               countReconciliadosFaturaram++
@@ -811,9 +893,14 @@ routerAdd(
               mudou = true
             }
 
+            const rawCanalExistente = String(row.canal || rec.getString('canal') || '')
+              .trim()
+              .toUpperCase()
             const rawReg = String(row.regiao || '').trim()
             let parsedReg = rawReg ? rawReg.toUpperCase() : 'Sem Região'
-            if (parsedReg === 'BRAGANÇA PAULISTA' || parsedReg === 'BRAGANCA PAULISTA') {
+            if (rawCanalExistente === 'ATACADO') {
+              parsedReg = 'ATACADO'
+            } else if (parsedReg === 'BRAGANÇA PAULISTA' || parsedReg === 'BRAGANCA PAULISTA') {
               parsedReg = 'BRAGANÇA'
             } else if (
               parsedReg === 'MICRO-REGIÃO' ||
@@ -836,6 +923,90 @@ routerAdd(
             }
             if (vendedorRow && stringsDifferent(rec.getString('vendedor'), vendedorRow)) {
               rec.set('vendedor', vendedorRow)
+              mudou = true
+            }
+
+            // Atualização de ddd_telefone
+            const telDddRawExist = (
+              rec.getString('telefone') ||
+              rec.getString('whatsapp') ||
+              ''
+            ).replace(/\D/g, '')
+            let dddCalcExist = ''
+            if (telDddRawExist) {
+              let sDdd = telDddRawExist
+              if (sDdd.startsWith('0')) sDdd = sDdd.slice(1)
+              if (sDdd.startsWith('55') && sDdd.length >= 12) sDdd = sDdd.slice(2)
+              dddCalcExist = sDdd.slice(0, 2)
+            }
+            if (stringsDifferent(rec.getString('ddd_telefone'), dddCalcExist)) {
+              rec.set('ddd_telefone', dddCalcExist)
+              mudou = true
+            }
+
+            // Atualização de base_categoria
+            const cleanDocExist = String(rec.getString('cpf_cnpj') || '').replace(/\D/g, '')
+            const isCpfOuNaoIdentificadoExist = cleanDocExist.length === 11 || !cleanDocExist
+            const isClienteFinalComportamentoExist =
+              isCpfOuNaoIdentificadoExist &&
+              comprasCount <= 2 &&
+              (diasSemFaturar <= 730 || diasSemFaturar === 0)
+
+            let novaBaseCat = rec.getString('base_categoria') || 'normal'
+            if (
+              parsedReg === 'ATACADO' &&
+              (!dddCalcExist ||
+                !['11', '12', '13', '14', '15', '16', '17', '18', '19'].includes(dddCalcExist))
+            ) {
+              novaBaseCat = 'atacado_fora_mapa'
+            } else if (isClienteFinalComportamentoExist && novaBaseCat !== 'atacado_fora_mapa') {
+              novaBaseCat = 'cliente_final'
+            }
+            if (stringsDifferent(rec.getString('base_categoria'), novaBaseCat)) {
+              rec.set('base_categoria', novaBaseCat)
+              mudou = true
+            }
+
+            // Atualização de sem_dono_equipe
+            const vendUpExist = (vendedorRow || rec.getString('vendedor') || '')
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .toUpperCase()
+            const equipeNomesAtivosExist = [
+              'ALESSANDRO',
+              'LEIZ',
+              'HELOA',
+              'DYOVANA',
+              'JOSIANE',
+              'KAYLANE',
+              'PETERSON',
+              'BRUNA',
+              'THAIS',
+              'PAOLA',
+              'VITORIA',
+              'JOSE',
+              'FELIPE',
+              'MILENA',
+              'CAMILA',
+              'JENNIFER',
+              'GABRIELA',
+              'JESSICA',
+              'GUSTAVO',
+              'INAYARA',
+              'TAINARA',
+              'JULIANO',
+              'EDMILA',
+              'ARIANE',
+              'MATHEUS',
+              'JULIO',
+              'LARISSA',
+              'WILSON',
+              'PRISCILA',
+            ]
+            const temDonoExist =
+              !vendUpExist || equipeNomesAtivosExist.some((n) => vendUpExist.includes(n))
+            if (rec.getBool('sem_dono_equipe') !== !temDonoExist) {
+              rec.set('sem_dono_equipe', !temDonoExist)
               mudou = true
             }
 

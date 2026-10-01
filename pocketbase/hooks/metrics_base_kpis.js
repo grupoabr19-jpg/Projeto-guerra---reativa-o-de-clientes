@@ -71,9 +71,10 @@ routerAdd(
         }
       }
 
-      // Regra fundamental: clientes marcados com ativo_fora_base (flag ou estado) NÃO contam na carteira ativa/inativos nem na fila
+      // Regra fundamental: clientes marcados com ativo_fora_base (flag ou estado), Base Cliente Final e ATACADO Fora do Mapa
+      // NÃO contam na carteira ativa elegível para fila/KPIs de reativação
       const baseFilterSql =
-        "estado != 'ativo_fora_base' AND (ativo_fora_base IS NULL OR ativo_fora_base = 0)"
+        "estado != 'ativo_fora_base' AND (ativo_fora_base IS NULL OR ativo_fora_base = 0) AND (base_categoria IS NULL OR base_categoria = 'normal')"
 
       // 1. Contagens agregadas gerais e valores recuperados
       // No PocketBase JSVM (Goja), dbx.Query.one() requer um DynamicModel com a estrutura dos campos.

@@ -181,7 +181,12 @@ export async function reserveNextQueueClient(options?: {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.message || 'Falha ao reservar cliente na fila')
   }
-  return res.json() as Promise<{ cliente: Cliente | null; ja_reservado: boolean; message: string }>
+  return res.json() as Promise<{
+    cliente: Cliente | null
+    ja_reservado: boolean
+    carteira_esgotada?: boolean
+    message: string
+  }>
 }
 
 export async function fetchInteracoesByOperador(operadorId: string) {

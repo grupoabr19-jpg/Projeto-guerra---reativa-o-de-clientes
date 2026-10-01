@@ -71,6 +71,9 @@ export interface Cliente {
   rascunho_respostas?: Record<string, unknown>
   ativo_fora_base?: boolean
   motivo_ativo_fora_base?: string
+  base_categoria?: 'normal' | 'cliente_final' | 'atacado_fora_mapa'
+  sem_dono_equipe?: boolean
+  ddd_telefone?: string
   // Gatilhos de fechamento / cruzamento de planilhas
   ultimo_faturamento_data?: string
   fat_12m_reais?: number

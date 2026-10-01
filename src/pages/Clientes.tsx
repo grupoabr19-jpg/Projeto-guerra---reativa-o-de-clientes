@@ -51,6 +51,7 @@ export default function ClientesPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRegiao, setSelectedRegiao] = useState<string>('todas')
   const [selectedEstado, setSelectedEstado] = useState<string>('todos')
+  const [selectedCategoria, setSelectedCategoria] = useState<string>('todas')
 
   // Gaveta de Detalhes
   const [selectedClient, setSelectedClient] = useState<Cliente | null>(null)
@@ -126,6 +127,17 @@ export default function ClientesPage() {
     if (selectedRegiao !== 'todas' && c.regiao !== selectedRegiao) return false
     if (selectedEstado !== 'todos' && c.estado !== selectedEstado) return false
 
+    // Filtro por categoria de base (Normal, Cliente Final, ATACADO Fora do Mapa, Sem Dono na Equipe)
+    if (selectedCategoria === 'cliente_final' && c.base_categoria !== 'cliente_final') return false
+    if (selectedCategoria === 'atacado_fora_mapa' && c.base_categoria !== 'atacado_fora_mapa')
+      return false
+    if (selectedCategoria === 'sem_dono_equipe' && !c.sem_dono_equipe) return false
+    if (
+      selectedCategoria === 'normal' &&
+      (c.base_categoria === 'cliente_final' || c.base_categoria === 'atacado_fora_mapa')
+    )
+      return false
+
     if (searchTerm) {
       const term = searchTerm.toLowerCase()
       const matchCod = c.codigo.toLowerCase().includes(term)
@@ -198,6 +210,20 @@ export default function ClientesPage() {
               <SelectItem value="compra_terceiros">Compra Terceiros</SelectItem>
               <SelectItem value="nao_quer_negociar">Não Quer Negociar</SelectItem>
               <SelectItem value="sem_contato">Sem Contato</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Categoria de Base (Frentes 2, 3 e 4) */}
+          <Select value={selectedCategoria} onValueChange={setSelectedCategoria}>
+            <SelectTrigger className="h-9 text-xs w-52 border-[#253575]/30 bg-blue-50/20 font-medium text-slate-800">
+              <SelectValue placeholder="Base / Categoria" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas as Bases</SelectItem>
+              <SelectItem value="normal">🎯 Base Normal (Elegível Fila)</SelectItem>
+              <SelectItem value="cliente_final">🛑 Base Cliente Final (Separada)</SelectItem>
+              <SelectItem value="atacado_fora_mapa">📍 ATACADO — Fora do Mapa</SelectItem>
+              <SelectItem value="sem_dono_equipe">⚠️ Vendedor sem dono na equipe</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -273,10 +299,28 @@ export default function ClientesPage() {
                           {item.codigo}
                         </span>{' '}
                       </td>
-                      <td className="py-3 px-3">
-                        <Badge variant="outline" className="text-[10px] uppercase font-mono">
+                      <td className="py-3 px-3 space-y-1">
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] uppercase font-mono block w-fit"
+                        >
                           {item.estado.replace('_', ' ')}
                         </Badge>
+                        {item.base_categoria === 'cliente_final' && (
+                          <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[9px] block w-fit">
+                            Cliente Final
+                          </Badge>
+                        )}
+                        {item.base_categoria === 'atacado_fora_mapa' && (
+                          <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[9px] block w-fit">
+                            Fora do Mapa
+                          </Badge>
+                        )}
+                        {item.sem_dono_equipe && (
+                          <Badge className="bg-slate-100 text-slate-700 border-slate-300 text-[9px] block w-fit">
+                            Sem dono equipe
+                          </Badge>
+                        )}
                       </td>
                       <td className="py-3 px-3 text-right space-x-2">
                         <Button

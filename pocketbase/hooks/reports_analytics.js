@@ -39,9 +39,9 @@ routerAdd(
       const periodoParam = String(q.periodo || 'total').trim()
 
       // Construção dos filtros SQL para a tabela clientes
-      // Base: ignorar clientes marcados como ativo_fora_base
+      // Base: ignorar clientes marcados como ativo_fora_base, Base Cliente Final e ATACADO Fora do Mapa
       const baseFilterSql =
-        "estado != 'ativo_fora_base' AND (ativo_fora_base IS NULL OR ativo_fora_base = 0)"
+        "estado != 'ativo_fora_base' AND (ativo_fora_base IS NULL OR ativo_fora_base = 0) AND (base_categoria IS NULL OR base_categoria = 'normal')"
       const conditions = [baseFilterSql]
       const bindParams = {}
 

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-01T12:49:22.825Z",
+  "generatedAt": "2026-10-01T14:02:21.069Z",
   "collections": [
     {
       "name": "users",
@@ -398,6 +398,25 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "base_categoria",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["normal", "cliente_final", "atacado_fora_mapa"]
+        },
+        {
+          "name": "sem_dono_equipe",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ddd_telefone",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -411,7 +430,10 @@
         "CREATE INDEX `idx_clientes_segmento` ON `clientes` (segmento)",
         "CREATE INDEX `idx_clientes_vendedor` ON `clientes` (vendedor)",
         "CREATE INDEX `idx_clientes_dias_sem_faturar` ON `clientes` (dias_sem_faturar)",
-        "CREATE INDEX `idx_clientes_fat_12m` ON `clientes` (fat_12m_reais)"
+        "CREATE INDEX `idx_clientes_fat_12m` ON `clientes` (fat_12m_reais)",
+        "CREATE INDEX `idx_clientes_base_categoria` ON `clientes` (base_categoria)",
+        "CREATE INDEX `idx_clientes_sem_dono_equipe` ON `clientes` (sem_dono_equipe)",
+        "CREATE INDEX `idx_clientes_ddd_telefone` ON `clientes` (ddd_telefone)"
       ]
     },
     {

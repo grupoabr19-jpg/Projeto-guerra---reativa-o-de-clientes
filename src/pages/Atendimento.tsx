@@ -162,10 +162,12 @@ export default function AtendimentoPage() {
           })
         }
       } else {
-        // Distingue fila vazia de erro de forma clara e amigável
+        // Distingue carteira esgotada / fila vazia de erro de forma clara e amigável
         toast({
-          variant: 'default',
-          title: 'Nenhum cliente elegível na sua fila',
+          variant: res.carteira_esgotada ? 'destructive' : 'default',
+          title: res.carteira_esgotada
+            ? 'Carteira esgotada'
+            : 'Nenhum cliente elegível na sua fila',
           description:
             res.message ||
             'Não encontramos nenhum cliente elegível disponível na sua rota no momento. Tente trocar os filtros ou tente novamente mais tarde.',
@@ -502,13 +504,17 @@ export default function AtendimentoPage() {
       } else if (desfechoFinal === 'ativo_fora_base') {
         // Regra da Frente 2: Cliente Ativo — Fora da Base de Inativos
         // Marcação permanente no banco para nunca mais voltar para a fila de inativos
-        const textoMotivoEfetivo =
-          motivoAtivoForaBase === 'cliente_final'
-            ? 'Cliente final — Fez uma compra pra uso pessoal e não comprou mais'
-            : motivoAtivoForaBase
+        const isClienteFinal = motivoAtivoForaBase === 'cliente_final'
+        const textoMotivoEfetivo = isClienteFinal
+          ? 'Cliente final — Fez uma compra pra uso pessoal e não comprou mais'
+          : motivoAtivoForaBase
 
         updatePayload.ativo_fora_base = true
         updatePayload.motivo_ativo_fora_base = `${textoMotivoEfetivo}${obsAtivoForaBase ? ` — ${obsAtivoForaBase}` : ''}`
+        if (isClienteFinal) {
+          // Regra da Frente 4: desfecho 'cliente_final' migra para a Base Cliente Final
+          updatePayload.base_categoria = 'cliente_final'
+        }
         updatePayload.operador = undefined
         updatePayload.lock_timestamp = undefined
         updatePayload.quarentena_ate = undefined
@@ -600,24 +606,24 @@ export default function AtendimentoPage() {
             {/* Ordenação: Score, Mais Antigos, Mais Novos */}
             <div className="space-y-1">
               <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider block">
-                Critério de Ordenação
+                Critério de Ordenação / Fila
               </span>
               <Select
                 value={filtroOrdenacao}
                 onValueChange={(val: 'score' | 'antigos' | 'novos') => setFiltroOrdenacao(val)}
               >
-                <SelectTrigger className="h-8 text-xs w-44 bg-white border-slate-300">
+                <SelectTrigger className="h-8 text-xs w-48 bg-white border-slate-300">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="score" className="text-xs">
-                    ⭐ Maior Score Primeiro
+                    ⭐ Padrão (60–89d / Score)
                   </SelectItem>
                   <SelectItem value="antigos" className="text-xs">
-                    ⏳ Mais Antigos (+ dias sem faturar)
+                    ⏳ Mais Antigos (90+ dias / Antigos)
                   </SelectItem>
                   <SelectItem value="novos" className="text-xs">
-                    ✨ Mais Novos (menos dias sem faturar)
+                    ✨ Mais Novos (menos dias)
                   </SelectItem>
                 </SelectContent>
               </Select>
