@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   CheckCircle,
+  Sparkles,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -158,11 +159,18 @@ export default function Dashboard() {
       (baseKpisData as any)?.na_fila ??
       0,
   )
+  // Reativações REAIS da equipe (atendimento por operador com pedido / confirmação)
   const reativados = Number(
-    baseKpisData?.kpis?.reativados ?? (baseKpisData?.kpis as any)?.reativado ?? 0,
+    baseKpisData?.kpis?.reativadosReais ??
+      baseKpisData?.kpis?.reativados ??
+      (baseKpisData?.kpis as any)?.reativado ??
+      0,
   )
   const taxaReativacao = Number(
-    baseKpisData?.kpis?.taxaReativacao ?? (baseKpisData?.kpis as any)?.taxa_reativacao ?? 0,
+    baseKpisData?.kpis?.taxaReativacaoFloat ??
+      baseKpisData?.kpis?.taxaReativacao ??
+      (baseKpisData?.kpis as any)?.taxa_reativacao ??
+      0,
   )
   const valorRecuperado = Number(
     baseKpisData?.kpis?.valorRecuperado ?? (baseKpisData?.kpis as any)?.valor_recuperado ?? 0,
@@ -170,6 +178,23 @@ export default function Dashboard() {
   const toneladasRecuperadas = Number(
     baseKpisData?.kpis?.toneladasRecuperadas ??
       (baseKpisData?.kpis as any)?.toneladas_recuperadas ??
+      0,
+  )
+
+  // Clientes com Faturamento Recente identificados no Cruzamento de Planilhas (sem atendimento de operador)
+  const faturamentoCruzamentoCount = Number(
+    baseKpisData?.kpis?.faturamentoRecenteCruzamento ??
+      (baseKpisData?.kpis as any)?.faturamento_recente_cruzamento ??
+      0,
+  )
+  const valorFaturamentoCruzamento = Number(
+    baseKpisData?.kpis?.valorFaturamentoCruzamento ??
+      (baseKpisData?.kpis as any)?.valor_faturamento_recente_cruzamento ??
+      0,
+  )
+  const toneladasFaturamentoCruzamento = Number(
+    baseKpisData?.kpis?.toneladasFaturamentoCruzamento ??
+      (baseKpisData?.kpis as any)?.toneladas_faturamento_recente_cruzamento ??
       0,
   )
 
@@ -870,10 +895,16 @@ export default function Dashboard() {
             </Button>
           </div>
         )}
-        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3">
-          Métricas de Carteira e Recuperação da Base
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
+            Métricas de Carteira e Recuperação da Base
+          </h3>
+          <span className="text-[11px] text-slate-500">
+            Reativações reais da equipe separadas de faturamento recente do cruzamento
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
+          {/* 1. TOTAL INATIVOS BASE */}
           <Card className="border-slate-200 shadow-sm hover:shadow transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -891,6 +922,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
+          {/* 2. NA FILA DE TRABALHO */}
           <Card className="border-slate-200 shadow-sm hover:shadow transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -908,24 +940,36 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="border-slate-200 shadow-sm hover:shadow transition-shadow">
+          {/* 3. CLIENTES REATIVADOS (APENAS REATIVAÇÕES REAIS DA EQUIPE) */}
+          <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50/50 via-white to-white shadow-sm hover:shadow transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Clientes Reativados
-              </CardTitle>
-              <div className="h-8 w-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <div>
+                <CardTitle className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>Clientes Reativados</span>
+                  <Badge className="bg-emerald-600 text-white text-[9px] px-1 py-0">
+                    Real Equipe
+                  </Badge>
+                </CardTitle>
+                <span className="text-[10px] text-emerald-700 block">
+                  Atendidos c/ operador e pedido
+                </span>
+              </div>
+              <div className="h-8 w-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
                 <UserCheck className="h-4 w-4" />
               </div>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-emerald-600 tabular-nums">{reativados}</div>
-              <p className="text-[11px] text-emerald-600 mt-1 flex items-center font-medium">
-                <ArrowUpRight className="h-3 w-3 mr-0.5" />
-                R$ {valorRecuperado.toLocaleString('pt-BR')} ({toneladasRecuperadas} ton)
+              <p className="text-[11px] text-emerald-700 mt-1 flex items-center font-medium">
+                <ArrowUpRight className="h-3 w-3 mr-0.5 shrink-0" />
+                <span className="truncate">
+                  R$ {valorRecuperado.toLocaleString('pt-BR')} ({toneladasRecuperadas} ton)
+                </span>
               </p>
             </CardContent>
           </Card>
 
+          {/* 4. TAXA DE RECUPERAÇÃO (APENAS REATIVAÇÕES REAIS) */}
           <Card className="border-slate-200 shadow-sm hover:shadow transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -945,7 +989,47 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {/* NOVO CARD: Clientes Ativos Removidos da Base */}
+          {/* 5. NOVO CARD: FATURAMENTO RECENTE NA BASE (IDENTIFICADOS NO CRUZAMENTO) */}
+          <Card className="border-amber-200 bg-gradient-to-br from-amber-50/70 via-white to-orange-50/30 shadow-sm hover:border-amber-400 transition-colors">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <div>
+                <CardTitle className="text-xs font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>Faturamento Recente</span>
+                  <Badge className="bg-amber-500 text-white text-[9px] px-1 py-0">Cruzamento</Badge>
+                </CardTitle>
+                <span className="text-[10px] text-amber-800 block">
+                  Identificados na base sem operador
+                </span>
+              </div>
+              <div className="h-8 w-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 shrink-0 shadow-2xs">
+                <Sparkles className="h-4 w-4" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-baseline justify-between">
+                <div className="text-2xl font-black text-amber-700 tabular-nums font-mono">
+                  {faturamentoCruzamentoCount}
+                </div>
+                <Link
+                  to="/relatorios"
+                  className="text-[11px] font-semibold text-amber-800 hover:text-amber-950 hover:underline flex items-center"
+                >
+                  Limpar &rarr;
+                </Link>
+              </div>
+              <div className="mt-1 space-y-0.5">
+                <p className="text-[11px] font-bold text-amber-900 tabular-nums truncate">
+                  R$ {valorFaturamentoCruzamento.toLocaleString('pt-BR')} (
+                  {toneladasFaturamentoCruzamento} ton)
+                </p>
+                <p className="text-[10px] text-slate-500 leading-tight">
+                  Identificados no cruzamento • insumo para limpeza de base
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 6. ATIVOS FORA DA BASE (LIMPEZA CONCLUÍDA) */}
           <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50/70 via-white to-teal-50/40 shadow-sm hover:border-emerald-400 transition-colors">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <div>
@@ -1183,10 +1267,19 @@ export default function Dashboard() {
                   barBg: 'bg-cyan-100',
                 },
                 {
-                  label: 'Reativados (Sucesso)',
+                  label: 'Reativações Reais (Equipe)',
                   count: estadosContagem.reativado,
                   color: 'bg-emerald-500',
                   barBg: 'bg-emerald-100',
+                },
+                {
+                  label: 'Faturamento Recente (Cruzamento)',
+                  count:
+                    estadosContagem.reativado_cruzamento !== undefined
+                      ? estadosContagem.reativado_cruzamento
+                      : faturamentoCruzamentoCount,
+                  color: 'bg-amber-500',
+                  barBg: 'bg-amber-100',
                 },
                 {
                   label: 'Comprando Terceiros',

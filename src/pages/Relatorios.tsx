@@ -420,11 +420,19 @@ export default function RelatoriosPage() {
   // Exportar Geral da Operação (amostra de auditoria)
   const handleExportGeralCSV = async () => {
     let csv =
-      'Total_Base;Elegiveis_Fila;Reativados;Taxa_Recuperacao;Valor_Recuperado;Regiao_Filtro;Segmento_Filtro;Vendedor_Filtro;Desfecho_Filtro\n'
+      'Total_Base;Elegiveis_Fila;Reativacoes_Reais_Equipe;Taxa_Recuperacao_Real;Valor_Recuperado_Real;Faturamento_Recente_Cruzamento;Valor_Faturamento_Cruzamento;Regiao_Filtro;Segmento_Filtro;Vendedor_Filtro;Desfecho_Filtro\n'
     const reativadosVal = reportsAnalytics?.kpis.reativados ?? baseKpis?.kpis.reativados ?? 0
     const taxaVal = reportsAnalytics?.kpis.taxaReativacao ?? baseKpis?.kpis.taxaReativacao ?? 0
     const valorVal = reportsAnalytics?.kpis.valorRecuperado ?? baseKpis?.kpis.valorRecuperado ?? 0
-    csv += `${totalBase};${elegiveisNaFila};${reativadosVal};"${taxaVal}%";${valorVal};"${selectedRegiao}";"${selectedSegmento}";"${selectedVendedor}";"${selectedDesfecho}"\n`
+    const cruzamentoCount =
+      reportsAnalytics?.kpis.faturamentoRecenteCruzamento ??
+      baseKpis?.kpis.faturamentoRecenteCruzamento ??
+      0
+    const cruzamentoValor =
+      reportsAnalytics?.kpis.valorFaturamentoCruzamento ??
+      baseKpis?.kpis.valorFaturamentoCruzamento ??
+      0
+    csv += `${totalBase};${elegiveisNaFila};${reativadosVal};"${taxaVal}%";${valorVal};${cruzamentoCount};${cruzamentoValor};"${selectedRegiao}";"${selectedSegmento}";"${selectedVendedor}";"${selectedDesfecho}"\n`
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')

@@ -437,9 +437,16 @@ export interface MetricasBaseKpisResponse {
     totalBase: number
     naFila: number
     reativados: number
+    reativadosReais?: number
     taxaReativacao: number
+    taxaReativacaoFloat?: number
     valorRecuperado: number
     toneladasRecuperadas: number
+    faturamentoRecenteCruzamento?: number
+    valorFaturamentoCruzamento?: number
+    toneladasFaturamentoCruzamento?: number
+    reativadosTotalBruto?: number
+    valorRecuperadoTotalBruto?: number
   }
   estadosContagem: {
     na_base: number
@@ -447,6 +454,8 @@ export interface MetricasBaseKpisResponse {
     reagendado: number
     contatado: number
     reativado: number
+    reativado_total?: number
+    reativado_cruzamento?: number
     compra_terceiros: number
     nao_quer_negociar: number
     sem_contato: number
@@ -533,9 +542,16 @@ export interface ReportsAnalyticsResponse {
     totalBase: number
     naFila: number
     reativados: number
+    reativadosReais?: number
     taxaReativacao: number
+    taxaReativacaoFloat?: number
     valorRecuperado: number
     toneladasRecuperadas: number
+    faturamentoRecenteCruzamento?: number
+    valorFaturamentoCruzamento?: number
+    toneladasFaturamentoCruzamento?: number
+    reativadosTotalBruto?: number
+    valorRecuperadoTotalBruto?: number
   }
   estadosContagem: {
     na_base: number
@@ -543,6 +559,8 @@ export interface ReportsAnalyticsResponse {
     reagendado: number
     contatado: number
     reativado: number
+    reativado_total?: number
+    reativado_cruzamento?: number
     compra_terceiros: number
     nao_quer_negociar: number
     sem_contato: number

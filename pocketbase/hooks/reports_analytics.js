@@ -189,6 +189,15 @@ routerAdd(
       // =========================================================================
       // 1. KPIS GERAIS DA BASE FILTRADA
       // =========================================================================
+      // Condição que define uma REATIVAÇÃO REAL DA EQUIPE:
+      // Cliente com estado 'reativado' QUE teve atendimento por operador e/ou pedido registrado
+      const isReativacaoRealCond =
+        "(estado = 'reativado' AND ((operador IS NOT NULL AND TRIM(operador) != '') OR (pedido_reativacao IS NOT NULL AND TRIM(pedido_reativacao) != '')))"
+
+      // Condição que define CLIENTES COM FATURAMENTO RECENTE DETECTADOS NO CRUZAMENTO (sem atendimento de operador)
+      const isFaturamentoCruzamentoCond =
+        "(estado = 'reativado' AND (operador IS NULL OR TRIM(operador) = '') AND (pedido_reativacao IS NULL OR TRIM(pedido_reativacao) = ''))"
+
       const kpisQuery = `
         SELECT
           COUNT(*) as total_base,
@@ -198,11 +207,17 @@ routerAdd(
           SUM(CASE WHEN estado = 'reagendado' THEN 1 ELSE 0 END) as reagendado,
           SUM(CASE WHEN estado = 'contatado' THEN 1 ELSE 0 END) as contatado,
           SUM(CASE WHEN estado = 'reativado' THEN 1 ELSE 0 END) as reativado,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados_reais,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado_real,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas_real,
+          SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN 1 ELSE 0 END) as faturamento_recente_cruzamento,
+          SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_faturamento_recente_cruzamento,
+          SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_faturamento_recente_cruzamento,
           SUM(CASE WHEN estado = 'compra_terceiros' THEN 1 ELSE 0 END) as compra_terceiros,
           SUM(CASE WHEN estado = 'nao_quer_negociar' THEN 1 ELSE 0 END) as nao_quer_negociar,
           SUM(CASE WHEN estado = 'sem_contato' THEN 1 ELSE 0 END) as sem_contato,
-          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
-          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas
+          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado_total,
+          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas_total
         FROM clientes
         WHERE ${whereClause}
       `
@@ -215,11 +230,17 @@ routerAdd(
         reagendado: 0,
         contatado: 0,
         reativado: 0,
+        reativados_reais: 0,
+        valor_recuperado_real: -0,
+        toneladas_recuperadas_real: -0,
+        faturamento_recente_cruzamento: 0,
+        valor_faturamento_recente_cruzamento: -0,
+        toneladas_faturamento_recente_cruzamento: -0,
         compra_terceiros: 0,
         nao_quer_negociar: 0,
         sem_contato: 0,
-        valor_recuperado: -0,
-        toneladas_recuperadas: -0,
+        valor_recuperado_total: -0,
+        toneladas_recuperadas_total: -0,
       })
 
       const qbKpi = $app.db().newQuery(kpisQuery)
@@ -242,7 +263,40 @@ routerAdd(
       )
       const reagendadoCount = Number(kpiModel.reagendado || 0)
       const contatadoCount = Number(kpiModel.contatado || 0)
-      const reativadoCount = Number(kpiModel.reativado || 0)
+      const reativadoTotalCount = Number(kpiModel.reativado || 0)
+
+      const reativadosReaisCount = Number(
+        kpiModel.reativados_reais !== undefined
+          ? kpiModel.reativados_reais
+          : kpiModel.reativadosReais || 0,
+      )
+      const valorRecuperadoReal = Number(
+        kpiModel.valor_recuperado_real !== undefined
+          ? kpiModel.valor_recuperado_real
+          : kpiModel.valorRecuperadoReal || 0,
+      )
+      const toneladasRecuperadasReal = Number(
+        kpiModel.toneladas_recuperadas_real !== undefined
+          ? kpiModel.toneladas_recuperadas_real
+          : kpiModel.toneladasRecuperadasReal || 0,
+      )
+
+      const faturamentoCruzamentoCount = Number(
+        kpiModel.faturamento_recente_cruzamento !== undefined
+          ? kpiModel.faturamento_recente_cruzamento
+          : kpiModel.faturamentoRecenteCruzamento || 0,
+      )
+      const valorFaturamentoCruzamento = Number(
+        kpiModel.valor_faturamento_recente_cruzamento !== undefined
+          ? kpiModel.valor_faturamento_recente_cruzamento
+          : kpiModel.valorFaturamentoRecenteCruzamento || 0,
+      )
+      const toneladasFaturamentoCruzamento = Number(
+        kpiModel.toneladas_faturamento_recente_cruzamento !== undefined
+          ? kpiModel.toneladas_faturamento_recente_cruzamento
+          : kpiModel.toneladasFaturamentoRecenteCruzamento || 0,
+      )
+
       const compraTerceirosCount = Number(
         kpiModel.compra_terceiros !== undefined
           ? kpiModel.compra_terceiros
@@ -256,19 +310,17 @@ routerAdd(
       const semContatoCount = Number(
         kpiModel.sem_contato !== undefined ? kpiModel.sem_contato : kpiModel.semContato || 0,
       )
-      const valorRecuperado = Number(
-        kpiModel.valor_recuperado !== undefined
-          ? kpiModel.valor_recuperado
-          : kpiModel.valorRecuperado || 0,
-      )
-      const toneladasRecuperadas = Number(
-        kpiModel.toneladas_recuperadas !== undefined
-          ? kpiModel.toneladas_recuperadas
-          : kpiModel.toneladasRecuperadas || 0,
+      const valorRecuperadoTotal = Number(
+        kpiModel.valor_recuperado_total !== undefined
+          ? kpiModel.valor_recuperado_total
+          : kpiModel.valorRecuperadoTotal || 0,
       )
 
       const naFila = naBaseCount + reservadoCount
-      const taxaReativacao = totalBase > 0 ? Math.round((reativadoCount / totalBase) * 100) : 0
+      // TAXA DE RECUPERAÇÃO oficial: apenas reativações reais da equipe
+      const taxaReativacao =
+        totalBase > 0 ? Number(((reativadosReaisCount / totalBase) * 100).toFixed(1)) : 0
+      const taxaReativacaoInt = Math.round(taxaReativacao)
 
       // =========================================================================
       // 2. CRUZAMENTO 1: CONVERSÃO POR SEGMENTO (COMERCIAL)
@@ -599,17 +651,26 @@ routerAdd(
         kpis: {
           totalBase: totalBase,
           naFila: naFila,
-          reativados: reativadoCount,
-          taxaReativacao: taxaReativacao,
-          valorRecuperado: valorRecuperado,
-          toneladasRecuperadas: toneladasRecuperadas,
+          reativados: reativadosReaisCount,
+          reativadosReais: reativadosReaisCount,
+          taxaReativacao: taxaReativacaoInt,
+          taxaReativacaoFloat: taxaReativacao,
+          valorRecuperado: valorRecuperadoReal,
+          toneladasRecuperadas: toneladasRecuperadasReal,
+          faturamentoRecenteCruzamento: faturamentoCruzamentoCount,
+          valorFaturamentoCruzamento: valorFaturamentoCruzamento,
+          toneladasFaturamentoCruzamento: toneladasFaturamentoCruzamento,
+          reativadosTotalBruto: reativadoTotalCount,
+          valorRecuperadoTotalBruto: valorRecuperadoTotal,
         },
         estadosContagem: {
           na_base: naBaseCount,
           em_atendimento: emAtendimentoCount + reservadoCount,
           reagendado: reagendadoCount,
           contatado: contatadoCount,
-          reativado: reativadoCount,
+          reativado: reativadosReaisCount,
+          reativado_total: reativadoTotalCount,
+          reativado_cruzamento: faturamentoCruzamentoCount,
           compra_terceiros: compraTerceirosCount,
           nao_quer_negociar: naoQuerNegociarCount,
           sem_contato: semContatoCount,
