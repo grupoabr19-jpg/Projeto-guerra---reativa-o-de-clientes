@@ -152,6 +152,7 @@ export default function ImportacaoPage() {
     reconciliadosFaturaram: number
     pedidosValidados: number
     pedidosDivergentes: number
+    puladosAtivoForaBase?: number
     erros: Array<{ linha: number; codigo: string; erro: string }>
     divergencias: Array<{
       codigo: string
@@ -159,7 +160,13 @@ export default function ImportacaoPage() {
       pedidoEsperado: string
       pedidoPlanilha: string
     }>
+    lotesTotal?: number
+    lotesSucesso?: number
+    lotesFalhos?: Array<{ lote: number; erro: string }>
   } | null>(null)
+  const [failedChunks, setFailedChunks] = useState<
+    Array<{ chunkIndex: number; totalChunks: number; rows: Record<string, any>[]; error: string }>
+  >([])
 
   useEffect(() => {
     if (user && user.role === 'operador') {
@@ -660,6 +667,7 @@ export default function ImportacaoPage() {
         reconciliadosFaturaram: 0,
         pedidosValidados: 0,
         pedidosDivergentes: 0,
+        puladosAtivoForaBase: 0,
         erros: [] as Array<{ linha: number; codigo: string; erro: string }>,
         divergencias: [] as Array<{
           codigo: string
@@ -667,7 +675,17 @@ export default function ImportacaoPage() {
           pedidoEsperado: string
           pedidoPlanilha: string
         }>,
+        lotesTotal: totalChunks,
+        lotesSucesso: 0,
+        lotesFalhos: [] as Array<{ lote: number; erro: string }>,
       }
+
+      const falhasLotes: Array<{
+        chunkIndex: number
+        totalChunks: number
+        rows: Record<string, any>[]
+        error: string
+      }> = []
 
       for (let c = 0; c < totalChunks; c++) {
         const start = c * CHUNK_SIZE
@@ -677,50 +695,145 @@ export default function ImportacaoPage() {
         const pct = Math.round(((c + 1) / totalChunks) * 100)
         setProcessProgress({
           percent: pct,
-          message: `Enviando lote ${c + 1} de ${totalChunks} (${start.toLocaleString('pt-BR')} a ${end.toLocaleString('pt-BR')} linhas)...`,
+          message: `Enviando lote ${c + 1} de ${totalChunks} (${(start + 1).toLocaleString('pt-BR')} a ${end.toLocaleString('pt-BR')} linhas)...`,
           processed: end,
           total: totalRows,
         })
 
         // Apenas no último chunk aplicamos a substituição total se habilitada
         const isLastChunk = c === totalChunks - 1
-        const response = await processSpreadsheetRows({
-          rows: chunk,
-          fileName: `${file.name} (Lote ${c + 1}/${totalChunks})`,
-          substituicaoTotal: substituicaoTotal && isLastChunk,
-          modoImportacao: effectiveModo,
-        })
+        try {
+          const response = await processSpreadsheetRows({
+            rows: chunk,
+            fileName: `${file.name} (Lote ${c + 1}/${totalChunks})`,
+            substituicaoTotal: substituicaoTotal && isLastChunk,
+            modoImportacao: effectiveModo,
+          })
 
-        if (response.resumo) {
-          consolidatedResumo.novas += response.resumo.novas || 0
-          consolidatedResumo.atualizadas += response.resumo.atualizadas || 0
-          consolidatedResumo.inalteradas += response.resumo.inalteradas || 0
-          consolidatedResumo.rejeitadas += response.resumo.rejeitadas || 0
-          consolidatedResumo.matchesNome += response.resumo.matchesNome || 0
-          consolidatedResumo.semCorrespondencia += response.resumo.semCorrespondencia || 0
-          consolidatedResumo.reconciliadosFaturaram += response.resumo.reconciliadosFaturaram || 0
-          consolidatedResumo.pedidosValidados += response.resumo.pedidosValidados || 0
-          consolidatedResumo.pedidosDivergentes += response.resumo.pedidosDivergentes || 0
-          if (Array.isArray(response.resumo.erros)) {
-            consolidatedResumo.erros.push(...response.resumo.erros)
+          consolidatedResumo.lotesSucesso++
+
+          if (response.resumo) {
+            consolidatedResumo.novas += response.resumo.novas || 0
+            consolidatedResumo.atualizadas += response.resumo.atualizadas || 0
+            consolidatedResumo.inalteradas += response.resumo.inalteradas || 0
+            consolidatedResumo.rejeitadas += response.resumo.rejeitadas || 0
+            consolidatedResumo.matchesNome += response.resumo.matchesNome || 0
+            consolidatedResumo.semCorrespondencia += response.resumo.semCorrespondencia || 0
+            consolidatedResumo.reconciliadosFaturaram += response.resumo.reconciliadosFaturaram || 0
+            consolidatedResumo.pedidosValidados += response.resumo.pedidosValidados || 0
+            consolidatedResumo.pedidosDivergentes += response.resumo.pedidosDivergentes || 0
+            consolidatedResumo.puladosAtivoForaBase +=
+              (response.resumo as any).puladosAtivoForaBase || 0
+            if (Array.isArray(response.resumo.erros)) {
+              consolidatedResumo.erros.push(...response.resumo.erros)
+            }
+            if (Array.isArray(response.resumo.divergencias)) {
+              consolidatedResumo.divergencias.push(...response.resumo.divergencias)
+            }
+            if (Array.isArray(response.resumo.semCorrespondenciaLista)) {
+              consolidatedResumo.semCorrespondenciaLista.push(
+                ...response.resumo.semCorrespondenciaLista,
+              )
+            }
           }
-          if (Array.isArray(response.resumo.divergencias)) {
-            consolidatedResumo.divergencias.push(...response.resumo.divergencias)
-          }
-          if (Array.isArray(response.resumo.semCorrespondenciaLista)) {
-            consolidatedResumo.semCorrespondenciaLista.push(
-              ...response.resumo.semCorrespondenciaLista,
-            )
-          }
+        } catch (chunkErr: unknown) {
+          const chunkErrMsg =
+            chunkErr instanceof Error ? chunkErr.message : 'Falha na resposta do lote'
+          console.error(`Erro ao processar lote ${c + 1}/${totalChunks}:`, chunkErr)
+          falhasLotes.push({
+            chunkIndex: c,
+            totalChunks,
+            rows: chunk,
+            error: chunkErrMsg,
+          })
+          consolidatedResumo.lotesFalhos.push({
+            lote: c + 1,
+            erro: chunkErrMsg,
+          })
         }
       }
 
+      setFailedChunks(falhasLotes)
       setImportResult(consolidatedResumo)
       loadHistory()
+
+      if (falhasLotes.length > 0) {
+        setUploadError(
+          `${falhasLotes.length} de ${totalChunks} lote(s) falharam na comunicação: ${falhasLotes
+            .map((f) => `Lote ${f.chunkIndex + 1} (${f.error})`)
+            .join(
+              '; ',
+            )}. Os lotes concluídos foram gravados com sucesso. Você pode reprocessar os lotes falhos abaixo.`,
+        )
+      }
     } catch (err: unknown) {
       console.error('Falha no envio de lotes da importação:', err)
       const msg = err instanceof Error ? err.message : 'Falha ao processar importação'
       setUploadError(msg)
+    } finally {
+      setIsProcessing(false)
+      setProcessProgress({ percent: 0, message: '', processed: 0, total: 0 })
+    }
+  }
+
+  // Reprocessar apenas os lotes que falharam
+  const handleRetryFailedChunks = async () => {
+    if (failedChunks.length === 0 || !file) return
+    setIsProcessing(true)
+    setUploadError(null)
+
+    const remainingFailed: typeof failedChunks = []
+
+    try {
+      for (let i = 0; i < failedChunks.length; i++) {
+        const item = failedChunks[i]
+        setProcessProgress({
+          percent: Math.round(((i + 1) / failedChunks.length) * 100),
+          message: `Reenviando lote falho ${item.chunkIndex + 1} de ${item.totalChunks}...`,
+          processed: i + 1,
+          total: failedChunks.length,
+        })
+
+        const isLastChunk = item.chunkIndex === item.totalChunks - 1
+        try {
+          const response = await processSpreadsheetRows({
+            rows: item.rows,
+            fileName: `${file.name} (Lote ${item.chunkIndex + 1}/${item.totalChunks} - Retry)`,
+            substituicaoTotal: substituicaoTotal && isLastChunk,
+            modoImportacao: effectiveModo,
+          })
+
+          if (importResult) {
+            setImportResult((prev) => {
+              if (!prev) return null
+              return {
+                ...prev,
+                lotesSucesso: (prev.lotesSucesso || 0) + 1,
+                lotesFalhos: (prev.lotesFalhos || []).filter((f) => f.lote !== item.chunkIndex + 1),
+                novas: prev.novas + (response.resumo?.novas || 0),
+                atualizadas: prev.atualizadas + (response.resumo?.atualizadas || 0),
+                inalteradas: prev.inalteradas + (response.resumo?.inalteradas || 0),
+                rejeitadas: prev.rejeitadas + (response.resumo?.rejeitadas || 0),
+                erros: [...prev.erros, ...(response.resumo?.erros || [])],
+              }
+            })
+          }
+        } catch (rErr: unknown) {
+          const msg = rErr instanceof Error ? rErr.message : 'Falha no reenvio do lote'
+          remainingFailed.push({ ...item, error: msg })
+        }
+      }
+
+      setFailedChunks(remainingFailed)
+      loadHistory()
+
+      if (remainingFailed.length === 0) {
+        setUploadError(null)
+      } else {
+        setUploadError(
+          `Ainda restam ${remainingFailed.length} lote(s) com erro: ${remainingFailed.map((f) => `Lote ${f.chunkIndex + 1}`).join(', ')}`,
+        )
+      }
     } finally {
       setIsProcessing(false)
       setProcessProgress({ percent: 0, message: '', processed: 0, total: 0 })
@@ -873,17 +986,32 @@ export default function ImportacaoPage() {
           {uploadError && (
             <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-lg flex items-start space-x-3 text-xs text-rose-800">
               <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <span className="font-semibold">Ocorreu um erro no processamento:</span>
-                <p className="text-[11px] text-rose-700 leading-relaxed">{uploadError}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setUploadError(null)}
-                  className="h-6 text-[10px] border-rose-300 text-rose-700 hover:bg-rose-100"
-                >
-                  Fechar Aviso
-                </Button>
+              <div className="space-y-2 flex-1">
+                <span className="font-semibold block">Aviso sobre o processamento:</span>
+                <p className="text-[11px] text-rose-700 leading-relaxed font-mono">{uploadError}</p>
+                <div className="flex items-center gap-2 pt-1">
+                  {failedChunks.length > 0 && (
+                    <Button
+                      size="sm"
+                      onClick={handleRetryFailedChunks}
+                      disabled={isProcessing}
+                      className="h-7 text-xs bg-rose-600 hover:bg-rose-700 text-white font-medium shadow-sm"
+                    >
+                      <RefreshCw
+                        className={`h-3 w-3 mr-1.5 ${isProcessing ? 'animate-spin' : ''}`}
+                      />
+                      Reenviar {failedChunks.length} Lote(s) Falho(s)
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setUploadError(null)}
+                    className="h-7 text-xs border-rose-300 text-rose-700 hover:bg-rose-100"
+                  >
+                    Fechar Aviso
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -1447,23 +1575,75 @@ export default function ImportacaoPage() {
           {/* Relatório do resultado da importação */}
           {importResult && (
             <div className="p-4 bg-emerald-50/90 border border-emerald-200 rounded-xl space-y-4">
-              <div className="flex items-center justify-between flex-wrap gap-2 text-emerald-900 font-bold text-sm">
+              <div className="flex items-center justify-between flex-wrap gap-2 font-bold text-sm">
                 <div className="flex items-center space-x-2">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                  <span>Carga e Processamento Concluídos!</span>
+                  {(importResult.lotesFalhos?.length || 0) > 0 ? (
+                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                  ) : (
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                  )}
+                  <span
+                    className={
+                      (importResult.lotesFalhos?.length || 0) > 0
+                        ? 'text-amber-900'
+                        : 'text-emerald-900'
+                    }
+                  >
+                    {(importResult.lotesFalhos?.length || 0) > 0
+                      ? 'Processamento Parcial (com lotes a reenviar)'
+                      : 'Carga e Processamento Concluídos com Sucesso!'}
+                  </span>
                 </div>
-                <Badge
-                  variant="outline"
-                  className="bg-white border-emerald-300 text-emerald-800 text-xs"
-                >
-                  Modo:{' '}
-                  {importResult.modo === 'base_mestre'
-                    ? 'Base Mestre'
-                    : importResult.modo === 'faturamento_reconciliacao'
-                      ? 'Faturamento / Reconciliação'
-                      : 'Enriquecimento (Margem)'}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  {importResult.lotesTotal && (
+                    <Badge
+                      variant="outline"
+                      className="bg-white border-slate-300 text-slate-700 text-xs"
+                    >
+                      Lotes: {importResult.lotesSucesso || 0}/{importResult.lotesTotal} OK
+                    </Badge>
+                  )}
+                  <Badge
+                    variant="outline"
+                    className="bg-white border-emerald-300 text-emerald-800 text-xs"
+                  >
+                    Modo:{' '}
+                    {importResult.modo === 'base_mestre'
+                      ? 'Base Mestre'
+                      : importResult.modo === 'faturamento_reconciliacao'
+                        ? 'Faturamento / Reconciliação'
+                        : 'Enriquecimento (Margem)'}
+                  </Badge>
+                </div>
               </div>
+
+              {/* Alerta de Lotes Falhos com Botão de Ação Direta */}
+              {importResult.lotesFalhos && importResult.lotesFalhos.length > 0 && (
+                <div className="p-3 bg-amber-100 border border-amber-300 rounded-lg text-xs text-amber-900 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="font-semibold">
+                      Atenção: {importResult.lotesFalhos.length} lote(s) não responderam e precisam
+                      ser reenviados:
+                    </span>
+                    <Button
+                      size="sm"
+                      onClick={handleRetryFailedChunks}
+                      disabled={isProcessing}
+                      className="h-6 text-xs bg-amber-700 hover:bg-amber-800 text-white font-medium"
+                    >
+                      <RefreshCw className={`h-3 w-3 mr-1 ${isProcessing ? 'animate-spin' : ''}`} />
+                      Reenviar Apenas Lotes Falhos
+                    </Button>
+                  </div>
+                  <div className="space-y-1 font-mono text-[11px] bg-white/70 p-2 rounded">
+                    {importResult.lotesFalhos.map((f, idx) => (
+                      <div key={idx} className="text-amber-900">
+                        • Lote {f.lote}: {f.erro}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 text-xs">
                 <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
