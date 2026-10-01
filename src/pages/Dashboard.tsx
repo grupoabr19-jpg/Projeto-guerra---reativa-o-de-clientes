@@ -104,7 +104,11 @@ export default function Dashboard() {
   }, [user, selectedRegion, selectedPeriodo])
 
   if (user?.role === 'operador' || user?.role === 'lider') {
-    return null
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    )
   }
 
   const loadDataBase = async () => {

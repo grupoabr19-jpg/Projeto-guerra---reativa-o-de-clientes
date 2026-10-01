@@ -15,6 +15,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useAuth } from '@/contexts/AuthContext'
 import { LogoAbr } from '@/components/LogoAbr'
+import pb from '@/lib/pocketbase/client'
 
 export default function Index() {
   const { login, user } = useAuth()
@@ -25,11 +26,17 @@ export default function Index() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Se já autenticado, vai para a tela adequada (operador vai direto para Meu Painel)
+  // Se já autenticado, vai para a tela adequada conforme o perfil do usuário:
+  // - operador: /meu-painel
+  // - lider: /equipe
+  // - supervisor / admin: /dashboard
   React.useEffect(() => {
     if (user) {
-      if (user.role === 'operador' || !user.role) {
+      const role = user.role || 'operador'
+      if (role === 'operador') {
         navigate('/meu-painel', { replace: true })
+      } else if (role === 'lider') {
+        navigate('/equipe', { replace: true })
       } else {
         navigate('/dashboard', { replace: true })
       }
@@ -43,7 +50,16 @@ export default function Index() {
 
     try {
       await login(email, password)
-      // O useEffect cuidará do redirecionamento
+      // Redirecionamento explícito imediato garantindo que não dependa exclusivamente de ciclos de render
+      const currentAuthUser = pb.authStore.record as any
+      const role = currentAuthUser?.role || 'operador'
+      if (role === 'operador') {
+        navigate('/meu-painel', { replace: true })
+      } else if (role === 'lider') {
+        navigate('/equipe', { replace: true })
+      } else {
+        navigate('/dashboard', { replace: true })
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'E-mail ou senha inválidos'
       setError(msg)
