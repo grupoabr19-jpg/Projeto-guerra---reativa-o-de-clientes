@@ -27,6 +27,7 @@ routerAdd(
         .replace(/[\u0300-\u036f]/g, '')
         .toUpperCase()
         .trim()
+      const userFirstNameClean = userFirstName
 
       // Extração resiliente de regioes do authRecord (Goja runtime do PocketBase)
       let userRegioes = []
@@ -517,7 +518,9 @@ routerAdd(
         message: 'Novo contato reservado com sucesso.',
       })
     } catch (err) {
-      return e.json(500, { error: err.message })
+      const errMsg = err && err.message ? err.message : String(err)
+      console.error('[queue_reserve] Erro crítico em reserve-next: ' + errMsg)
+      return e.json(500, { error: 'Falha ao reservar cliente na fila: ' + errMsg })
     }
   },
   $apis.requireAuth(),
