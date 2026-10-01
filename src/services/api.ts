@@ -261,6 +261,46 @@ export async function deleteUser(userId: string) {
   return pb.collection('users').delete(userId)
 }
 
+/**
+ * Envia batimento de presença (heartbeat) para o usuário autenticado.
+ * Atualiza o last_seen no servidor.
+ */
+export async function sendPresenceHeartbeat(): Promise<{ ok: boolean; last_seen?: string }> {
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/presence/heartbeat`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: pb.authStore.token,
+        },
+      },
+    )
+    if (!res.ok) {
+      return { ok: false }
+    }
+    return (await res.json()) as { ok: boolean; last_seen?: string }
+  } catch {
+    return { ok: false }
+  }
+}
+
+/**
+ * Consulta o status de presença de todos os usuários (exclusivo admin / supervisor).
+ */
+export async function fetchPresenceStatus(): Promise<import('@/types').PresenceStatusResponse> {
+  const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/presence/status`, {
+    headers: {
+      Authorization: pb.authStore.token,
+    },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Falha ao buscar status de presença')
+  }
+  return res.json()
+}
+
 // Kommo API calls
 export async function checkKommoStatus() {
   try {

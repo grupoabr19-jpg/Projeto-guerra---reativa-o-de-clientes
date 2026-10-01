@@ -68,6 +68,8 @@ import {
 } from '@/components/ui/alert-dialog'
 import { deleteUser } from '@/services/api'
 import { BasesReferenciaTab } from '@/components/BasesReferenciaTab'
+import { derivePresenceStatus } from '@/hooks/usePresence'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
@@ -259,6 +261,7 @@ export default function ConfiguracoesPage() {
   const loadUsers = async () => {
     setLoadingUsers(true)
     try {
+      // Ordenação: nome (ou por last_seen desc / papel se desejado)
       const res = await pb.collection('users').getFullList<User>({ sort: 'name' })
       setUsersList(res)
     } catch (err) {
@@ -266,6 +269,14 @@ export default function ConfiguracoesPage() {
     } finally {
       setLoadingUsers(false)
     }
+  }
+
+  // Estatísticas de presença em tempo real dos usuários carregados
+  const presenceSummary = {
+    total: usersList.length,
+    online: usersList.filter((u) => derivePresenceStatus(u.last_seen).status === 'online').length,
+    today: usersList.filter((u) => derivePresenceStatus(u.last_seen).status === 'today').length,
+    offline: usersList.filter((u) => derivePresenceStatus(u.last_seen).status === 'offline').length,
   }
 
   const handleTestKommo = async () => {
@@ -1848,18 +1859,42 @@ export default function ConfiguracoesPage() {
                 </div>
               </form>
 
-              {/* Tabela de Usuários */}
-              <div className="flex items-center justify-between">
-                <div className="text-xs text-slate-500">
-                  Total de contas ativas:{' '}
-                  <span className="font-bold text-slate-800 font-mono">{usersList.length}</span>
+              {/* Tabela de Usuários com Indicador de Presença Online */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center flex-wrap gap-2 text-xs">
+                  <span className="text-slate-500">
+                    Contas:{' '}
+                    <strong className="text-slate-800 font-mono">{presenceSummary.total}</strong>
+                  </span>
+                  <span className="text-slate-300">•</span>
+                  <Badge
+                    variant="outline"
+                    className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[11px] font-semibold flex items-center gap-1.5 px-2 py-0.5"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>{presenceSummary.online} online agora</span>
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className="bg-amber-50 text-amber-700 border-amber-200 text-[11px] flex items-center gap-1.5 px-2 py-0.5"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-amber-400" />
+                    <span>{presenceSummary.today} estiveram on hoje</span>
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className="bg-slate-100 text-slate-600 border-slate-200 text-[11px] flex items-center gap-1.5 px-2 py-0.5"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-slate-300" />
+                    <span>{presenceSummary.offline} desconectados</span>
+                  </Badge>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={loadUsers}
                   disabled={loadingUsers}
-                  className="h-7 text-xs text-slate-600"
+                  className="h-7 text-xs text-slate-600 hover:text-[#253575]"
                 >
                   <RefreshCw
                     className={`h-3 w-3 mr-1 ${loadingUsers ? 'animate-spin text-blue-600' : ''}`}
@@ -1873,104 +1908,145 @@ export default function ConfiguracoesPage() {
                   <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
                     <tr>
                       <th className="py-2.5 px-3">Nome</th>
+                      <th className="py-2.5 px-3">Status de Presença</th>
                       <th className="py-2.5 px-3">E-mail</th>
                       <th className="py-2.5 px-3">Perfil</th>
-                      <th className="py-2.5 px-3">Status de Acesso</th>
                       <th className="py-2.5 px-3">Regiões Autorizadas</th>
                       <th className="py-2.5 px-3 text-right">Ação</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {usersList.map((u) => (
-                      <tr key={u.id} className="hover:bg-slate-50">
-                        <td className="py-2.5 px-3 font-semibold text-slate-800">{u.name}</td>
-                        <td className="py-2.5 px-3 text-slate-700 font-mono font-medium">
-                          {u.email ? (
-                            <span>{u.email}</span>
-                          ) : (
-                            <span className="text-amber-600 italic">E-mail oculto</span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] ${
-                              u.role === 'admin'
-                                ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                : u.role === 'supervisor'
-                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                  : u.role === 'lider'
-                                    ? 'bg-amber-50 text-amber-800 border-amber-300 font-semibold'
-                                    : 'bg-slate-50 text-slate-700 border-slate-200'
-                            }`}
-                          >
-                            {u.role === 'admin'
-                              ? 'Admin'
-                              : u.role === 'supervisor'
-                                ? 'Supervisor'
-                                : u.role === 'lider'
-                                  ? '🚩 Líder de Rota'
-                                  : 'Operador'}
-                          </Badge>{' '}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <Badge className="bg-emerald-50 text-emerald-700 border-emerald-300 font-normal text-[10px]">
-                            Ativo (ABR@2026)
-                          </Badge>
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-600">
-                          {u.regioes && u.regioes.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {u.regioes.map((r) => (
+                    {usersList.map((u) => {
+                      const presence = derivePresenceStatus(u.last_seen)
+                      return (
+                        <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center space-x-2">
+                              <span className="font-semibold text-slate-800">{u.name}</span>
+                              {user?.id === u.id && (
                                 <Badge
-                                  key={r}
                                   variant="secondary"
-                                  className="text-[10px] font-mono bg-slate-100 text-slate-700"
+                                  className="text-[9px] px-1 py-0 bg-blue-100 text-blue-700 font-normal"
                                 >
-                                  {r}
+                                  Você
                                 </Badge>
-                              ))}
+                              )}
                             </div>
-                          ) : (
-                            <span className="text-slate-400 italic">Todas / Sem restrição</span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleOpenEditUser(u)}
-                              className="h-7 text-xs text-blue-600 hover:text-blue-700 font-medium"
-                            >
-                              <Edit2 className="h-3 w-3 mr-1" />
-                              {user?.role === 'admin' ? 'Editar Papel & Regiões' : 'Editar Regiões'}
-                            </Button>
+                          </td>
 
-                            {user?.role === 'admin' &&
-                              (u.id === user.id ? (
-                                <span
-                                  className="text-[10px] text-slate-400 italic px-2 py-1"
-                                  title="Você não pode excluir a sua própria conta ativa"
-                                >
-                                  (Sua conta)
-                                </span>
-                              ) : (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleOpenDeleteUser(u)}
-                                  className="h-7 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 font-medium"
-                                  title={`Excluir conta de ${u.name}`}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5 mr-1" />
-                                  Excluir
-                                </Button>
-                              ))}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          {/* COLUNA DE STATUS COM A BOLINHA COLORIDA E TOOLTIP */}
+                          <td className="py-2.5 px-3">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="inline-flex items-center gap-1.5 cursor-help px-2 py-1 rounded-md border text-[11px] font-medium transition-all select-none hover:shadow-2xs">
+                                  <span
+                                    className={`relative flex h-2.5 w-2.5 shrink-0 items-center justify-center`}
+                                  >
+                                    <span
+                                      className={`h-2 w-2 rounded-full ring-2 ${presence.dotClass}`}
+                                    />
+                                  </span>
+                                  <span className={presence.colorClass}>{presence.label}</span>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="text-xs max-w-xs">
+                                <div className="space-y-0.5">
+                                  <p className="font-semibold">{presence.tooltip}</p>
+                                  {u.last_seen && (
+                                    <p className="text-[10px] text-slate-300 font-mono">
+                                      Registro UTC: {u.last_seen}
+                                    </p>
+                                  )}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </td>
+
+                          <td className="py-2.5 px-3 text-slate-700 font-mono font-medium">
+                            {u.email ? (
+                              <span>{u.email}</span>
+                            ) : (
+                              <span className="text-amber-600 italic">E-mail oculto</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] ${
+                                u.role === 'admin'
+                                  ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                  : u.role === 'supervisor'
+                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                    : u.role === 'lider'
+                                      ? 'bg-amber-50 text-amber-800 border-amber-300 font-semibold'
+                                      : 'bg-slate-50 text-slate-700 border-slate-200'
+                              }`}
+                            >
+                              {u.role === 'admin'
+                                ? 'Admin'
+                                : u.role === 'supervisor'
+                                  ? 'Supervisor'
+                                  : u.role === 'lider'
+                                    ? '🚩 Líder de Rota'
+                                    : 'Operador'}
+                            </Badge>{' '}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-600">
+                            {u.regioes && u.regioes.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {u.regioes.map((r) => (
+                                  <Badge
+                                    key={r}
+                                    variant="secondary"
+                                    className="text-[10px] font-mono bg-slate-100 text-slate-700"
+                                  >
+                                    {r}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 italic">Todas / Sem restrição</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleOpenEditUser(u)}
+                                className="h-7 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                              >
+                                <Edit2 className="h-3 w-3 mr-1" />
+                                {user?.role === 'admin'
+                                  ? 'Editar Papel & Regiões'
+                                  : 'Editar Regiões'}
+                              </Button>
+
+                              {user?.role === 'admin' &&
+                                (u.id === user.id ? (
+                                  <span
+                                    className="text-[10px] text-slate-400 italic px-2 py-1"
+                                    title="Você não pode excluir a sua própria conta ativa"
+                                  >
+                                    (Sua conta)
+                                  </span>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleOpenDeleteUser(u)}
+                                    className="h-7 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 font-medium"
+                                    title={`Excluir conta de ${u.name}`}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5 mr-1" />
+                                    Excluir
+                                  </Button>
+                                ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

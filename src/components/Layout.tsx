@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate, useLocation, Link } from 'react-router-dom'
 import {
   LayoutDashboard,
   FileSpreadsheet,
@@ -23,6 +23,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { checkKommoStatus, testKommoConnection } from '@/services/api'
 import { ExpedienteStatusBadge } from '@/components/ExpedienteStatusBadge'
 import { LogoAbr } from '@/components/LogoAbr'
+import { usePresence } from '@/hooks/usePresence'
 
 export default function Layout() {
   const { user, logout, hasRole } = useAuth()
@@ -31,12 +32,15 @@ export default function Layout() {
 
   const [kommoStatus, setKommoStatus] = useState<{
     configured: boolean
-    connected?: boolean
+    connected: boolean
     subdomain: string
     status: string
     message: string
   } | null>(null)
   const [isCheckingKommo, setIsCheckingKommo] = useState(false)
+
+  // Presença online em tempo real: batimento de quem está logado + contagem para admin e supervisor
+  const { presenceData } = usePresence({ pollStatus: true })
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const isPublicAuthPage = [
@@ -62,6 +66,7 @@ export default function Layout() {
     } catch {
       setKommoStatus({
         configured: false,
+        connected: false,
         subdomain: '',
         status: 'error',
         message: 'Falha ao checar status do Kommo',
@@ -280,11 +285,20 @@ export default function Layout() {
       <div className="p-3.5 border-t border-[#253575] bg-[#0c1836]">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2.5 overflow-hidden">
-            <div className="h-8 w-8 rounded-full bg-[#253575] border border-white/20 flex items-center justify-center font-bold text-xs text-white shrink-0">
-              {user.name ? user.name.slice(0, 2).toUpperCase() : 'ABR'}
+            <div className="relative shrink-0">
+              <div className="h-8 w-8 rounded-full bg-[#253575] border border-white/20 flex items-center justify-center font-bold text-xs text-white">
+                {user.name ? user.name.slice(0, 2).toUpperCase() : 'ABR'}
+              </div>
+              {/* Bolinha de status online do próprio usuário */}
+              <span
+                className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-[#0c1836]"
+                title="Você está online"
+              />
             </div>
             <div className="truncate">
-              <div className="text-xs font-semibold text-white truncate">{user.name}</div>
+              <div className="text-xs font-semibold text-white truncate flex items-center gap-1.5">
+                <span>{user.name}</span>
+              </div>
               <div className="flex items-center space-x-1 mt-0.5">
                 <Badge
                   variant="outline"
@@ -296,6 +310,7 @@ export default function Layout() {
                 >
                   {user.role === 'lider' ? '🚩 Líder de Rota' : user.role}
                 </Badge>
+                <span className="text-[10px] text-emerald-400 font-medium font-mono">• Online</span>
               </div>
             </div>
           </div>
@@ -396,6 +411,35 @@ export default function Layout() {
 
             {/* Indicador de status do Expediente */}
             <ExpedienteStatusBadge showHorarioAtual className="hidden sm:inline-flex" />
+
+            {/* Contador discreto no Header para Admin / Supervisor */}
+            {(user.role === 'admin' || user.role === 'supervisor') && presenceData && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    to={user.role === 'admin' ? '/configuracoes' : '/dashboard'}
+                    className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800 hover:bg-emerald-100 transition-colors cursor-pointer"
+                  >
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span className="font-semibold">{presenceData.summary.online}</span>
+                    <span className="text-[11px] text-emerald-700 hidden lg:inline">online</span>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  <p className="font-semibold text-slate-800">
+                    {presenceData.summary.online} de {presenceData.summary.total} usuários online
+                    agora
+                  </p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    {presenceData.summary.today} estiveram ativos hoje •{' '}
+                    {presenceData.summary.offline} desconectados
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </header>
 

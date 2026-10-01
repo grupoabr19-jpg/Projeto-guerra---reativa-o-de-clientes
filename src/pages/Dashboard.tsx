@@ -57,6 +57,7 @@ import { TODAS_REGIOES_FILTRO } from '@/types'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { ExpedienteStatusBadge } from '@/components/ExpedienteStatusBadge'
+import { usePresence } from '@/hooks/usePresence'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -72,6 +73,9 @@ export default function Dashboard() {
     useState<MetricasAtendimentosDashboard | null>(null)
   const [baseKpisData, setBaseKpisData] = useState<MetricasBaseKpisResponse | null>(null)
   const [erroBaseKpis, setErroBaseKpis] = useState<string | null>(null)
+
+  // Presença online em tempo real para Admin e Supervisor
+  const { presenceData } = usePresence({ pollStatus: true })
 
   // Ordenação da tabela por operador
   const [sortField, setSortField] = useState<
@@ -233,6 +237,24 @@ export default function Dashboard() {
               Painel Executivo de Reativação
             </h2>
             <ExpedienteStatusBadge showHorarioAtual />
+
+            {/* Contador discreto de usuários online agora (Admin / Supervisor) */}
+            {presenceData && (user?.role === 'admin' || user?.role === 'supervisor') && (
+              <Link
+                to={user.role === 'admin' ? '/configuracoes' : '#'}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition-colors shadow-2xs"
+                title={`${presenceData.summary.online} de ${presenceData.summary.total} usuários conectados nos últimos 5 minutos`}
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span>
+                  <strong>{presenceData.summary.online}</strong>{' '}
+                  {presenceData.summary.online === 1 ? 'usuário online' : 'usuários online'} agora
+                </span>
+              </Link>
+            )}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Acompanhamento de recuperação de carteira inativa e taxa de conversão.

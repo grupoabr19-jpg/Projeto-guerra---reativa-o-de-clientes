@@ -8,8 +8,35 @@ export interface User {
   regioes?: string[]
   telefone?: string
   avatar?: string
+  last_seen?: string | null
   created: string
   updated: string
+}
+
+export type PresenceStatusType = 'online' | 'today' | 'offline'
+
+export interface UserPresenceItem {
+  id: string
+  name: string
+  email: string
+  role: UserRole
+  regioes?: string[]
+  last_seen: string | null
+  status: PresenceStatusType
+  status_label: string
+}
+
+export interface PresenceSummary {
+  total: number
+  online: number
+  today: number
+  offline: number
+}
+
+export interface PresenceStatusResponse {
+  summary: PresenceSummary
+  users: UserPresenceItem[]
+  checked_at: string
 }
 
 export type ClienteEstado =

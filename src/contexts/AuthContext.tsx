@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react'
 import pb from '@/lib/pocketbase/client'
+import { sendPresenceHeartbeat } from '@/services/api'
 import type { User, UserRole } from '@/types'
 
 interface AuthContextType {
@@ -19,6 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(pb.authStore.token)
   const [isLoading, setIsLoading] = useState(true)
+  const heartbeatTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     // Initial load
@@ -41,6 +43,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsub()
     }
   }, [])
+
+  // Heartbeat de presença automático a cada 60s enquanto autenticado
+  useEffect(() => {
+    if (!token || !user) {
+      if (heartbeatTimerRef.current) {
+        clearInterval(heartbeatTimerRef.current)
+        heartbeatTimerRef.current = null
+      }
+      return
+    }
+
+    // Disparo imediato no login
+    sendPresenceHeartbeat().catch(() => {})
+
+    // Disparo recorrente a cada 60 segundos
+    heartbeatTimerRef.current = window.setInterval(() => {
+      sendPresenceHeartbeat().catch(() => {})
+    }, 60 * 1000)
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && pb.authStore.isValid) {
+        sendPresenceHeartbeat().catch(() => {})
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      if (heartbeatTimerRef.current) {
+        clearInterval(heartbeatTimerRef.current)
+        heartbeatTimerRef.current = null
+      }
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [token, user])
 
   const login = async (email: string, pass: string) => {
     const cleanEmail = email.trim()
