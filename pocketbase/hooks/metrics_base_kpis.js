@@ -13,23 +13,24 @@ routerAdd(
       const q = e.requestInfo().query || {}
       const rawRegiao = q.regiao || ''
       const regiao = String(rawRegiao).trim()
-      const baseCategoriaParam = String(q.baseCategoria || q.categoria || 'normal').trim()
+      const baseCategoriaParam = String(q.baseCategoria || q.categoria || 'todas').trim()
 
       // Construção da condição de categoria de base
-      let categoriaSql =
-        "(base_categoria IS NULL OR base_categoria = '' OR base_categoria = 'normal')"
+      let categoriaSql = '1=1'
       if (baseCategoriaParam === 'cliente_final') {
         categoriaSql = "base_categoria = 'cliente_final'"
       } else if (baseCategoriaParam === 'atacado_fora_mapa') {
         categoriaSql = "base_categoria = 'atacado_fora_mapa'"
-      } else if (baseCategoriaParam === 'sem_dono') {
+      } else if (baseCategoriaParam === 'sem_dono' || baseCategoriaParam === 'sem_dono_equipe') {
         categoriaSql = '(sem_dono_equipe = 1 OR sem_dono_equipe = true)'
       } else if (baseCategoriaParam === 'repescagem') {
         categoriaSql = "(regiao = 'REPESCAGEM' OR dias_sem_faturar >= 90)"
+      } else if (baseCategoriaParam === 'normal') {
+        categoriaSql =
+          "(base_categoria IS NULL OR base_categoria = '' OR base_categoria = 'normal')"
       } else if (baseCategoriaParam === 'todas') {
         categoriaSql = '1=1'
       }
-
       // Construção da condição de região segura para SQLite
       // Trata as variações de grafia e "Sem Região"
       let regiaoCondition = ''

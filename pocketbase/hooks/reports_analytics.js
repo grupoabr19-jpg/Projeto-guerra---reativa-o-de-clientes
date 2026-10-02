@@ -80,17 +80,16 @@ routerAdd(
         conditions.push("base_categoria = 'cliente_final'")
       } else if (baseCategoriaParam === 'atacado_fora_mapa') {
         conditions.push("base_categoria = 'atacado_fora_mapa'")
-      } else if (baseCategoriaParam === 'sem_dono') {
+      } else if (baseCategoriaParam === 'sem_dono' || baseCategoriaParam === 'sem_dono_equipe') {
         conditions.push('(sem_dono_equipe = 1 OR sem_dono_equipe = true)')
       } else if (baseCategoriaParam === 'repescagem') {
         conditions.push("(regiao = 'REPESCAGEM' OR dias_sem_faturar >= 90)")
-      } else if (baseCategoriaParam === 'todas') {
-        // Todas as categorias mantendo fora apenas duplicados e ativo_fora_base
-      } else {
-        // Padrão: base 'normal'
+      } else if (baseCategoriaParam === 'normal') {
         conditions.push(
           "(base_categoria IS NULL OR base_categoria = '' OR base_categoria = 'normal')",
         )
+      } else if (baseCategoriaParam === 'todas') {
+        // Todas as categorias mantendo fora apenas duplicados e ativo_fora_base
       }
 
       // Filtro de Região

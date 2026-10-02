@@ -517,6 +517,8 @@ export interface MetricasBaseKpisResponse {
 export interface FiltrosRelatoriosAvancados {
   periodo: PeriodoAtendimentoFiltro
   regiao: string
+  baseCategoria?: string
+  categoria?: string
   segmento?: string
   vendedor?: string
   operador?: string

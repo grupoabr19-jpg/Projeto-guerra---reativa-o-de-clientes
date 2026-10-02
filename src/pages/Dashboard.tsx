@@ -69,6 +69,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [loadingAtendimentos, setLoadingAtendimentos] = useState(true)
   const [selectedRegion, setSelectedRegion] = useState<string>('todas')
+  const [selectedCategoria, setSelectedCategoria] = useState<string>('todas')
   const [selectedPeriodo, setSelectedPeriodo] = useState<PeriodoAtendimentoFiltro>('hoje')
   const [metricasAtendimento, setMetricasAtendimento] =
     useState<MetricasAtendimentosDashboard | null>(null)
@@ -94,12 +95,12 @@ export default function Dashboard() {
     }
   }, [user, navigate])
 
-  // Recarregar dados de base quando a região muda
+  // Recarregar dados de base quando a região ou a categoria mudam
   useEffect(() => {
     if (user && user.role !== 'operador' && user.role !== 'lider') {
       loadDataBase()
     }
-  }, [user, selectedRegion])
+  }, [user, selectedRegion, selectedCategoria])
 
   // Recarregar métricas de atendimento quando filtros mudam
   useEffect(() => {
@@ -121,7 +122,7 @@ export default function Dashboard() {
     setErroBaseKpis(null)
     try {
       const [resKpis, resImp, resRegioes] = await Promise.all([
-        fetchMetricasBaseKpis({ regiao: selectedRegion }),
+        fetchMetricasBaseKpis({ regiao: selectedRegion, baseCategoria: selectedCategoria }),
         fetchImportacoes().catch(() => [] as Importacao[]),
         fetchRegioes().catch(() => [] as Regiao[]),
       ])
@@ -327,6 +328,24 @@ export default function Dashboard() {
                   </SelectItem>
                 ))}
                 <SelectItem value="Sem Região">Sem Região</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Categoria de Base */}
+          <div className="flex items-center space-x-2 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 shadow-sm">
+            <span className="text-xs text-slate-500 font-medium">Base:</span>
+            <Select value={selectedCategoria} onValueChange={setSelectedCategoria}>
+              <SelectTrigger className="h-7 text-xs border-0 bg-transparent focus:ring-0 w-44 font-medium text-slate-800">
+                <SelectValue placeholder="Todas as Bases" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todas">Todas as Bases</SelectItem>
+                <SelectItem value="normal">🎯 Base Normal</SelectItem>
+                <SelectItem value="cliente_final">🛑 Cliente Final</SelectItem>
+                <SelectItem value="atacado_fora_mapa">📍 ATACADO Fora do Mapa</SelectItem>
+                <SelectItem value="sem_dono">⚠️ Sem Dono (Equipe)</SelectItem>
+                <SelectItem value="repescagem">🔄 Repescagem</SelectItem>
               </SelectContent>
             </Select>
           </div>
