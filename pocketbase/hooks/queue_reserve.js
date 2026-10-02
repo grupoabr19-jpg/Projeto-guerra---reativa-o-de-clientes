@@ -115,8 +115,17 @@ routerAdd(
         if (cfgVal.modo_criterio) modoCriterio = cfgVal.modo_criterio
       } catch (_) {}
 
-      const todayStr = now.toISOString().slice(0, 10)
-      const endOfToday = `${todayStr} 23:59:59.999Z`
+      // Fuso de Brasília (UTC-3): hoje em BRT e fim do dia (meia-noite de Brasília em UTC)
+      // Ex: 2026-04-09 em BRT termina às 23:59:59.999 BRT, que equivale a 2026-04-10T02:59:59.999Z
+      const brasiliaOffsetMs = -3 * 60 * 60 * 1000
+      const dBrasilia = new Date(now.getTime() + brasiliaOffsetMs)
+      const yBrt = dBrasilia.getUTCFullYear()
+      const mBrt = dBrasilia.getUTCMonth()
+      const dayBrt = dBrasilia.getUTCDate()
+      const todayStr = `${yBrt}-${String(mBrt + 1).padStart(2, '0')}-${String(dayBrt).padStart(2, '0')}`
+      // Fim do dia em Brasília (23:59:59.999 BRT = 02:59:59.999 UTC do dia seguinte)
+      const endOfTodayBrtUtcMs = Date.UTC(yBrt, mBrt, dayBrt + 1, 2, 59, 59, 999)
+      const endOfToday = new Date(endOfTodayBrtUtcMs).toISOString()
 
       // Constrói filtro de regiões exato e rápido com suporte a variações de grafia
       const buildRegiaoCondition = (regiaoStr) => {

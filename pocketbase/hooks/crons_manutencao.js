@@ -33,7 +33,14 @@ cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
       } catch (_) {}
     }
 
-    const todayStr = now.toISOString().slice(0, 10)
+    // Data corrente no fuso de Brasília (UTC-3) para cálculo preciso de quarentena
+    const brasiliaOffsetMs = -3 * 60 * 60 * 1000
+    const dBrasilia = new Date(now.getTime() + brasiliaOffsetMs)
+    const yBrt = dBrasilia.getUTCFullYear()
+    const mBrt = String(dBrasilia.getUTCMonth() + 1).padStart(2, '0')
+    const dBrt = String(dBrasilia.getUTCDate()).padStart(2, '0')
+    const todayStr = `${yBrt}-${mBrt}-${dBrt}`
+
     const expiredQuarantine = $app.findRecordsByFilter(
       'clientes',
       `estado = 'nao_quer_negociar' && quarentena_ate != '' && quarentena_ate <= '${todayStr}'`,

@@ -1190,6 +1190,7 @@ export async function fetchReportsAnalytics(
     params.set('faixaFaturamento', filtros.faixaFaturamento)
   if (filtros?.desfecho && filtros.desfecho !== 'todos') params.set('desfecho', filtros.desfecho)
   if (filtros?.periodo) params.set('periodo', filtros.periodo)
+  if (filtros?.baseCategoria) params.set('baseCategoria', filtros.baseCategoria)
 
   const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
   const queryStr = params.toString()
@@ -1220,11 +1221,15 @@ export async function fetchReportsAnalytics(
 
 export async function fetchMetricasBaseKpis(options?: {
   regiao?: string
+  baseCategoria?: string
 }): Promise<import('@/types').MetricasBaseKpisResponse> {
   const params = new URLSearchParams()
   const regiao = options?.regiao?.trim()
   if (regiao && regiao.toLowerCase() !== 'todas') {
     params.set('regiao', regiao)
+  }
+  if (options?.baseCategoria) {
+    params.set('baseCategoria', options.baseCategoria)
   }
   const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
   const queryStr = params.toString()

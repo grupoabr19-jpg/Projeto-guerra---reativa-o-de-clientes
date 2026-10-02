@@ -58,6 +58,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { ExpedienteStatusBadge } from '@/components/ExpedienteStatusBadge'
 import { usePresence } from '@/hooks/usePresence'
+import { calcularTaxaConversao } from '@/lib/conversao'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -666,8 +667,7 @@ export default function Dashboard() {
                 0,
               )
               const totalPontos = sortedOperadores.reduce((acc, o) => acc + o.pontosGamificacao, 0)
-              const taxaMedia =
-                totalLigacoes > 0 ? Math.round((totalConversoes / totalLigacoes) * 100) : 0
+              const taxaMedia = calcularTaxaConversao(totalConversoes, totalLigacoes)
 
               return (
                 <div className="overflow-x-auto">

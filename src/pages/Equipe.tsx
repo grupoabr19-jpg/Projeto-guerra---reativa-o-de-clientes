@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useAuth } from '@/contexts/AuthContext'
+import { calcularTaxaConversao } from '@/lib/conversao'
 import { fetchMetricasAtendimentosDashboard } from '@/services/api'
 import type {
   MetricasAtendimentosDashboard,
@@ -422,8 +423,7 @@ export default function EquipePage() {
               const totalFollowUps = sorted.reduce((acc, o) => acc + o.followUpsHoje, 0)
               const totalVendasPerdidas = sorted.reduce((acc, o) => acc + o.vendasPerdidas, 0)
               const totalPontos = sorted.reduce((acc, o) => acc + o.pontosGamificacao, 0)
-              const taxaMedia =
-                totalLigacoes > 0 ? Math.round((totalConversoes / totalLigacoes) * 100) : 0
+              const taxaMedia = calcularTaxaConversao(totalConversoes, totalLigacoes)
 
               return (
                 <div className="overflow-x-auto">

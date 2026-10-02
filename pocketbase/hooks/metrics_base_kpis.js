@@ -10,8 +10,25 @@ routerAdd(
         return e.json(401, { error: 'Autenticação obrigatória' })
       }
 
-      const rawRegiao = e.requestInfo().query ? e.requestInfo().query.regiao || '' : ''
+      const q = e.requestInfo().query || {}
+      const rawRegiao = q.regiao || ''
       const regiao = String(rawRegiao).trim()
+      const baseCategoriaParam = String(q.baseCategoria || q.categoria || 'normal').trim()
+
+      // Construção da condição de categoria de base
+      let categoriaSql =
+        "(base_categoria IS NULL OR base_categoria = '' OR base_categoria = 'normal')"
+      if (baseCategoriaParam === 'cliente_final') {
+        categoriaSql = "base_categoria = 'cliente_final'"
+      } else if (baseCategoriaParam === 'atacado_fora_mapa') {
+        categoriaSql = "base_categoria = 'atacado_fora_mapa'"
+      } else if (baseCategoriaParam === 'sem_dono') {
+        categoriaSql = '(sem_dono_equipe = 1 OR sem_dono_equipe = true)'
+      } else if (baseCategoriaParam === 'repescagem') {
+        categoriaSql = "(regiao = 'REPESCAGEM' OR dias_sem_faturar >= 90)"
+      } else if (baseCategoriaParam === 'todas') {
+        categoriaSql = '1=1'
+      }
 
       // Construção da condição de região segura para SQLite
       // Trata as variações de grafia e "Sem Região"
@@ -71,10 +88,9 @@ routerAdd(
         }
       }
 
-      // Regra fundamental: clientes marcados com ativo_fora_base (flag ou estado), Base Cliente Final e ATACADO Fora do Mapa
-      // NÃO contam na carteira ativa elegível para fila/KPIs de reativação
-      const baseFilterSql =
-        "estado != 'ativo_fora_base' AND (ativo_fora_base IS NULL OR ativo_fora_base = 0) AND (base_categoria IS NULL OR base_categoria = 'normal')"
+      // Regra fundamental: clientes marcados com ativo_fora_base (flag ou estado) ficam fora,
+      // e aplicamos o filtro de categoria selecionado
+      const baseFilterSql = `estado != 'ativo_fora_base' AND (ativo_fora_base IS NULL OR ativo_fora_base = 0) AND (${categoriaSql})`
 
       // 1. Contagens agregadas gerais e valores recuperados
       // No PocketBase JSVM (Goja), dbx.Query.one() requer um DynamicModel com a estrutura dos campos.

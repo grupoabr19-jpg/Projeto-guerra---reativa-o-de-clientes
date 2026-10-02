@@ -39,12 +39,41 @@ routerAdd(
       const periodoParam = String(q.periodo || 'total').trim()
       const baseCategoriaParam = String(q.baseCategoria || q.categoria || 'todas').trim()
 
+      // Cálculo de datas com Fuso de Brasília (UTC-3)
+      const now = new Date()
+      const brasiliaOffsetMs = -3 * 60 * 60 * 1000
+      const dBrasilia = new Date(now.getTime() + brasiliaOffsetMs)
+      const yBrt = dBrasilia.getUTCFullYear()
+      const mBrt = dBrasilia.getUTCMonth()
+      const dayBrt = dBrasilia.getUTCDate()
+      // Meia-noite de hoje em Brasília (00:00:00 BRT = 03:00:00 UTC)
+      const midnightTodayUtcMs = Date.UTC(yBrt, mBrt, dayBrt, 3, 0, 0, 0)
+      const midnightTodayIso = new Date(midnightTodayUtcMs).toISOString()
+      // 7 dias atrás em BRT
+      const midnight7diasIso = new Date(midnightTodayUtcMs - 7 * 24 * 60 * 60 * 1000).toISOString()
+      // 30 dias atrás em BRT
+      const midnight30diasIso = new Date(
+        midnightTodayUtcMs - 30 * 24 * 60 * 60 * 1000,
+      ).toISOString()
+
       // Construção dos filtros SQL para a tabela clientes
       // Base: ignorar clientes marcados como ativo_fora_base
       const baseFilterSql =
         "estado != 'ativo_fora_base' AND (ativo_fora_base IS NULL OR ativo_fora_base = 0)"
       const conditions = [baseFilterSql]
       const bindParams = {}
+
+      // Filtro de Período (calculado na meia-noite de Brasília)
+      if (periodoParam === 'hoje') {
+        conditions.push('updated >= {:periodoInicio}')
+        bindParams.periodoInicio = midnightTodayIso
+      } else if (periodoParam === '7dias') {
+        conditions.push('updated >= {:periodoInicio}')
+        bindParams.periodoInicio = midnight7diasIso
+      } else if (periodoParam === '30dias') {
+        conditions.push('updated >= {:periodoInicio}')
+        bindParams.periodoInicio = midnight30diasIso
+      }
 
       // Filtro de Bases Especiais / Categorias (Item 6)
       if (baseCategoriaParam === 'cliente_final') {
