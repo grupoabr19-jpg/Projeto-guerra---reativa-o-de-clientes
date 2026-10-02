@@ -383,6 +383,31 @@ export async function deleteUser(userId: string) {
 }
 
 /**
+ * Redefine a senha de um usuário via endpoint backend protegido (exclusivo admin).
+ */
+export async function resetUserPassword(
+  userId: string,
+  newPassword: string,
+): Promise<{ ok: boolean; message: string; userId: string; userName: string }> {
+  const res = await fetch(
+    `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/admin/reset-password`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: pb.authStore.token,
+      },
+      body: JSON.stringify({ userId, newPassword }),
+    },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Falha ao redefinir senha do usuário')
+  }
+  return res.json()
+}
+
+/**
  * Envia batimento de presença (heartbeat) para o usuário autenticado.
  * Atualiza o last_seen no servidor.
  */

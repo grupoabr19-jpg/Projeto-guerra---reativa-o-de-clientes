@@ -61,8 +61,30 @@ export default function Index() {
         navigate('/dashboard', { replace: true })
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'E-mail ou senha inválidos'
-      setError(msg)
+      // Quando a autenticação falhar com 400 ("Failed to authenticate."),
+      // mostrar mensagem amigável e clara sem vazar detalhes técnicos:
+      // "E-mail ou senha incorretos. Verifique se digitou corretamente ou solicite ao administrador a redefinição da sua senha."
+      let isAuthFailure = false
+      if (err && typeof err === 'object') {
+        const errorStatus = (err as { status?: number }).status
+        const errorMsg = (err as { message?: string }).message || ''
+        if (
+          errorStatus === 400 ||
+          errorMsg.toLowerCase().includes('failed to authenticate') ||
+          errorMsg.toLowerCase().includes('invalid email or password')
+        ) {
+          isAuthFailure = true
+        }
+      }
+
+      if (isAuthFailure) {
+        setError(
+          'E-mail ou senha incorretos. Verifique se digitou corretamente ou solicite ao administrador a redefinição da sua senha.',
+        )
+      } else {
+        const msg = err instanceof Error ? err.message : 'E-mail ou senha inválidos'
+        setError(msg)
+      }
     } finally {
       setLoading(false)
     }

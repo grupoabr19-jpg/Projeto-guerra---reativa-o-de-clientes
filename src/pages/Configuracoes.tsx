@@ -99,7 +99,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { deleteUser } from '@/services/api'
+import { deleteUser, resetUserPassword } from '@/services/api'
 import { BasesReferenciaTab } from '@/components/BasesReferenciaTab'
 import { derivePresenceStatus } from '@/hooks/usePresence'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -216,6 +216,13 @@ export default function ConfiguracoesPage() {
   const [userToDelete, setUserToDelete] = useState<User | null>(null)
   const [deletingUser, setDeletingUser] = useState(false)
   const [deleteErrorMessage, setDeleteErrorMessage] = useState<string | null>(null)
+
+  // Redefinição de Senha de Usuário (Admin)
+  const [userToResetPassword, setUserToResetPassword] = useState<User | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [resettingPassword, setResettingPassword] = useState(false)
+  const [resetPasswordError, setResetPasswordError] = useState<string | null>(null)
 
   const [savingConfig, setSavingConfig] = useState(false)
 
@@ -750,6 +757,47 @@ export default function ConfiguracoesPage() {
       })
     } finally {
       setSavingUserRegioes(false)
+    }
+  }
+
+  const handleOpenResetPassword = (u: User) => {
+    setUserToResetPassword(u)
+    setNewPassword('')
+    setConfirmPassword('')
+    setResetPasswordError(null)
+  }
+
+  const handleConfirmResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!userToResetPassword) return
+
+    setResetPasswordError(null)
+
+    if (newPassword.length < 8) {
+      setResetPasswordError('A nova senha deve ter no mínimo 8 caracteres.')
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      setResetPasswordError('A confirmação de senha não confere com a nova senha.')
+      return
+    }
+
+    setResettingPassword(true)
+    try {
+      const res = await resetUserPassword(userToResetPassword.id, newPassword)
+      toast({
+        title: 'Senha redefinida',
+        description: `Senha redefinida para ${userToResetPassword.name || userToResetPassword.email}.`,
+      })
+      setUserToResetPassword(null)
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao redefinir senha do usuário.'
+      setResetPasswordError(msg)
+    } finally {
+      setResettingPassword(false)
     }
   }
 
@@ -2586,6 +2634,19 @@ export default function ConfiguracoesPage() {
                                   : 'Editar Regiões'}
                               </Button>
 
+                              {user?.role === 'admin' && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleOpenResetPassword(u)}
+                                  className="h-7 text-xs text-[#253575] hover:text-[#253575] hover:bg-[#253575]/10 font-medium"
+                                  title={`Redefinir senha de ${u.name}`}
+                                >
+                                  <Key className="h-3.5 w-3.5 mr-1 text-[#253575]" />
+                                  Redefinir senha
+                                </Button>
+                              )}
+
                               {user?.role === 'admin' &&
                                 (u.id === user.id ? (
                                   <span
@@ -2782,6 +2843,166 @@ export default function ConfiguracoesPage() {
           </div>
         </div>
       )}
+
+      {/* MODAL / DIALOG DE REDEFINIÇÃO DE SENHA PELO ADMIN */}
+      <Dialog
+        open={Boolean(userToResetPassword)}
+        onOpenChange={(open) => {
+          if (!open && !resettingPassword) {
+            setUserToResetPassword(null)
+            setResetPasswordError(null)
+            setNewPassword('')
+            setConfirmPassword('')
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader className="space-y-1.5 pb-2 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-9 rounded-lg bg-[#253575]/10 flex items-center justify-center text-[#253575]">
+                <Key className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-[#253575] font-['Montserrat',sans-serif]">
+                  Redefinir Senha de Acesso
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  Defina uma nova senha para o colaborador da equipe
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {userToResetPassword && (
+            <div className="p-3 bg-slate-50 border border-slate-200/90 rounded-lg text-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-[#253575] text-sm">
+                  {userToResetPassword.name}
+                </span>
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] uppercase font-mono ${
+                    userToResetPassword.role === 'admin'
+                      ? 'bg-purple-50 text-purple-700 border-purple-200'
+                      : userToResetPassword.role === 'supervisor'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : userToResetPassword.role === 'lider'
+                          ? 'bg-amber-50 text-amber-800 border-amber-300 font-semibold'
+                          : 'bg-slate-50 text-slate-700 border-slate-200'
+                  }`}
+                >
+                  {userToResetPassword.role}
+                </Badge>
+              </div>
+              <div className="text-slate-600 font-mono text-[11px]">
+                {userToResetPassword.email || 'Sem e-mail visível'}
+              </div>
+            </div>
+          )}
+
+          <form onSubmit={handleConfirmResetPassword} className="space-y-4 pt-1">
+            {resetPasswordError && (
+              <Alert variant="destructive" className="py-2 text-xs">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{resetPasswordError}</AlertDescription>
+              </Alert>
+            )}
+
+            <div className="space-y-2">
+              <Label
+                htmlFor="new-password"
+                className="text-xs font-semibold text-[#253575] flex items-center gap-1.5"
+              >
+                <span>Nova Senha</span>
+                <span className="text-slate-400 font-normal text-[11px]">
+                  (mínimo 8 caracteres)
+                </span>
+              </Label>
+              <Input
+                id="new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Digite a nova senha"
+                disabled={resettingPassword}
+                className="h-9 text-xs focus-visible:ring-[#253575]"
+                required
+                minLength={8}
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password" className="text-xs font-semibold text-[#253575]">
+                Confirmar Nova Senha
+              </Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repita a nova senha exatamente"
+                disabled={resettingPassword}
+                className="h-9 text-xs focus-visible:ring-[#253575]"
+                required
+                minLength={8}
+              />
+            </div>
+
+            {/* Requisitos de Senha */}
+            <div className="p-2.5 bg-blue-50/60 border border-blue-200/80 rounded-md text-[11px] text-slate-600 space-y-1">
+              <div className="font-semibold text-[#253575]">Requisitos para a senha:</div>
+              <ul className="space-y-0.5 list-disc list-inside text-[11px]">
+                <li
+                  className={
+                    newPassword.length >= 8 ? 'text-emerald-700 font-medium' : 'text-slate-500'
+                  }
+                >
+                  Pelo menos 8 caracteres (atualmente: {newPassword.length})
+                </li>
+                <li
+                  className={
+                    newPassword && confirmPassword && newPassword === confirmPassword
+                      ? 'text-emerald-700 font-medium'
+                      : 'text-slate-500'
+                  }
+                >
+                  Confirmação idêntica à nova senha
+                </li>
+              </ul>
+            </div>
+
+            <DialogFooter className="pt-2 border-t border-slate-100 flex sm:justify-between items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setUserToResetPassword(null)
+                  setResetPasswordError(null)
+                  setNewPassword('')
+                  setConfirmPassword('')
+                }}
+                disabled={resettingPassword}
+                className="text-xs h-8"
+              >
+                Cancelar
+              </Button>
+              {/* Ação principal com o laranja proprietário ABR #F18800 */}
+              <Button
+                type="submit"
+                disabled={
+                  resettingPassword || newPassword.length < 8 || newPassword !== confirmPassword
+                }
+                size="sm"
+                className="bg-[#F18800] hover:bg-[#d97b00] text-white text-xs h-8 font-semibold shadow-xs"
+              >
+                {resettingPassword ? 'Salvando nova senha...' : 'Definir Nova Senha'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE USUÁRIO (ALERTDIALOG) */}
       <AlertDialog

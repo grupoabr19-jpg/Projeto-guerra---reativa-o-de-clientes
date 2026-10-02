@@ -37,6 +37,105 @@ onRecordUpdateRequest((e) => {
   }
 }, 'users')
 
+// Endpoint seguro exclusivo para administradores redefinirem senha de qualquer usuário
+// POST /backend/v1/admin/reset-password
+// Body esperado: { userId: string, newPassword: string }
+routerAdd(
+  'POST',
+  '/backend/v1/admin/reset-password',
+  (e) => {
+    try {
+      const authRecord = e.auth
+      if (!authRecord || !authRecord.id) {
+        return e.json(401, { error: 'Autenticação necessária' })
+      }
+
+      const currentRole = authRecord.getString('role')
+      if (currentRole !== 'admin') {
+        return e.json(403, {
+          error: 'Apenas administradores têm permissão para redefinir senhas de usuários.',
+        })
+      }
+
+      let body = {}
+      try {
+        body = e.requestInfo().body || {}
+      } catch (_) {}
+
+      const userId = (body.userId || '').toString().trim()
+      const newPassword = (body.newPassword || '').toString()
+
+      if (!userId) {
+        return e.json(400, { error: 'O ID do usuário (userId) é obrigatório.' })
+      }
+
+      if (!newPassword || newPassword.length < 8) {
+        return e.json(400, {
+          error: 'A nova senha deve ter no mínimo 8 caracteres.',
+        })
+      }
+
+      let targetUser
+      try {
+        targetUser = $app.findAuthRecordById('_pb_users_auth_', userId)
+      } catch (_) {
+        try {
+          targetUser = $app.findRecordById('users', userId)
+        } catch (findErr) {
+          return e.json(404, { error: 'Usuário não encontrado.' })
+        }
+      }
+
+      if (!targetUser) {
+        return e.json(404, { error: 'Usuário não encontrado.' })
+      }
+
+      // Aplica a nova senha e assegura email verificado
+      targetUser.setPassword(newPassword)
+      targetUser.setVerified(true)
+      $app.save(targetUser)
+
+      const targetUserName = targetUser.getString('name') || targetUser.getString('email') || userId
+
+      // Registrar auditoria em eventos_log
+      try {
+        const colEv = $app.findCollectionByNameOrId('eventos_log')
+        const ev = new Record(colEv)
+        ev.set('usuario', authRecord.id)
+        ev.set('acao', 'senha_redefinida_admin')
+        ev.set('detalhes', {
+          alvo_id: userId,
+          alvo_nome: targetUserName,
+          alvo_email: targetUser.getString('email'),
+          redefinido_por: authRecord.getString('email') || authRecord.id,
+          redefinido_em: new Date().toISOString(),
+        })
+        $app.save(ev)
+      } catch (logErr) {
+        console.log(
+          '[users_security] Erro ao registrar log de redefinição de senha: ' + logErr.message,
+        )
+      }
+
+      return e.json(200, {
+        ok: true,
+        message: 'Senha redefinida com sucesso para ' + targetUserName,
+        userId: userId,
+        userName: targetUserName,
+      })
+    } catch (err) {
+      console.log(
+        '[users_security] Erro ao redefinir senha: ' +
+          (err && err.message ? err.message : String(err)),
+      )
+      return e.json(500, {
+        error: 'Erro ao redefinir senha: ' + (err && err.message ? err.message : String(err)),
+      })
+    }
+  },
+  $apis.requireAuth(),
+)
+
 // Hook de segurança e integridade para exclusão de usuários
 // 1. Apenas administradores autenticados podem excluir usuários
 // 2. O administrador não pode excluir a própria conta
