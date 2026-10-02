@@ -94,6 +94,7 @@ export default function RelatoriosPage() {
   // Filtros Básicos e Avançados
   const [selectedPeriodo, setSelectedPeriodo] = useState<PeriodoAtendimentoFiltro>('total')
   const [selectedRegiao, setSelectedRegiao] = useState<string>(rotaLider || 'todas')
+  const [selectedCategoria, setSelectedCategoria] = useState<string>('todas')
   const [selectedSegmento, setSelectedSegmento] = useState<string>('todos')
   const [selectedVendedor, setSelectedVendedor] = useState<string>('todos')
   const [selectedOperador, setSelectedOperador] = useState<string>('todos')
@@ -175,6 +176,7 @@ export default function RelatoriosPage() {
     user,
     selectedPeriodo,
     selectedRegiao,
+    selectedCategoria,
     selectedSegmento,
     selectedVendedor,
     selectedOperador,
@@ -226,6 +228,8 @@ export default function RelatoriosPage() {
     const filtrosObj: FiltrosRelatoriosAvancados = {
       periodo: selectedPeriodo,
       regiao: selectedRegiao,
+      baseCategoria: selectedCategoria,
+      categoria: selectedCategoria,
       segmento: selectedSegmento !== 'todos' ? selectedSegmento : undefined,
       vendedor: selectedVendedor !== 'todos' ? selectedVendedor : undefined,
       operador: selectedOperador !== 'todos' ? selectedOperador : undefined,
@@ -270,6 +274,7 @@ export default function RelatoriosPage() {
 
     const promessaBaseKpis = fetchMetricasBaseKpis({
       regiao: selectedRegiao,
+      baseCategoria: selectedCategoria,
     }).catch((err) => {
       console.error('Falha em fetchMetricasBaseKpis:', err)
       errosEncontrados.push('KPIs da base')
@@ -326,6 +331,7 @@ export default function RelatoriosPage() {
   const handleResetFiltros = () => {
     setSelectedPeriodo('total')
     if (!isLider) setSelectedRegiao('todas')
+    setSelectedCategoria('todas')
     setSelectedSegmento('todos')
     setSelectedVendedor('todos')
     setSelectedOperador('todos')
@@ -338,6 +344,7 @@ export default function RelatoriosPage() {
   const isFiltroAtivo =
     selectedPeriodo !== 'total' ||
     (selectedRegiao !== 'todas' && !isLider) ||
+    selectedCategoria !== 'todas' ||
     selectedSegmento !== 'todos' ||
     selectedVendedor !== 'todos' ||
     selectedOperador !== 'todos' ||
@@ -672,6 +679,24 @@ export default function RelatoriosPage() {
             </Select>
           </div>
 
+          {/* Categoria de Base */}
+          <div className="flex items-center space-x-2 bg-white border border-slate-200 rounded-lg px-2.5 py-1 shadow-xs">
+            <span className="text-xs text-slate-500 font-medium">Base:</span>
+            <Select value={selectedCategoria} onValueChange={setSelectedCategoria}>
+              <SelectTrigger className="h-7 text-xs border-0 bg-transparent focus:ring-0 w-44 font-medium text-slate-800">
+                <SelectValue placeholder="Todas as Bases" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todas">Todas as Bases</SelectItem>
+                <SelectItem value="normal">🎯 Base Normal</SelectItem>
+                <SelectItem value="cliente_final">🛑 Cliente Final</SelectItem>
+                <SelectItem value="atacado_fora_mapa">📍 ATACADO Fora do Mapa</SelectItem>
+                <SelectItem value="sem_dono">⚠️ Sem Dono (Equipe)</SelectItem>
+                <SelectItem value="repescagem">🔄 Repescagem</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Botão de Toggle Filtros Avançados */}
           <Button
             variant={showFiltrosAvancados ? 'default' : 'outline'}
@@ -895,6 +920,22 @@ export default function RelatoriosPage() {
                   {selectedRegiao !== 'todas' && (
                     <Badge variant="outline" className="bg-white text-blue-700 border-blue-200">
                       Região: {selectedRegiao}
+                    </Badge>
+                  )}
+                  {selectedCategoria !== 'todas' && (
+                    <Badge variant="outline" className="bg-white text-blue-700 border-blue-200">
+                      Base:{' '}
+                      {selectedCategoria === 'normal'
+                        ? '🎯 Base Normal'
+                        : selectedCategoria === 'cliente_final'
+                          ? '🛑 Cliente Final'
+                          : selectedCategoria === 'atacado_fora_mapa'
+                            ? '📍 ATACADO Fora do Mapa'
+                            : selectedCategoria === 'sem_dono'
+                              ? '⚠️ Sem Dono (Equipe)'
+                              : selectedCategoria === 'repescagem'
+                                ? '🔄 Repescagem'
+                                : selectedCategoria}
                     </Badge>
                   )}
                   {selectedSegmento !== 'todos' && (
