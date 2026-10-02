@@ -170,7 +170,7 @@ export default function ClientesPage() {
         estado: novoEstado as any,
       })
       setSelectedClient({ ...selectedClient, estado: novoEstado as any })
-      loadClientes()
+      loadClientesServer()
       toast({
         title: 'Status atualizado',
         description: 'Status revertido pelo supervisor com sucesso.',

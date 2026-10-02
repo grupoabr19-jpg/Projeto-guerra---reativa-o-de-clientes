@@ -19,9 +19,20 @@ import {
 import {
   fetchPesosGamificacao,
   updatePesosGamificacao,
+  fetchConcursosSazonais,
+  createConcursoSazonal,
+  updateConcursoSazonal,
+  deleteConcursoSazonal,
   PESOS_GAMIFICACAO_PADRAO,
 } from '@/services/gamificacao'
-import type { PesosGamificacao, MetasOperacionaisConfig, MetaValores } from '@/types'
+import type {
+  PesosGamificacao,
+  MetasOperacionaisConfig,
+  MetaValores,
+  ConcursoSazonal,
+  ConcursoMetricaTipo,
+  ConcursoStatus,
+} from '@/types'
 import { fetchMetasOperacionais, saveMetasOperacionais } from '@/services/api'
 import {
   Card,
@@ -56,7 +67,19 @@ import {
 import pb from '@/lib/pocketbase/client'
 import type { User, UserRole, Configuracao, Regiao } from '@/types'
 import { REGIOES_PADRAO, TODAS_REGIOES_FILTRO } from '@/types'
-import { MapPin, Info, Edit2, Check, AlertCircle, ShieldCheck, Trash2 } from 'lucide-react'
+import {
+  MapPin,
+  Info,
+  Edit2,
+  Check,
+  AlertCircle,
+  ShieldCheck,
+  Trash2,
+  Calendar,
+  Gift,
+  Clock,
+  CheckCircle,
+} from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -67,6 +90,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
 import { deleteUser } from '@/services/api'
 import { BasesReferenciaTab } from '@/components/BasesReferenciaTab'
 import { derivePresenceStatus } from '@/hooks/usePresence'
@@ -142,6 +174,27 @@ export default function ConfiguracoesPage() {
   const [editingRegiao, setEditingRegiao] = useState<Regiao | null>(null)
   const [savingRegiao, setSavingRegiao] = useState(false)
 
+  // Concursos Sazonais (Admin)
+  const [concursosList, setConcursosList] = useState<ConcursoSazonal[]>([])
+  const [loadingConcursos, setLoadingConcursos] = useState(false)
+  const [showConcursoDialog, setShowConcursoDialog] = useState(false)
+  const [editingConcurso, setEditingConcurso] = useState<ConcursoSazonal | null>(null)
+  const [savingConcurso, setSavingConcurso] = useState(false)
+  const [concursoToDelete, setConcursoToDelete] = useState<ConcursoSazonal | null>(null)
+  const [deletingConcurso, setDeletingConcurso] = useState(false)
+
+  // Formulário de Concurso Sazonal
+  const [formConcursoTitulo, setFormConcursoTitulo] = useState('')
+  const [formConcursoDescricao, setFormConcursoDescricao] = useState('')
+  const [formConcursoPremio, setFormConcursoPremio] = useState('')
+  const [formConcursoInicio, setFormConcursoInicio] = useState('')
+  const [formConcursoFim, setFormConcursoFim] = useState('')
+  const [formConcursoMetrica, setFormConcursoMetrica] = useState<ConcursoMetricaTipo>('conversoes')
+  const [formConcursoMeta, setFormConcursoMeta] = useState<number>(10)
+  const [formConcursoStatus, setFormConcursoStatus] = useState<ConcursoStatus>('ativo')
+  const [formConcursoBadgeNome, setFormConcursoBadgeNome] = useState('')
+  const [formConcursoBadgeEmoji, setFormConcursoBadgeEmoji] = useState('🎖️')
+
   // Usuários
   const [usersList, setUsersList] = useState<User[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
@@ -180,6 +233,9 @@ export default function ConfiguracoesPage() {
       loadSettings()
       loadUsers()
       loadRegioesData()
+      if (user.role === 'admin') {
+        loadConcursosData()
+      }
     }
   }, [user])
 
@@ -269,6 +325,195 @@ export default function ConfiguracoesPage() {
       console.error('Erro ao buscar usuários:', err)
     } finally {
       setLoadingUsers(false)
+    }
+  }
+
+  const loadConcursosData = async () => {
+    setLoadingConcursos(true)
+    try {
+      const data = await fetchConcursosSazonais()
+      setConcursosList(data)
+    } catch (err) {
+      console.error('Erro ao carregar concursos sazonais:', err)
+      toast({
+        variant: 'destructive',
+        title: 'Erro',
+        description: 'Não foi possível carregar a lista de concursos sazonais.',
+      })
+    } finally {
+      setLoadingConcursos(false)
+    }
+  }
+
+  const handleOpenCreateConcurso = () => {
+    setEditingConcurso(null)
+    setFormConcursoTitulo('')
+    setFormConcursoDescricao('')
+    setFormConcursoPremio('')
+    // Início hoje, fim daqui a 15 dias no formato YYYY-MM-DD
+    const now = new Date()
+    const future = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000)
+    setFormConcursoInicio(now.toISOString().split('T')[0])
+    setFormConcursoFim(future.toISOString().split('T')[0])
+    setFormConcursoMetrica('conversoes')
+    setFormConcursoMeta(10)
+    setFormConcursoStatus('ativo')
+    setFormConcursoBadgeNome('Campeão da Quinzena')
+    setFormConcursoBadgeEmoji('🎖️')
+    setShowConcursoDialog(true)
+  }
+
+  const handleOpenEditConcurso = (c: ConcursoSazonal) => {
+    setEditingConcurso(c)
+    setFormConcursoTitulo(c.titulo || '')
+    setFormConcursoDescricao(c.descricao || '')
+    setFormConcursoPremio(c.premio_descricao || '')
+    setFormConcursoInicio(c.data_inicio ? c.data_inicio.split('T')[0] : '')
+    setFormConcursoFim(c.data_fim ? c.data_fim.split('T')[0] : '')
+    setFormConcursoMetrica(c.metrica_tipo || 'conversoes')
+    setFormConcursoMeta(c.meta_quantidade || 10)
+    setFormConcursoStatus(c.status || 'ativo')
+    setFormConcursoBadgeNome(c.badge_exclusiva_nome || '')
+    setFormConcursoBadgeEmoji(c.badge_exclusiva_emoji || '🎖️')
+    setShowConcursoDialog(true)
+  }
+
+  const handleSaveConcurso = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formConcursoTitulo.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Título obrigatório',
+        description: 'Informe o título do concurso sazonal.',
+      })
+      return
+    }
+
+    if (!formConcursoPremio.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Prêmio obrigatório',
+        description:
+          'Informe o prêmio do concurso (ex.: Ferro de solda 2200W, almoço de diretoria).',
+      })
+      return
+    }
+
+    if (!formConcursoInicio || !formConcursoFim) {
+      toast({
+        variant: 'destructive',
+        title: 'Datas obrigatórias',
+        description: 'Informe a data de início e de término do concurso.',
+      })
+      return
+    }
+
+    if (formConcursoFim < formConcursoInicio) {
+      toast({
+        variant: 'destructive',
+        title: 'Período inválido',
+        description: 'A data final deve ser igual ou posterior à data de início.',
+      })
+      return
+    }
+
+    if (formConcursoMeta <= 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Meta inválida',
+        description: 'A meta deve ser um número maior que zero.',
+      })
+      return
+    }
+
+    setSavingConcurso(true)
+    try {
+      const payload: Partial<ConcursoSazonal> = {
+        titulo: formConcursoTitulo.trim(),
+        descricao: formConcursoDescricao.trim(),
+        premio_descricao: formConcursoPremio.trim(),
+        data_inicio: new Date(formConcursoInicio + 'T00:00:00.000Z').toISOString(),
+        data_fim: new Date(formConcursoFim + 'T23:59:59.999Z').toISOString(),
+        metrica_tipo: formConcursoMetrica,
+        meta_quantidade: Number(formConcursoMeta),
+        status: formConcursoStatus,
+        badge_exclusiva_nome: formConcursoBadgeNome.trim() || undefined,
+        badge_exclusiva_emoji: formConcursoBadgeEmoji.trim() || '🎖️',
+      }
+
+      if (editingConcurso) {
+        await updateConcursoSazonal(editingConcurso.id, payload)
+        toast({
+          title: 'Concurso atualizado',
+          description: `O concurso "${payload.titulo}" foi atualizado com sucesso!`,
+        })
+      } else {
+        if (user?.id) {
+          payload.criado_por = user.id
+        }
+        await createConcursoSazonal(payload)
+        toast({
+          title: 'Concurso criado',
+          description: `O concurso "${payload.titulo}" foi lançado com sucesso!`,
+        })
+      }
+
+      setShowConcursoDialog(false)
+      loadConcursosData()
+    } catch (err: unknown) {
+      console.error('Erro ao salvar concurso:', err)
+      const msg = err instanceof Error ? err.message : 'Falha ao salvar concurso'
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao salvar',
+        description: msg,
+      })
+    } finally {
+      setSavingConcurso(false)
+    }
+  }
+
+  const handleToggleStatusConcurso = async (c: ConcursoSazonal) => {
+    const novoStatus: ConcursoStatus = c.status === 'ativo' ? 'encerrado' : 'ativo'
+    try {
+      await updateConcursoSazonal(c.id, { status: novoStatus })
+      toast({
+        title: novoStatus === 'ativo' ? 'Concurso ativado' : 'Concurso encerrado',
+        description: `O concurso "${c.titulo}" agora está ${novoStatus}.`,
+      })
+      loadConcursosData()
+    } catch (err: unknown) {
+      console.error('Erro ao alterar status:', err)
+      const msg = err instanceof Error ? err.message : 'Falha ao atualizar status'
+      toast({
+        variant: 'destructive',
+        title: 'Erro',
+        description: msg,
+      })
+    }
+  }
+
+  const handleConfirmDeleteConcurso = async () => {
+    if (!concursoToDelete) return
+    setDeletingConcurso(true)
+    try {
+      await deleteConcursoSazonal(concursoToDelete.id)
+      toast({
+        title: 'Concurso excluído',
+        description: `O concurso "${concursoToDelete.titulo}" foi removido permanentemente.`,
+      })
+      setConcursoToDelete(null)
+      loadConcursosData()
+    } catch (err: unknown) {
+      console.error('Erro ao excluir concurso:', err)
+      const msg = err instanceof Error ? err.message : 'Falha ao excluir concurso'
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao excluir',
+        description: msg,
+      })
+    } finally {
+      setDeletingConcurso(false)
     }
   }
 
@@ -622,6 +867,21 @@ export default function ConfiguracoesPage() {
               Admin
             </Badge>
           </TabsTrigger>
+          {user?.role === 'admin' && (
+            <TabsTrigger
+              value="concursos"
+              className="text-xs font-medium flex items-center gap-1.5 data-[state=active]:bg-[#253575] data-[state=active]:text-white"
+            >
+              <Award className="h-3.5 w-3.5 text-[#F18800]" />
+              <span>Concursos Sazonais</span>
+              <Badge
+                variant="secondary"
+                className="text-[9px] px-1.5 py-0 bg-amber-100 text-amber-800"
+              >
+                Admin
+              </Badge>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* TAB NOVO: BASES DE REFERÊNCIA */}
@@ -1783,6 +2043,253 @@ export default function ConfiguracoesPage() {
           </Card>
         </TabsContent>
 
+        {/* TAB CONCURSOS SAZONAIS (EXCLUSIVO ADMIN) */}
+        {user?.role === 'admin' && (
+          <TabsContent value="concursos" className="space-y-4">
+            <Card className="border-slate-200 shadow-sm">
+              <CardHeader>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base font-bold text-[#253575] flex items-center space-x-2">
+                      <Award className="h-5 w-5 text-[#F18800]" />
+                      <span>Concursos Sazonais da Reativação</span>
+                    </CardTitle>
+                    <CardDescription className="text-xs text-slate-500 mt-1">
+                      Campanhas temporárias com premiações reais e distintivos comemorativos para
+                      incentivar e engajar a equipe comercial.
+                    </CardDescription>
+                  </div>
+                  <Button
+                    onClick={handleOpenCreateConcurso}
+                    className="bg-[#F18800] hover:bg-[#d97700] text-white text-xs font-semibold shadow-sm flex items-center gap-1.5"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Lançar Novo Concurso</span>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Nota de Identidade Visual e Regra */}
+                <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-[#142758] flex items-start gap-2.5">
+                  <Gift className="h-4 w-4 text-[#F18800] shrink-0 mt-0.5" />
+                  <div className="leading-relaxed">
+                    <strong className="font-semibold text-[#253575]">
+                      Regra da Gamificação ABR:{' '}
+                    </strong>
+                    Apenas administradores podem criar, editar e encerrar concursos sazonais. Os
+                    operadores e supervisores acompanham o progresso, metas e premiações diretamente
+                    na aba <strong>Ranking</strong>.
+                  </div>
+                </div>
+
+                {/* Tabela de Concursos */}
+                {loadingConcursos ? (
+                  <div className="py-12 text-center text-xs text-slate-400 flex flex-col items-center justify-center gap-2">
+                    <RefreshCw className="h-5 w-5 animate-spin text-[#253575]" />
+                    <span>Carregando concursos sazonais...</span>
+                  </div>
+                ) : concursosList.length === 0 ? (
+                  <div className="py-12 px-4 border border-dashed border-slate-300 rounded-xl text-center space-y-3 bg-slate-50/50">
+                    <div className="h-12 w-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+                      <Award className="h-6 w-6 text-[#F18800]" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-bold text-slate-800">
+                        Nenhum concurso sazonal cadastrado
+                      </h4>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto">
+                        Crie campanhas como &ldquo;Corrida do Aço&rdquo;, &ldquo;Reativação
+                        Relâmpago&rdquo; ou metas quinzenais com premiações físicas para sua equipe.
+                      </p>
+                    </div>
+                    <Button
+                      onClick={handleOpenCreateConcurso}
+                      className="bg-[#253575] hover:bg-[#1e2b5f] text-white text-xs"
+                      size="sm"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Criar Primeiro Concurso
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
+                        <tr>
+                          <th className="py-2.5 px-3">Concurso & Distintivo</th>
+                          <th className="py-2.5 px-3">Período</th>
+                          <th className="py-2.5 px-3">Métrica & Meta</th>
+                          <th className="py-2.5 px-3">Premiação</th>
+                          <th className="py-2.5 px-3 text-center">Status</th>
+                          <th className="py-2.5 px-3 text-right">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {concursosList.map((c) => {
+                          const isAtivo = c.status === 'ativo'
+                          const dataIni = c.data_inicio
+                            ? new Date(c.data_inicio).toLocaleDateString('pt-BR')
+                            : '—'
+                          const dataFim = c.data_fim
+                            ? new Date(c.data_fim).toLocaleDateString('pt-BR')
+                            : '—'
+
+                          return (
+                            <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-3 px-3">
+                                <div className="space-y-0.5">
+                                  <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                    <span className="text-base">
+                                      {c.badge_exclusiva_emoji || '🎖️'}
+                                    </span>
+                                    <span>{c.titulo}</span>
+                                  </div>
+                                  {c.descricao && (
+                                    <p className="text-[11px] text-slate-500 line-clamp-1 max-w-xs">
+                                      {c.descricao}
+                                    </p>
+                                  )}
+                                  {c.badge_exclusiva_nome && (
+                                    <div className="pt-0.5">
+                                      <Badge
+                                        variant="outline"
+                                        className="text-[10px] font-normal border-amber-300 bg-amber-50 text-amber-800"
+                                      >
+                                        Badge: {c.badge_exclusiva_nome}
+                                      </Badge>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="py-3 px-3 font-mono text-[11px] text-slate-700">
+                                <div className="flex items-center gap-1 text-slate-500">
+                                  <Calendar className="h-3 w-3 text-slate-400" />
+                                  <span>{dataIni}</span>
+                                  <span>até</span>
+                                  <span>{dataFim}</span>
+                                </div>
+                              </td>
+
+                              <td className="py-3 px-3">
+                                <div className="space-y-0.5">
+                                  <span className="font-bold font-mono text-[#253575] text-xs">
+                                    {c.meta_quantidade}{' '}
+                                    {c.metrica_tipo === 'conversoes'
+                                      ? 'conversões'
+                                      : c.metrica_tipo === 'toneladas'
+                                        ? 'toneladas'
+                                        : c.metrica_tipo === 'atendimentos'
+                                          ? 'atendimentos'
+                                          : 'pontos'}
+                                  </span>
+                                  <div className="text-[10px] text-slate-400 capitalize">
+                                    Métrica: {c.metrica_tipo.replace('_', ' ')}
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="py-3 px-3 max-w-xs">
+                                <div className="flex items-start gap-1.5">
+                                  <Gift className="h-3.5 w-3.5 text-[#F18800] shrink-0 mt-0.5" />
+                                  <span className="font-semibold text-slate-800 text-[11px] leading-tight">
+                                    {c.premio_descricao || 'Não informado'}
+                                  </span>
+                                </div>
+                              </td>
+
+                              <td className="py-3 px-3 text-center">
+                                <Badge
+                                  className={
+                                    isAtivo
+                                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300 font-semibold'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                                  }
+                                  variant="outline"
+                                >
+                                  {isAtivo ? 'Ativo' : 'Encerrado'}
+                                </Badge>
+                              </td>
+
+                              <td className="py-3 px-3 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleToggleStatusConcurso(c)}
+                                    className={`h-7 px-2 text-[11px] font-medium ${
+                                      isAtivo
+                                        ? 'text-amber-700 hover:bg-amber-50'
+                                        : 'text-emerald-700 hover:bg-emerald-50'
+                                    }`}
+                                    title={isAtivo ? 'Encerrar concurso' : 'Ativar concurso'}
+                                  >
+                                    {isAtivo ? (
+                                      <>
+                                        <Clock className="h-3 w-3 mr-1" />
+                                        Encerrar
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CheckCircle className="h-3 w-3 mr-1" />
+                                        Ativar
+                                      </>
+                                    )}
+                                  </Button>
+
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleOpenEditConcurso(c)}
+                                    className="h-7 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                    title="Editar dados do concurso"
+                                  >
+                                    <Edit2 className="h-3 w-3 mr-1" />
+                                    Editar
+                                  </Button>
+
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setConcursoToDelete(c)}
+                                    className="h-7 px-2 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                                    title="Excluir concurso"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+              <CardFooter className="bg-slate-50 border-t border-slate-100 flex items-center justify-between p-4 text-xs text-slate-500">
+                <span>
+                  Total de concursos:{' '}
+                  <strong className="text-slate-800 font-mono">{concursosList.length}</strong> (
+                  {concursosList.filter((c) => c.status === 'ativo').length} ativos)
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadConcursosData}
+                  disabled={loadingConcursos}
+                  className="h-7 text-xs text-slate-600 hover:text-[#253575]"
+                >
+                  <RefreshCw
+                    className={`h-3 w-3 mr-1 ${loadingConcursos ? 'animate-spin text-blue-600' : ''}`}
+                  />
+                  Atualizar Concursos
+                </Button>
+              </CardFooter>
+            </Card>
+          </TabsContent>
+        )}
+
         {/* TAB 3: USUÁRIOS E PERMISSÕES */}
         <TabsContent value="usuarios" className="space-y-4">
           <Card className="border-slate-200 shadow-sm">
@@ -2457,6 +2964,255 @@ export default function ConfiguracoesPage() {
           </div>
         </div>
       )}
+      {/* MODAL / DIALOG DE CRIAÇÃO/EDIÇÃO DE CONCURSO SAZONAL (ADMIN) */}
+      <Dialog open={showConcursoDialog} onOpenChange={setShowConcursoDialog}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-[#253575] flex items-center gap-2">
+              <Award className="h-5 w-5 text-[#F18800]" />
+              <span>
+                {editingConcurso ? 'Editar Concurso Sazonal' : 'Lançar Novo Concurso Sazonal'}
+              </span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Configure o período da campanha, a meta de reativação, o prêmio em disputa e o
+              distintivo exclusivo.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSaveConcurso} className="space-y-4 pt-2 text-xs">
+            {/* Título do Concurso */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-slate-700">Título do Concurso *</Label>
+              <Input
+                value={formConcursoTitulo}
+                onChange={(e) => setFormConcursoTitulo(e.target.value)}
+                placeholder="Ex: Corrida do Aço - 1ª Quinzena de Maio"
+                className="h-8 text-xs font-semibold"
+                required
+              />
+            </div>
+
+            {/* Descrição */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-slate-700">
+                Descrição e Regras da Campanha
+              </Label>
+              <Textarea
+                value={formConcursoDescricao}
+                onChange={(e) => setFormConcursoDescricao(e.target.value)}
+                placeholder="Ex: Válido para todas as reativações realizadas na quinzena por qualquer operador da equipe comercial..."
+                rows={2}
+                className="text-xs resize-none"
+              />
+            </div>
+
+            {/* Prêmio em Destaque */}
+            <div className="space-y-1 p-3 bg-amber-50/70 border border-amber-200 rounded-lg">
+              <Label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                <Gift className="h-4 w-4 text-[#F18800]" />
+                <span>Descrição do Prêmio em Disputa *</span>
+              </Label>
+              <Input
+                value={formConcursoPremio}
+                onChange={(e) => setFormConcursoPremio(e.target.value)}
+                placeholder="Ex: Ferro de solda 2200W + Kit Ferramentas ABR"
+                className="h-8 text-xs bg-white font-medium"
+                required
+              />
+              <p className="text-[10px] text-amber-800">
+                O prêmio será exibido com destaque nos cards de gamificação e na tela Ranking da
+                equipe.
+              </p>
+            </div>
+
+            {/* Período: Início e Fim */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                  <span>Data de Início *</span>
+                </Label>
+                <Input
+                  type="date"
+                  value={formConcursoInicio}
+                  onChange={(e) => setFormConcursoInicio(e.target.value)}
+                  className="h-8 text-xs"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                  <span>Data de Término *</span>
+                </Label>
+                <Input
+                  type="date"
+                  value={formConcursoFim}
+                  onChange={(e) => setFormConcursoFim(e.target.value)}
+                  min={formConcursoInicio || undefined}
+                  className="h-8 text-xs"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Métrica e Meta Numérica */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-slate-700">
+                  Métrica Competitiva *
+                </Label>
+                <Select
+                  value={formConcursoMetrica}
+                  onValueChange={(val: ConcursoMetricaTipo) => setFormConcursoMetrica(val)}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="conversoes">Conversões (Vendas Reativadas)</SelectItem>
+                    <SelectItem value="toneladas">Toneladas Vendidas / Reativadas</SelectItem>
+                    <SelectItem value="atendimentos">Total de Atendimentos Realizados</SelectItem>
+                    <SelectItem value="pontos">Pontos Gerais da Gamificação</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-slate-700">
+                  Meta Numérica para Qualificação *
+                </Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={formConcursoMeta}
+                  onChange={(e) =>
+                    setFormConcursoMeta(Math.max(1, parseInt(e.target.value, 10) || 1))
+                  }
+                  className="h-8 text-xs font-mono font-bold"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Status e Badge Exclusivo */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-slate-700">Status</Label>
+                <Select
+                  value={formConcursoStatus}
+                  onValueChange={(val: ConcursoStatus) => setFormConcursoStatus(val)}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ativo">Ativo (Em Andamento)</SelectItem>
+                    <SelectItem value="encerrado">Encerrado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <Label className="text-xs font-semibold text-slate-700">
+                  Nome do Distintivo (Badge)
+                </Label>
+                <div className="flex gap-1.5">
+                  <Input
+                    value={formConcursoBadgeEmoji}
+                    onChange={(e) => setFormConcursoBadgeEmoji(e.target.value)}
+                    placeholder="🎖️"
+                    className="h-8 w-14 text-center text-sm"
+                    maxLength={4}
+                  />
+                  <Input
+                    value={formConcursoBadgeNome}
+                    onChange={(e) => setFormConcursoBadgeNome(e.target.value)}
+                    placeholder="Ex: Campeão da Quinzena"
+                    className="h-8 text-xs flex-1"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-3 border-t">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowConcursoDialog(false)}
+                className="text-xs h-8"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={savingConcurso}
+                size="sm"
+                className="bg-[#253575] hover:bg-[#1b2654] text-white text-xs h-8 font-semibold shadow-xs"
+              >
+                <Save className="h-3.5 w-3.5 mr-1" />
+                {savingConcurso
+                  ? 'Salvando...'
+                  : editingConcurso
+                    ? 'Salvar Alterações'
+                    : 'Lançar Concurso'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* CONFIRMAÇÃO DE EXCLUSÃO DE CONCURSO (ALERTDIALOG) */}
+      <AlertDialog
+        open={Boolean(concursoToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deletingConcurso) {
+            setConcursoToDelete(null)
+          }
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-rose-600" />
+              <span>Excluir Concurso Sazonal</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600 space-y-3 pt-1">
+              <p>Tem certeza que deseja excluir o concurso sazonal permanentemente?</p>
+
+              {concursoToDelete && (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1">
+                  <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                    <span>{concursoToDelete.badge_exclusiva_emoji || '🎖️'}</span>
+                    <span>{concursoToDelete.titulo}</span>
+                  </div>
+                  <div className="text-slate-600 text-[11px]">
+                    Prêmio: {concursoToDelete.premio_descricao || '—'}
+                  </div>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="pt-2">
+            <AlertDialogCancel disabled={deletingConcurso} className="text-xs h-8">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleConfirmDeleteConcurso()
+              }}
+              disabled={deletingConcurso}
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs h-8 font-semibold"
+            >
+              {deletingConcurso ? 'Excluindo...' : 'Confirmar Exclusão'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -91,8 +91,9 @@ export default function AtendimentoPage() {
   const [reservandoNovo, setReservandoNovo] = useState(false)
   const [showQuestionarioModal, setShowQuestionarioModal] = useState(false)
 
-  // Questionário de 17 Perguntas (Etapas 1..17)
-  const [currentStep, setCurrentStep] = useState(1)
+  // Questionário de Perguntas — Etapas visíveis: Q3 (3), Q5..Q13 (5..13), Q14..Q17 (14..17).
+  // Q1, Q2 e Q4 são pré-preenchidas e puladas na navegação para não duplicar o card de gatilhos.
+  const [currentStep, setCurrentStep] = useState(3)
   const [answers, setAnswers] = useState<Record<string, string | number>>({})
   const [anexosFiles, setAnexosFiles] = useState<File[]>([])
 
@@ -782,7 +783,7 @@ export default function AtendimentoPage() {
                   className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-4 shadow-sm"
                 >
                   <CheckCircle2 className="h-4 w-4 mr-1.5" />
-                  Confirmar Atendimento (17 Perguntas)
+                  Confirmar Atendimento
                 </Button>
                 <Button
                   variant="outline"
@@ -946,57 +947,27 @@ export default function AtendimentoPage() {
                         <span>Formulário de Qualificação e Reativação</span>
                       </CardTitle>
                       <CardDescription className="text-xs text-slate-500">
-                        Questionário padronizado de 17 itens com regras condicionais e desfecho
-                        unificado. Clique em <strong>Confirmar Atendimento</strong> no topo para
-                        expandir ou responda diretamente abaixo.
+                        Questionário padronizado com regras condicionais e desfecho unificado (dados
+                        cadastrais pré-preenchidos). Clique em{' '}
+                        <strong>Confirmar Atendimento</strong> no topo para expandir ou responda
+                        diretamente abaixo.
                       </CardDescription>
                     </div>
                     <div className="text-right">
                       <span className="text-xs font-mono font-bold text-blue-600">
-                        Pergunta {currentStep} de 17
+                        Passo {Math.round((Math.max(0, currentStep - 2) / 14) * 100)}% (Q
+                        {currentStep})
                       </span>
-                      <Progress value={(currentStep / 17) * 100} className="w-24 h-1.5 mt-1" />
+                      <Progress
+                        value={(Math.max(0, currentStep - 2) / 14) * 100}
+                        className="w-24 h-1.5 mt-1"
+                      />
                     </div>
                   </div>
                 </CardHeader>
 
                 <CardContent className="p-6 space-y-6">
-                  {/* Renderização da pergunta atual baseada no currentStep */}
-                  {currentStep === 1 && (
-                    <div className="space-y-3">
-                      <Badge variant="secondary" className="text-xs">
-                        Q1 — Pré-preenchida
-                      </Badge>
-                      <h3 className="text-base font-semibold text-slate-800">
-                        Confirmação do Código Cadastral do Cliente
-                      </h3>
-                      <p className="text-xs text-slate-500">
-                        O código do cliente foi validado da planilha e é a chave única no sistema.
-                      </p>
-                      <Input
-                        value={String(answers.q1 || cliente.codigo)}
-                        readOnly
-                        className="bg-slate-50 font-mono"
-                      />
-                    </div>
-                  )}
-
-                  {currentStep === 2 && (
-                    <div className="space-y-3">
-                      <Badge variant="secondary" className="text-xs">
-                        Q2 — Pré-preenchida
-                      </Badge>
-                      <h3 className="text-base font-semibold text-slate-800">
-                        Razão Social e Nome Fantasia
-                      </h3>
-                      <Input
-                        value={String(answers.q2 || cliente.nome)}
-                        readOnly
-                        className="bg-slate-50 font-medium"
-                      />
-                    </div>
-                  )}
-
+                  {/* Renderização da pergunta atual baseada no currentStep (Q1, Q2 e Q4 pré-preenchidas e omitidas do fluxo visível) */}
                   {currentStep === 3 && (
                     <div className="space-y-3">
                       <Badge variant="outline" className="text-xs text-blue-600">
@@ -1027,24 +998,6 @@ export default function AtendimentoPage() {
                           </SelectItem>
                         </SelectContent>
                       </Select>
-                    </div>
-                  )}
-
-                  {currentStep === 4 && (
-                    <div className="space-y-3">
-                      <Badge variant="secondary" className="text-xs">
-                        Q4 — Pré-preenchida
-                      </Badge>
-                      <h3 className="text-base font-semibold text-slate-800">
-                        Região e Vendedor Atribuído
-                      </h3>
-                      <Input
-                        value={String(
-                          answers.q4 || `${cliente.regiao} — Vendedor: ${cliente.vendedor}`,
-                        )}
-                        readOnly
-                        className="bg-slate-50"
-                      />
                     </div>
                   )}
 
@@ -1598,8 +1551,14 @@ export default function AtendimentoPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setCurrentStep((prev) => Math.max(1, prev - 1))}
-                    disabled={currentStep === 1}
+                    onClick={() => {
+                      setCurrentStep((prev) => {
+                        if (prev <= 3) return 3
+                        if (prev === 5) return 3 // pula Q4
+                        return prev - 1
+                      })
+                    }}
+                    disabled={currentStep <= 3}
                     className="text-xs"
                   >
                     Anterior
@@ -1609,7 +1568,12 @@ export default function AtendimentoPage() {
                     {currentStep < 17 ? (
                       <Button
                         size="sm"
-                        onClick={() => setCurrentStep((prev) => Math.min(17, prev + 1))}
+                        onClick={() => {
+                          setCurrentStep((prev) => {
+                            if (prev === 3) return 5 // pula Q4
+                            return Math.min(17, prev + 1)
+                          })
+                        }}
                         className="bg-blue-600 hover:bg-blue-700 text-white text-xs"
                       >
                         Próxima Pergunta
@@ -1839,7 +1803,7 @@ export default function AtendimentoPage() {
             </div>
           )}
 
-          {/* Modal / Dialog de Confirmação do Atendimento (17 Perguntas) quando o operador clica em "Confirmar Atendimento" */}
+          {/* Modal / Dialog de Confirmação do Atendimento quando o operador clica em "Confirmar Atendimento" */}
           {showQuestionarioModal && (
             <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
               <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
@@ -1863,17 +1827,21 @@ export default function AtendimentoPage() {
 
                 <div className="p-6 flex-1 overflow-y-auto space-y-4">
                   <div className="flex items-center justify-between text-xs text-slate-500 pb-2 border-b">
-                    <span>Progresso das 17 Perguntas</span>
+                    <span>Progresso do Atendimento</span>
                     <span className="font-mono font-bold text-blue-600">
-                      {Math.round((currentStep / 17) * 100)}%
+                      {Math.round((Math.max(0, currentStep - 2) / 14) * 100)}% (Q{currentStep})
                     </span>
                   </div>
-                  <Progress value={(currentStep / 17) * 100} className="h-2 bg-slate-100" />
+                  <Progress
+                    value={(Math.max(0, currentStep - 2) / 14) * 100}
+                    className="h-2 bg-slate-100"
+                  />
 
                   <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                     <p className="text-xs text-slate-600">
-                      O formulário de 17 perguntas está ativo na página logo abaixo. Você pode
-                      continuar respondendo passo a passo com a pré-seleção dos dados da planilha.
+                      O formulário de qualificação está ativo na página logo abaixo. Você pode
+                      continuar respondendo passo a passo com a pré-seleção dos dados cadastrais já
+                      preenchida.
                     </p>
                   </div>
 
@@ -1881,8 +1849,14 @@ export default function AtendimentoPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setCurrentStep((prev) => Math.max(1, prev - 1))}
-                      disabled={currentStep === 1}
+                      onClick={() => {
+                        setCurrentStep((prev) => {
+                          if (prev <= 3) return 3
+                          if (prev === 5) return 3
+                          return prev - 1
+                        })
+                      }}
+                      disabled={currentStep <= 3}
                       className="text-xs"
                     >
                       Pergunta Anterior
@@ -1890,10 +1864,15 @@ export default function AtendimentoPage() {
                     {currentStep < 17 ? (
                       <Button
                         size="sm"
-                        onClick={() => setCurrentStep((prev) => Math.min(17, prev + 1))}
+                        onClick={() => {
+                          setCurrentStep((prev) => {
+                            if (prev === 3) return 5
+                            return Math.min(17, prev + 1)
+                          })
+                        }}
                         className="bg-blue-600 hover:bg-blue-700 text-white text-xs"
                       >
-                        Próxima Pergunta ({currentStep + 1}/17)
+                        Próxima Pergunta ({currentStep === 3 ? 5 : currentStep + 1}/17)
                       </Button>
                     ) : (
                       <Button
