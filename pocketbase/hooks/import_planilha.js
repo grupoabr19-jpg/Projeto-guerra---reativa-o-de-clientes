@@ -90,14 +90,28 @@ routerAdd(
         return d
       }
 
-      // Cache em memória de clientes existentes para busca rápida
-      const existingClientes = $app.findRecordsByFilter('clientes', '1=1', '', 50000, 0)
+      // Consulta DIRECIONADA otimizada: busca no banco apenas os clientes referenciados neste lote
+      // Evita o recarregamento dos ~23.000 clientes da base a cada bloco de 500 linhas.
+      const loteCodigosSet = new Set()
+      const loteNomesNormSet = new Set()
+
+      for (let rIdx = 0; rIdx < rows.length; rIdx++) {
+        const rItem = rows[rIdx]
+        const cod = String(rItem.codigo || '')
+          .trim()
+          .toUpperCase()
+        if (cod) loteCodigosSet.add(cod)
+        const nom = String(rItem.nome || '').trim()
+        const normN = normalizeClean(nom)
+        if (normN) loteNomesNormSet.add(normN)
+      }
+
       const clientsByCode = {}
       const clientsByNameKey = {}
       const clientsByNameOnly = {}
 
-      for (let k = 0; k < existingClientes.length; k++) {
-        const cRec = existingClientes[k]
+      const indexRecord = (cRec) => {
+        if (!cRec) return
         const cCode = cRec.getString('codigo')
         const cNome = cRec.getString('nome')
         const cEndereco = cRec.getString('endereco')
@@ -120,6 +134,57 @@ routerAdd(
           }
           if (!clientsByNameOnly[normNome]) {
             clientsByNameOnly[normNome] = cRec
+          }
+        }
+      }
+
+      // 1. Busca direcionada por CÓDIGO em sub-blocos de até 100 itens para não estourar a cláusula IN/OR
+      const codigosArr = Array.from(loteCodigosSet)
+      const CHUNK_SIZE = 80
+      for (let cIdx = 0; cIdx < codigosArr.length; cIdx += CHUNK_SIZE) {
+        const sliceCod = codigosArr.slice(cIdx, cIdx + CHUNK_SIZE)
+        const filterCod = sliceCod.map((c) => `codigo = '${c.replace(/'/g, "''")}'`).join(' || ')
+        if (filterCod) {
+          try {
+            const foundRecs = $app.findRecordsByFilter(
+              'clientes',
+              filterCod,
+              '',
+              sliceCod.length * 2,
+              0,
+            )
+            for (let f = 0; f < foundRecs.length; f++) {
+              indexRecord(foundRecs[f])
+            }
+          } catch (findCodErr) {
+            console.log(
+              '[import_planilha] Aviso na busca direcionada por código: ' + findCodErr.message,
+            )
+          }
+        }
+      }
+
+      // 2. Se for modo Faturamento ou Margem e houver nomes sem código indexado, busca por nomes do lote
+      if (modoImportacao !== 'base_mestre' && loteNomesNormSet.size > 0) {
+        const nomesArr = Array.from(loteNomesNormSet).slice(0, 100) // limita para performance
+        for (let nIdx = 0; nIdx < nomesArr.length; nIdx += CHUNK_SIZE) {
+          const sliceNom = nomesArr.slice(nIdx, nIdx + CHUNK_SIZE)
+          const filterNom = sliceNom
+            .map((n) => `nome ~ '${n.replace(/['"\\]/g, '').slice(0, 30)}'`)
+            .join(' || ')
+          if (filterNom) {
+            try {
+              const foundRecs = $app.findRecordsByFilter(
+                'clientes',
+                filterNom,
+                '',
+                sliceNom.length * 2,
+                0,
+              )
+              for (let f = 0; f < foundRecs.length; f++) {
+                indexRecord(foundRecs[f])
+              }
+            } catch (_) {}
           }
         }
       }

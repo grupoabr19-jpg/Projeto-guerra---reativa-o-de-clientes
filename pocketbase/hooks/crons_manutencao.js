@@ -67,26 +67,41 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
     let totalReconciliados = 0
     let totalLocksLiberados = 0
 
-    // Timeout de 30 minutos para atendimentos abandonados
+    // 1. Timeout de 30 minutos para atendimentos abandonados em MASSA (SQL rápido)
     const timeoutMinutos = 30
     const cutoffLock = new Date(nowMs - timeoutMinutos * 60 * 1000).toISOString()
-    const abandonedLocks = $app.findRecordsByFilter(
-      'clientes',
-      `(estado = 'reservado' || estado = 'em_atendimento') && (lock_timestamp = '' || lock_timestamp < '${cutoffLock}')`,
-      '',
-      500,
-      0,
-    )
-    for (let l = 0; l < abandonedLocks.length; l++) {
-      const lockCli = abandonedLocks[l]
-      lockCli.set('estado', 'na_base')
-      lockCli.set('operador', '')
-      lockCli.set('lock_timestamp', null)
-      $app.save(lockCli)
-      totalLocksLiberados++
+    try {
+      const resLock = $app
+        .db()
+        .newQuery(
+          `UPDATE clientes 
+         SET estado = 'na_base', operador = '', lock_timestamp = NULL 
+         WHERE (estado = 'reservado' OR estado = 'em_atendimento') 
+           AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp < {:cutoff})`,
+        )
+        .bind({ cutoff: cutoffLock })
+        .execute()
+      totalLocksLiberados = resLock && resLock.rowsAffected ? resLock.rowsAffected() : 0
+    } catch (lockErr) {
+      console.log('[cron_3h] Fallback manual para liberação de locks: ' + lockErr.message)
+      const abandonedLocks = $app.findRecordsByFilter(
+        'clientes',
+        `(estado = 'reservado' || estado = 'em_atendimento') && (lock_timestamp = '' || lock_timestamp < '${cutoffLock}')`,
+        '',
+        500,
+        0,
+      )
+      for (let l = 0; l < abandonedLocks.length; l++) {
+        const lockCli = abandonedLocks[l]
+        lockCli.set('estado', 'na_base')
+        lockCli.set('operador', '')
+        lockCli.set('lock_timestamp', null)
+        $app.save(lockCli)
+        totalLocksLiberados++
+      }
     }
 
-    // Ler pesos do score configurados
+    // 2. Ler pesos do score configurados
     let pesos = {
       recencia: 30,
       frequencia: 25,
@@ -99,8 +114,42 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
       if (cfg && cfg.get('valor')) pesos = cfg.get('valor')
     } catch (_) {}
 
-    // Buscar clientes em lotes para recalcular
-    const pageSize = 200
+    // Lista de vendedores ativos para checagem de sem_dono_equipe
+    const equipeNomesAtivos = [
+      'ALESSANDRO',
+      'LEIZ',
+      'HELOA',
+      'DYOVANA',
+      'JOSIANE',
+      'KAYLANE',
+      'PETERSON',
+      'BRUNA',
+      'THAIS',
+      'PAOLA',
+      'VITORIA',
+      'JOSE',
+      'FELIPE',
+      'MILENA',
+      'CAMILA',
+      'JENNIFER',
+      'GABRIELA',
+      'JESSICA',
+      'GUSTAVO',
+      'INAYARA',
+      'TAINARA',
+      'JULIANO',
+      'EDMILA',
+      'ARIANE',
+      'MATHEUS',
+      'JULIO',
+      'LARISSA',
+      'WILSON',
+      'PRISCILA',
+    ]
+
+    // 3. Recálculo em Lotes Otimizados com detecção cirúrgica de mutações
+    // Lote de 500 registros para alta vazão com baixo overhead de memória
+    const pageSize = 500
     let page = 0
     let hasMore = true
 
@@ -120,13 +169,14 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
 
       for (let i = 0; i < batch.length; i++) {
         const c = batch[i]
-        // Proteção adicional: se o cliente for ativo_fora_base, nunca mexer
+        // Regra Inviolável: se o cliente for ativo_fora_base, NUNCA mexer
         if (c.getString('estado') === 'ativo_fora_base' || c.getBool('ativo_fora_base')) {
           continue
         }
         totalProcessados++
+        let mudou = false
 
-        // Recalcular dias sem faturar a partir de ultima_compra ou ultimo_faturamento_data
+        // Recalcular dias sem faturar
         let ultimaDataStr = c.getString('ultimo_faturamento_data') || c.getString('ultima_compra')
         let dias = c.getInt('dias_sem_faturar')
 
@@ -134,18 +184,20 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
           const parsed = new Date(ultimaDataStr)
           if (!isNaN(parsed.getTime())) {
             const diffMs = nowMs - parsed.getTime()
-            dias = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
-            c.set('dias_sem_faturar', dias)
+            const calcDias = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
+            if (calcDias !== dias) {
+              dias = calcDias
+              c.set('dias_sem_faturar', dias)
+              mudou = true
+            }
           }
         } else if (!dias && dias !== 0) {
           dias = 180
           c.set('dias_sem_faturar', dias)
+          mudou = true
         }
 
-        // Determinar faixa:
-        // - Recente: < 60 dias com faturamento real
-        // - 60_89: 60 até 89 dias
-        // - 90_plus: 90 dias ou mais, ou clientes sem data de última compra ("Sem Venda")
+        // Determinar faixa
         let faixa = '90_plus'
         if (ultimaDataStr && dias < 60) {
           faixa = 'recente'
@@ -154,11 +206,12 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
         } else {
           faixa = '90_plus'
         }
-        c.set('faixa', faixa)
+        if (c.getString('faixa') !== faixa) {
+          c.set('faixa', faixa)
+          mudou = true
+        }
 
-        // Reconciliação:
-        // 1. Quem faturou recentemente (<60 dias comprovados) sai da fila de reativação automaticamente
-        // 2. Quem tem 60+ dias ou é Sem Venda e estava como 'reativado' (ex: por engano na importação) volta para 'na_base'
+        // Reconciliação com faturamento recente:
         const estadoAtual = c.getString('estado')
         if (faixa === 'recente' && ultimaDataStr) {
           if (estadoAtual !== 'reativado') {
@@ -166,17 +219,90 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
             c.set('operador', '')
             c.set('lock_timestamp', null)
             totalReconciliados++
+            mudou = true
           }
         } else if ((faixa === '60_89' || faixa === '90_plus') && estadoAtual === 'reativado') {
-          // Se o cliente tem mais de 60 dias sem faturar, ele DEVE estar ativo na base de reativação
           c.set('estado', 'na_base')
           c.set('operador', '')
           c.set('lock_timestamp', null)
+          mudou = true
         }
 
-        // Recalcular score ponderado com variáveis explicitamente escopadas
+        // DDD e Regra ATACADO fora do mapa
+        const telDddRaw = (c.getString('telefone') || c.getString('whatsapp') || '').replace(
+          /\D/g,
+          '',
+        )
+        let dddCalc = ''
+        if (telDddRaw) {
+          let sDdd = telDddRaw
+          if (sDdd.startsWith('0')) sDdd = sDdd.slice(1)
+          if (sDdd.startsWith('55') && sDdd.length >= 12) sDdd = sDdd.slice(2)
+          dddCalc = sDdd.slice(0, 2)
+        }
+        if (c.getString('ddd_telefone') !== dddCalc) {
+          c.set('ddd_telefone', dddCalc)
+          mudou = true
+        }
+
+        // Blindagem da Base Cliente Final e ATACADO fora do mapa
+        // Se já foi classificado como cliente final por desfecho anterior, preserva!
+        const categoriaAtual = c.getString('base_categoria')
+        const desfechoUltimo = c.getString('desfecho_final') || c.getString('ultimo_desfecho')
+        const isClienteFinalPorDesfecho =
+          desfechoUltimo === 'cliente_final' || categoriaAtual === 'cliente_final'
+
+        const cleanDoc = String(c.getString('cpf_cnpj') || '').replace(/\D/g, '')
+        const isCpfOuNaoIdentificado = cleanDoc.length === 11 || !cleanDoc
+        const cCount = c.getInt('compras_count') || c.getInt('frequencia_compras_12m') || 1
+        const segAtualNorm = (c.getString('segmento') || '')
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+        const isClienteFinalComportamento =
+          isCpfOuNaoIdentificado &&
+          cCount <= 2 &&
+          (segAtualNorm === 'cliente final' ||
+            segAtualNorm.includes('cliente final') ||
+            segAtualNorm.includes('consumidor')) &&
+          (dias <= 730 || dias === 0)
+
+        const regiaoAtual = (c.getString('regiao') || '').toUpperCase()
+        let novaBaseCat = categoriaAtual || 'normal'
+
+        if (
+          regiaoAtual === 'ATACADO' &&
+          (!dddCalc || !['11', '12', '13', '14', '15', '16', '17', '18', '19'].includes(dddCalc))
+        ) {
+          novaBaseCat = 'atacado_fora_mapa'
+        } else if (
+          isClienteFinalPorDesfecho ||
+          (isClienteFinalComportamento && novaBaseCat !== 'atacado_fora_mapa')
+        ) {
+          novaBaseCat = 'cliente_final'
+        } else if (novaBaseCat !== 'cliente_final' && novaBaseCat !== 'atacado_fora_mapa') {
+          novaBaseCat = 'normal'
+        }
+
+        if (categoriaAtual !== novaBaseCat) {
+          c.set('base_categoria', novaBaseCat)
+          mudou = true
+        }
+
+        // Sem Dono na Equipe
+        const vendUp = (c.getString('vendedor') || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase()
+        const temDonoNaEquipe = !vendUp || equipeNomesAtivos.some((n) => vendUp.includes(n))
+        const semDonoBool = !temDonoNaEquipe
+        if (c.getBool('sem_dono_equipe') !== semDonoBool) {
+          c.set('sem_dono_equipe', semDonoBool)
+          mudou = true
+        }
+
+        // Recalcular Score ponderado
         var sRecencia = Math.min(100, Math.round((dias / 180) * 100))
-        var cCount = c.getInt('compras_count') || c.getInt('frequencia_compras_12m') || 1
         var sFreq = Math.min(100, cCount * 12)
         var vHist = c.getFloat('valor_historico') || c.getFloat('fat_12m_reais') || 0
         var tMedio = cCount > 0 ? vHist / cCount : c.getFloat('valor_ultima_compra') || 0
@@ -198,9 +324,14 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
 
         var tentativas = c.getInt('tentativas_sem_contato') || 0
         var finalScore = Math.max(0, calcScore - tentativas * 5)
-        c.set('score', finalScore)
+        if (c.getInt('score') !== finalScore) {
+          c.set('score', finalScore)
+          mudou = true
+        }
 
-        $app.save(c)
+        if (mudou) {
+          $app.save(c)
+        }
       }
 
       if (batch.length < pageSize) {

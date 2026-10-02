@@ -54,6 +54,12 @@ export default function ClientesPage() {
   const [selectedEstado, setSelectedEstado] = useState<string>('todos')
   const [selectedCategoria, setSelectedCategoria] = useState<string>('todas')
 
+  // Paginação Real Server-Side
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(50)
+  const [totalItems, setTotalItems] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+
   // Gaveta de Detalhes
   const [selectedClient, setSelectedClient] = useState<Cliente | null>(null)
   const [clientInteractions, setClientInteractions] = useState<Interacao[]>([])
@@ -65,32 +71,82 @@ export default function ClientesPage() {
     }
   }, [user, navigate])
 
+  // Carregar lista de regiões na montagem inicial
   useEffect(() => {
     if (user && user.role !== 'operador' && user.role !== 'lider') {
-      loadClientes()
+      fetchRegioes()
+        .then((resRegioes) => {
+          if (resRegioes.length > 0) {
+            setRegioesList(resRegioes.map((r) => r.nome))
+          }
+        })
+        .catch(() => {})
     }
   }, [user])
+
+  // Recarregar clientes no servidor sempre que filtros, busca ou página mudarem
+  useEffect(() => {
+    if (user && user.role !== 'operador' && user.role !== 'lider') {
+      loadClientesServer()
+    }
+  }, [user, page, perPage, selectedRegiao, selectedEstado, selectedCategoria, searchTerm])
 
   if (user?.role === 'operador' || user?.role === 'lider') {
     return null
   }
 
-  const loadClientes = async () => {
+  const loadClientesServer = async () => {
     setLoading(true)
     try {
-      const [res, resRegioes] = await Promise.all([
-        fetchClientes({ perPage: 150 }),
-        fetchRegioes().catch(() => [] as Regiao[]),
-      ])
-      setClientes(res.items)
-      if (resRegioes.length > 0) {
-        setRegioesList(resRegioes.map((r) => r.nome))
+      // Regiões permitidas para líderes / supervisores de rota específica
+      let allowedRegioes: string[] | undefined = undefined
+      if (user?.role === 'supervisor' && user.regioes && user.regioes.length > 0) {
+        allowedRegioes = user.regioes
       }
+
+      const res = await fetchClientes({
+        page,
+        perPage,
+        searchTerm: searchTerm.trim() || undefined,
+        regiao: selectedRegiao !== 'todas' ? selectedRegiao : undefined,
+        estado: selectedEstado !== 'todos' ? selectedEstado : undefined,
+        categoria: selectedCategoria !== 'todas' ? selectedCategoria : undefined,
+        allowedRegioes,
+      })
+
+      setClientes(res.items)
+      setTotalItems(res.totalItems)
+      setTotalPages(res.totalPages || Math.ceil(res.totalItems / perPage) || 1)
     } catch (err) {
-      console.error('Falha ao buscar clientes:', err)
+      console.error('Falha ao buscar clientes paginados:', err)
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao carregar clientes',
+        description: 'Não foi possível carregar a lista de clientes do servidor.',
+      })
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleSearchChange = (val: string) => {
+    setSearchTerm(val)
+    setPage(1)
+  }
+
+  const handleRegiaoChange = (val: string) => {
+    setSelectedRegiao(val)
+    setPage(1)
+  }
+
+  const handleEstadoChange = (val: string) => {
+    setSelectedEstado(val)
+    setPage(1)
+  }
+
+  const handleCategoriaChange = (val: string) => {
+    setSelectedCategoria(val)
+    setPage(1)
   }
 
   const handleOpenDetails = async (client: Cliente) => {
@@ -129,34 +185,8 @@ export default function ClientesPage() {
     }
   }
 
-  // Filtragem
-  const filtered = clientes.filter((c) => {
-    if (!hasRegiaoAccess(c.regiao)) return false
-
-    if (selectedRegiao !== 'todas' && c.regiao !== selectedRegiao) return false
-    if (selectedEstado !== 'todos' && c.estado !== selectedEstado) return false
-
-    // Filtro por categoria de base (Normal, Cliente Final, ATACADO Fora do Mapa, Sem Dono na Equipe)
-    if (selectedCategoria === 'cliente_final' && c.base_categoria !== 'cliente_final') return false
-    if (selectedCategoria === 'atacado_fora_mapa' && c.base_categoria !== 'atacado_fora_mapa')
-      return false
-    if (selectedCategoria === 'sem_dono_equipe' && !c.sem_dono_equipe) return false
-    if (
-      selectedCategoria === 'normal' &&
-      (c.base_categoria === 'cliente_final' || c.base_categoria === 'atacado_fora_mapa')
-    )
-      return false
-
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase()
-      const matchCod = c.codigo.toLowerCase().includes(term)
-      const matchNome = c.nome.toLowerCase().includes(term)
-      const matchTel = c.telefone?.includes(term) || c.whatsapp?.includes(term)
-      if (!matchCod && !matchNome && !matchTel) return false
-    }
-
-    return true
-  })
+  // Clientes já vêm filtrados e paginados diretamente do servidor PocketBase
+  const filtered = clientes
 
   return (
     <div className="space-y-6">
@@ -170,7 +200,7 @@ export default function ClientesPage() {
             Consulta completa com governança por região e histórico unificado de interações.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={loadClientes} className="h-8 text-xs">
+        <Button variant="outline" size="sm" onClick={loadClientesServer} className="h-8 text-xs">
           Atualizar Lista
         </Button>
       </div>
@@ -180,16 +210,16 @@ export default function ClientesPage() {
         <div className="relative w-full sm:w-80">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
           <Input
-            placeholder="Buscar por código (CXXXXXX), nome ou telefone..."
+            placeholder="Buscar no servidor (código, nome, telefone, CPF/CNPJ)..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="pl-9 h-9 text-xs"
           />
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {/* Região */}
-          <Select value={selectedRegiao} onValueChange={setSelectedRegiao}>
+          <Select value={selectedRegiao} onValueChange={handleRegiaoChange}>
             <SelectTrigger className="h-9 text-xs w-44">
               <SelectValue placeholder="Região" />
             </SelectTrigger>
@@ -205,7 +235,7 @@ export default function ClientesPage() {
           </Select>
 
           {/* Estado */}
-          <Select value={selectedEstado} onValueChange={setSelectedEstado}>
+          <Select value={selectedEstado} onValueChange={handleEstadoChange}>
             <SelectTrigger className="h-9 text-xs w-40">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
@@ -223,7 +253,7 @@ export default function ClientesPage() {
           </Select>
 
           {/* Categoria de Base (Frentes 2, 3 e 4) */}
-          <Select value={selectedCategoria} onValueChange={setSelectedCategoria}>
+          <Select value={selectedCategoria} onValueChange={handleCategoriaChange}>
             <SelectTrigger className="h-9 text-xs w-52 border-[#253575]/30 bg-blue-50/20 font-medium text-slate-800">
               <SelectValue placeholder="Base / Categoria" />
             </SelectTrigger>
@@ -246,9 +276,16 @@ export default function ClientesPage() {
               <Users className="h-4 w-4 text-[#253575]" />
               <span>Clientes Cadastrados</span>
             </CardTitle>
-            <span className="text-xs font-mono text-slate-500">
-              {filtered.length} registros encontrados
-            </span>
+            <div className="flex items-center space-x-3 text-xs text-slate-500 font-mono">
+              <span>
+                Total no servidor:{' '}
+                <strong className="text-slate-800">{totalItems.toLocaleString('pt-BR')}</strong>
+              </span>
+              <span>•</span>
+              <span>
+                Página <strong>{page}</strong> de <strong>{Math.max(1, totalPages)}</strong>
+              </span>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -355,6 +392,59 @@ export default function ClientesPage() {
               </table>
             </div>
           )}
+
+          {/* Paginação Server-Side */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100 text-xs text-slate-600">
+            <div className="flex items-center space-x-2">
+              <span>Registros por página:</span>
+              <Select
+                value={String(perPage)}
+                onValueChange={(val) => {
+                  setPerPage(Number(val))
+                  setPage(1)
+                }}
+              >
+                <SelectTrigger className="h-8 w-20 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                  <SelectItem value="150">150</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-slate-400 pl-2">
+                Mostrando {totalItems > 0 ? (page - 1) * perPage + 1 : 0} a{' '}
+                {Math.min(page * perPage, totalItems)} de {totalItems.toLocaleString('pt-BR')}{' '}
+                clientes
+              </span>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1 || loading}
+                className="h-8 px-3 text-xs"
+              >
+                Anterior
+              </Button>
+              <div className="px-2 font-mono font-medium text-slate-700">
+                {page} / {Math.max(1, totalPages)}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
+                className="h-8 px-3 text-xs"
+              >
+                Próxima
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

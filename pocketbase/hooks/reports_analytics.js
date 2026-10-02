@@ -37,13 +37,32 @@ routerAdd(
       const faixaFaturamentoParam = String(q.faixaFaturamento || '').trim()
       const desfechoParam = String(q.desfecho || '').trim()
       const periodoParam = String(q.periodo || 'total').trim()
+      const baseCategoriaParam = String(q.baseCategoria || q.categoria || 'todas').trim()
 
       // Construção dos filtros SQL para a tabela clientes
-      // Base: ignorar clientes marcados como ativo_fora_base, Base Cliente Final e ATACADO Fora do Mapa
+      // Base: ignorar clientes marcados como ativo_fora_base
       const baseFilterSql =
-        "estado != 'ativo_fora_base' AND (ativo_fora_base IS NULL OR ativo_fora_base = 0) AND (base_categoria IS NULL OR base_categoria = 'normal')"
+        "estado != 'ativo_fora_base' AND (ativo_fora_base IS NULL OR ativo_fora_base = 0)"
       const conditions = [baseFilterSql]
       const bindParams = {}
+
+      // Filtro de Bases Especiais / Categorias (Item 6)
+      if (baseCategoriaParam === 'cliente_final') {
+        conditions.push("base_categoria = 'cliente_final'")
+      } else if (baseCategoriaParam === 'atacado_fora_mapa') {
+        conditions.push("base_categoria = 'atacado_fora_mapa'")
+      } else if (baseCategoriaParam === 'sem_dono') {
+        conditions.push('(sem_dono_equipe = 1 OR sem_dono_equipe = true)')
+      } else if (baseCategoriaParam === 'repescagem') {
+        conditions.push("(regiao = 'REPESCAGEM' OR dias_sem_faturar >= 90)")
+      } else if (baseCategoriaParam === 'todas') {
+        // Todas as categorias mantendo fora apenas duplicados e ativo_fora_base
+      } else {
+        // Padrão: base 'normal'
+        conditions.push(
+          "(base_categoria IS NULL OR base_categoria = '' OR base_categoria = 'normal')",
+        )
+      }
 
       // Filtro de Região
       if (regiaoParam && regiaoParam.toLowerCase() !== 'todas') {

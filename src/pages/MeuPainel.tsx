@@ -32,6 +32,7 @@ import {
   calculateRankingData,
   fetchMetasOperacionais,
 } from '@/services/api'
+import { isConversao, isLigacaoOuChamada, calcularTaxaConversao } from '@/lib/conversao'
 import type { Interacao, Cliente, RankingUserRow, MetasOperacionaisConfig } from '@/types'
 import { getBrasiliaDateStr, getBrasiliaParts, formatarDataHoraBrasilia } from '@/lib/expediente'
 
@@ -135,24 +136,16 @@ export function MeuPainelPage() {
     return true
   })
 
-  // Métricas do operador no período filtrado
-  const totalLigacoes = interacoesFiltradas.filter(
-    (i) => i.tipo === 'ligacao' || i.tipo === 'formulario' || i.desfecho,
-  ).length
+  // Métricas do operador no período filtrado (usando regra unificada de conversão)
+  const totalLigacoes = interacoesFiltradas.filter((i) => isLigacaoOuChamada(i)).length
 
-  const conversoes = interacoesFiltradas.filter(
-    (i) =>
-      i.desfecho === 'reativado_com_pedido' ||
-      i.desfecho === 'reativado' ||
-      i.desfecho === 'fechou_pedido' ||
-      i.numero_pedido,
-  ).length
+  const conversoes = interacoesFiltradas.filter((i) => isConversao(i)).length
 
   const clientesReagendadosNoPeriodo = interacoesFiltradas.filter(
     (i) => i.desfecho === 'reagendado' || Boolean(i.reagendado_para),
   ).length
 
-  const taxaConversao = totalLigacoes > 0 ? Math.round((conversoes / totalLigacoes) * 100) : 0
+  const taxaConversao = calcularTaxaConversao(conversoes, totalLigacoes)
 
   // Follow-ups do dia (reagendados para HOJE no horário de Brasília)
   const followUpsHoje = reagendados.filter((c) => {
@@ -227,12 +220,7 @@ export function MeuPainelPage() {
   const conversoesSemana = interacoes.filter((it) => {
     if (!it.created) return false
     const dStr = getBrasiliaDateStr(new Date(it.created))
-    const isConversao =
-      it.desfecho === 'reativado_com_pedido' ||
-      it.desfecho === 'reativado' ||
-      it.desfecho === 'fechou_pedido' ||
-      it.numero_pedido
-    return isConversao && dStr >= segundaStr && dStr <= hojeStr
+    return isConversao(it) && dStr >= segundaStr && dStr <= hojeStr
   }).length
 
   const percMetaContatos = metaContatosDia ? Math.round((contatosHoje / metaContatosDia) * 100) : 0

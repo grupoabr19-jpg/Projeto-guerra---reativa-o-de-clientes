@@ -1,6 +1,7 @@
 import pb from '@/lib/pocketbase/client'
 import { calculateRankingData } from './gamificacao'
 import { getBrasiliaDateStr, getBrasiliaParts, createBrasiliaDate } from '@/lib/expediente'
+import { isConversao, isLigacaoOuChamada, calcularTaxaConversao } from '@/lib/conversao'
 import type {
   Cliente,
   Interacao,
@@ -19,10 +20,130 @@ export async function fetchClientes(params?: {
   filter?: string
   sort?: string
   expand?: string
+  searchTerm?: string
+  regiao?: string
+  estado?: string
+  categoria?: string
+  allowedRegioes?: string[]
 }) {
-  return pb.collection('clientes').getList<Cliente>(params?.page || 1, params?.perPage || 20, {
-    filter: params?.filter,
-    sort: params?.sort || '-score',
+  const page = params?.page || 1
+  const perPage = params?.perPage || 50
+  const sort = params?.sort || '-score'
+
+  // Montagem robusta de filtro server-side
+  const filterParts: string[] = []
+
+  if (params?.filter) {
+    filterParts.push(params.filter)
+  }
+
+  // Permissão de região (lider/supervisor com rotas atribuídas)
+  if (params?.allowedRegioes && params.allowedRegioes.length > 0) {
+    const regConds = params.allowedRegioes.map((r) => {
+      const up = r.trim().toUpperCase()
+      if (up === 'BRAGANÇA' || up === 'BRAGANCA') {
+        return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA')"
+      }
+      if (up === 'CAMBUÍ' || up === 'CAMBUI') {
+        return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao = 'MICRO REGIAO')"
+      }
+      if (
+        up === 'POÇOS DE CALDAS' ||
+        up === 'POCOS DE CALDAS' ||
+        up === 'POÇOS CALDAS' ||
+        up === 'POCOS CALDAS'
+      ) {
+        return "(regiao = 'POÇOS DE CALDAS' || regiao = 'POCOS DE CALDAS' || regiao = 'POÇOS CALDAS' || regiao = 'POCOS CALDAS')"
+      }
+      if (up === 'JUNDIAÍ' || up === 'JUNDIAI') return "(regiao = 'JUNDIAÍ' || regiao = 'JUNDIAI')"
+      if (up === 'ITAJUBÁ' || up === 'ITAJUBA') return "(regiao = 'ITAJUBÁ' || regiao = 'ITAJUBA')"
+      return `regiao = '${r}'`
+    })
+    filterParts.push(`(${regConds.join(' || ')})`)
+  }
+
+  // Filtro de Região selecionada no dropdown
+  if (params?.regiao && params.regiao !== 'todas') {
+    const reg = params.regiao.trim()
+    const up = reg.toUpperCase()
+    if (up === 'SEM REGIÃO' || up === 'SEM REGIAO') {
+      filterParts.push(
+        "(regiao = '' || regiao = null || regiao = 'Sem Região' || regiao = 'SEM REGIAO')",
+      )
+    } else if (up === 'BRAGANÇA' || up === 'BRAGANCA') {
+      filterParts.push(
+        "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA')",
+      )
+    } else if (up === 'CAMBUÍ' || up === 'CAMBUI') {
+      filterParts.push(
+        "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao = 'MICRO REGIAO')",
+      )
+    } else if (
+      up === 'POÇOS DE CALDAS' ||
+      up === 'POCOS DE CALDAS' ||
+      up === 'POÇOS CALDAS' ||
+      up === 'POCOS CALDAS'
+    ) {
+      filterParts.push(
+        "(regiao = 'POÇOS DE CALDAS' || regiao = 'POCOS DE CALDAS' || regiao = 'POÇOS CALDAS' || regiao = 'POCOS CALDAS')",
+      )
+    } else if (up === 'JUNDIAÍ' || up === 'JUNDIAI') {
+      filterParts.push("(regiao = 'JUNDIAÍ' || regiao = 'JUNDIAI')")
+    } else if (up === 'ITAJUBÁ' || up === 'ITAJUBA') {
+      filterParts.push("(regiao = 'ITAJUBÁ' || regiao = 'ITAJUBA')")
+    } else {
+      filterParts.push(`regiao = '${reg}'`)
+    }
+  }
+
+  // Filtro de Estado/Status
+  if (params?.estado && params.estado !== 'todos') {
+    filterParts.push(`estado = '${params.estado}'`)
+  }
+
+  // Filtro de Categoria de Base
+  if (params?.categoria && params.categoria !== 'todas') {
+    if (params.categoria === 'cliente_final') {
+      filterParts.push("base_categoria = 'cliente_final'")
+    } else if (params.categoria === 'atacado_fora_mapa') {
+      filterParts.push("base_categoria = 'atacado_fora_mapa'")
+    } else if (params.categoria === 'sem_dono_equipe') {
+      filterParts.push('sem_dono_equipe = true')
+    } else if (params.categoria === 'normal') {
+      filterParts.push(
+        "(base_categoria = 'normal' || base_categoria = '' || base_categoria = null)",
+      )
+    }
+  }
+
+  // Busca textual no servidor (código, nome, telefone, whatsapp, cpf_cnpj)
+  if (params?.searchTerm && params.searchTerm.trim()) {
+    const rawTerm = params.searchTerm.trim()
+    const cleanTerm = rawTerm.replace(/['"\\]/g, '')
+    const digitsOnly = cleanTerm.replace(/\D/g, '')
+
+    const orClauses = [
+      `codigo ~ '${cleanTerm}'`,
+      `nome ~ '${cleanTerm}'`,
+      `telefone ~ '${cleanTerm}'`,
+      `whatsapp ~ '${cleanTerm}'`,
+      `cpf_cnpj ~ '${cleanTerm}'`,
+    ]
+
+    if (digitsOnly && digitsOnly.length >= 3 && digitsOnly !== cleanTerm) {
+      orClauses.push(`telefone ~ '${digitsOnly}'`)
+      orClauses.push(`whatsapp ~ '${digitsOnly}'`)
+      orClauses.push(`cpf_cnpj ~ '${digitsOnly}'`)
+    }
+
+    filterParts.push(`(${orClauses.join(' || ')})`)
+  }
+
+  const finalFilter = filterParts.length > 0 ? filterParts.join(' && ') : undefined
+
+  return pb.collection('clientes').getList<Cliente>(page, perPage, {
+    filter: finalFilter,
+    sort,
     expand: params?.expand || 'operador',
   })
 }
@@ -794,12 +915,8 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
       opMetricsMap.set(opId, m)
     }
 
-    const isLigacao = it.tipo === 'ligacao' || it.tipo === 'formulario' || Boolean(it.desfecho)
-    const isConversao =
-      it.desfecho === 'reativado' ||
-      it.desfecho === 'reativado_com_pedido' ||
-      it.desfecho === 'fechou_pedido' ||
-      Boolean(it.numero_pedido)
+    const isLigacao = isLigacaoOuChamada(it)
+    const isConv = isConversao(it)
     const isReagendamento = it.desfecho === 'reagendado' || Boolean(it.reagendado_para)
     const isVendaPerdida =
       it.desfecho === 'compra_terceiros' ||
@@ -809,7 +926,7 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
     if (m) {
       m.atendimentos += 1
       if (isLigacao) m.ligacoes += 1
-      if (isConversao) m.conversoes += 1
+      if (isConv) m.conversoes += 1
       if (isReagendamento) m.reagendamentos += 1
       if (isVendaPerdida) m.vendasPerdidas += 1
     }
@@ -828,7 +945,7 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
       vendasPerdidas: 0,
     }
 
-    const taxa = m.ligacoes > 0 ? Math.round((m.conversoes / m.ligacoes) * 100) : 0
+    const taxa = calcularTaxaConversao(m.conversoes, m.ligacoes)
     const gam = gamificacaoPorUsuario.get(op.id)
 
     const regioesStr =
@@ -860,16 +977,8 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
 
   // Totais Gerais (Nível 1)
   const totalGeralAtendimentos = interacoesValidas.length
-  const totalGeralLigacoes = interacoesValidas.filter(
-    (i) => i.tipo === 'ligacao' || i.tipo === 'formulario' || Boolean(i.desfecho),
-  ).length
-  const totalGeralConversoes = interacoesValidas.filter(
-    (i) =>
-      i.desfecho === 'reativado' ||
-      i.desfecho === 'reativado_com_pedido' ||
-      i.desfecho === 'fechou_pedido' ||
-      Boolean(i.numero_pedido),
-  ).length
+  const totalGeralLigacoes = interacoesValidas.filter((i) => isLigacaoOuChamada(i)).length
+  const totalGeralConversoes = interacoesValidas.filter((i) => isConversao(i)).length
   const totalGeralReagendamentos = interacoesValidas.filter(
     (i) => i.desfecho === 'reagendado' || Boolean(i.reagendado_para),
   ).length
@@ -879,8 +988,7 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
       i.desfecho === 'nao_quer_negociar' ||
       i.desfecho === 'sem_contato',
   ).length
-  const taxaGeral =
-    totalGeralLigacoes > 0 ? Math.round((totalGeralConversoes / totalGeralLigacoes) * 100) : 0
+  const taxaGeral = calcularTaxaConversao(totalGeralConversoes, totalGeralLigacoes)
 
   // ==========================================
   // AGREGADOR: CLIENTES ATIVOS REMOVIDOS DA BASE
