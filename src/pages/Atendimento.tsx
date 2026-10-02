@@ -58,6 +58,16 @@ import {
 } from '@/services/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { toast } from '@/hooks/use-toast'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import type { Cliente, Interacao, ClienteEstado, User } from '@/types'
 import { SEGMENTOS_OFICIAIS } from '@/lib/segmentos'
 import {
@@ -97,6 +107,11 @@ export default function AtendimentoPage() {
   const [numeroPedido, setNumeroPedido] = useState('')
   const [duplicadoCodigo, setDuplicadoCodigo] = useState('')
   const [isFinalizing, setIsFinalizing] = useState(false)
+
+  // Diálogos shadcn de confirmação
+  const [showConfirmAbandonar, setShowConfirmAbandonar] = useState(false)
+  const [showConfirmReativarSemPedido, setShowConfirmReativarSemPedido] = useState(false)
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
 
   // Timeline nova nota
   const [novaNota, setNovaNota] = useState('')
@@ -315,7 +330,11 @@ export default function AtendimentoPage() {
   // Confirmar a transferência / atribuição de cliente para colega da mesma região
   const handleConfirmTransfer = async () => {
     if (!cliente || !selectedDestinoOp) {
-      alert('Selecione o operador de destino.')
+      toast({
+        variant: 'destructive',
+        title: 'Operador obrigatório',
+        description: 'Selecione o operador de destino.',
+      })
       return
     }
 
@@ -351,17 +370,22 @@ export default function AtendimentoPage() {
     }
   }
 
-  // Devolver cliente à fila e liberar lock
-  const handleReleaseLock = async () => {
+  // Devolver cliente à fila e liberar lock (abrir diálogo shadcn)
+  const handleReleaseLock = () => {
     if (!cliente) return
-    const confirm = window.confirm(
-      'Deseja realmente abandonar o atendimento deste cliente? O progresso será salvo como rascunho e o cliente voltará para a fila.',
-    )
-    if (!confirm) return
+    setShowConfirmAbandonar(true)
+  }
 
+  const handleConfirmReleaseLock = async () => {
+    if (!cliente) return
+    setShowConfirmAbandonar(false)
     try {
       await releaseQueueLock(cliente.id, answers)
       setCliente(null)
+      toast({
+        title: 'Atendimento liberado',
+        description: 'O contato retornou à fila e o rascunho foi salvo.',
+      })
       navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila')
     } catch (err) {
       console.error('Erro ao liberar cliente:', err)
@@ -426,26 +450,42 @@ export default function AtendimentoPage() {
   // Finalização do Atendimento com a Máquina de Estados completa
   const handleFinalizeAtendimento = async () => {
     if (!cliente || !user || !desfechoFinal) {
-      alert('Por favor, selecione o desfecho final do atendimento.')
+      toast({
+        variant: 'destructive',
+        title: 'Desfecho obrigatório',
+        description: 'Por favor, selecione o desfecho final do atendimento.',
+      })
       return
     }
 
     if (desfechoFinal === 'reagendado' && !reagendarData) {
-      alert('Informe a data e horário para reagendamento.')
+      toast({
+        variant: 'destructive',
+        title: 'Data obrigatória',
+        description: 'Informe a data e horário para reagendamento.',
+      })
       return
     }
 
     if (desfechoFinal === 'reativado' && !numeroPedido) {
-      const confirmSemPedido = window.confirm(
-        'Nenhum número de pedido/registro informado. Deseja continuar sem vincular pedido para reconciliação?',
-      )
-      if (!confirmSemPedido) return
+      setShowConfirmReativarSemPedido(true)
+      return
     }
 
     if (desfechoFinal === 'ativo_fora_base' && !motivoAtivoForaBase.trim()) {
-      alert('Informe o motivo obrigatório para a saída do cliente ativo da base.')
+      toast({
+        variant: 'destructive',
+        title: 'Motivo obrigatório',
+        description: 'Informe o motivo obrigatório para a saída do cliente ativo da base.',
+      })
       return
     }
+
+    await executeFinalize()
+  }
+
+  const executeFinalize = async () => {
+    if (!cliente || !user || !desfechoFinal) return
 
     setIsFinalizing(true)
     try {
@@ -561,13 +601,20 @@ export default function AtendimentoPage() {
         observacoes: observacoes,
       }).catch((e) => console.log('Kommo sync finalização silenciosa:', e))
 
-      alert('Atendimento registrado e sincronizado com sucesso!')
+      toast({
+        title: 'Atendimento concluído!',
+        description: 'Atendimento registrado e sincronizado com sucesso.',
+      })
       setCliente(null)
       setShowQuestionarioModal(false)
       navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao salvar atendimento'
-      alert(`Erro: ${msg}`)
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao salvar atendimento',
+        description: msg,
+      })
     } finally {
       setIsFinalizing(false)
     }

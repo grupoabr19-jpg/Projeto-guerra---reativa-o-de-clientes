@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/select'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { toast } from '@/hooks/use-toast'
 import {
   checkKommoStatus,
   testKommoConnection,
@@ -303,10 +304,17 @@ export default function ConfiguracoesPage() {
     try {
       await updateConfiguracao('pesos_score', pesos)
       await updateConfiguracao('motor_fila', motorFila)
-      alert('Configurações do Motor de Fila e Pesos salvas com sucesso!')
+      toast({
+        title: 'Configurações salvas',
+        description: 'Configurações do Motor de Fila e Pesos salvas com sucesso!',
+      })
     } catch (err) {
       console.error('Falha ao salvar configurações:', err)
-      alert('Erro ao salvar configurações.')
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao salvar',
+        description: 'Erro ao salvar configurações do motor de fila.',
+      })
     } finally {
       setSavingConfig(false)
     }
@@ -316,10 +324,17 @@ export default function ConfiguracoesPage() {
     setSavingGamificacao(true)
     try {
       await updatePesosGamificacao(pesosGamificacao)
-      alert('Pesos de pontuação da Gamificação salvos com sucesso!')
+      toast({
+        title: 'Gamificação atualizada',
+        description: 'Pesos de pontuação da Gamificação salvos com sucesso!',
+      })
     } catch (err) {
       console.error('Falha ao salvar pesos de gamificação:', err)
-      alert('Erro ao salvar pesos da gamificação.')
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao salvar',
+        description: 'Erro ao salvar pesos da gamificação.',
+      })
     } finally {
       setSavingGamificacao(false)
     }
@@ -327,17 +342,28 @@ export default function ConfiguracoesPage() {
 
   const handleSaveMetas = async () => {
     if (user?.role !== 'admin') {
-      alert('Apenas administradores podem gerenciar metas operacionais.')
+      toast({
+        variant: 'destructive',
+        title: 'Acesso negado',
+        description: 'Apenas administradores podem gerenciar metas operacionais.',
+      })
       return
     }
     setSavingMetas(true)
     try {
       await saveMetasOperacionais(metasConfig)
-      alert('Metas operacionais salvas com sucesso!')
+      toast({
+        title: 'Metas salvas',
+        description: 'Metas operacionais salvas com sucesso!',
+      })
     } catch (err: unknown) {
       console.error('Falha ao salvar metas operacionais:', err)
       const msg = err instanceof Error ? err.message : 'Erro ao salvar metas'
-      alert(`Falha ao salvar metas: ${msg}`)
+      toast({
+        variant: 'destructive',
+        title: 'Falha ao salvar metas',
+        description: msg,
+      })
     } finally {
       setSavingMetas(false)
     }
@@ -345,7 +371,11 @@ export default function ConfiguracoesPage() {
 
   const handleSalvarMetaRegiao = () => {
     if (!regiaoMetaSelecionada) {
-      alert('Selecione uma região para definir a meta específica.')
+      toast({
+        variant: 'destructive',
+        title: 'Região obrigatória',
+        description: 'Selecione uma região para definir a meta específica.',
+      })
       return
     }
     setMetasConfig((prev) => ({
@@ -378,9 +408,12 @@ export default function ConfiguracoesPage() {
 
     // Regra obrigatória: Líder de Rota DEVE ter ao menos uma região selecionada (escopo da sua equipe)
     if (novoRole === 'lider' && novasRegioesSelected.length === 0) {
-      alert(
-        'Para o Líder de Rota, a seleção de ao menos uma Região é obrigatória para definir o escopo da equipe.',
-      )
+      toast({
+        variant: 'destructive',
+        title: 'Região obrigatória',
+        description:
+          'Para o Líder de Rota, a seleção de ao menos uma Região é obrigatória para definir o escopo da equipe.',
+      })
       return
     }
 
@@ -400,10 +433,17 @@ export default function ConfiguracoesPage() {
       setNovoNome('')
       setNovasRegioesSelected(['POÇOS DE CALDAS'])
       loadUsers()
-      alert('Usuário criado com sucesso! Senha inicial: ABR@2026')
+      toast({
+        title: 'Usuário criado',
+        description: 'Usuário criado com sucesso! Senha inicial: ABR@2026',
+      })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao criar usuário'
-      alert(`Erro: ${msg}`)
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao criar usuário',
+        description: msg,
+      })
     } finally {
       setIsCreatingUser(false)
     }
@@ -432,9 +472,12 @@ export default function ConfiguracoesPage() {
     setSavingUserRegioes(true)
     // Regra obrigatória: Líder de Rota DEVE ter região
     if (editUserRole === 'lider' && editUserRegioes.length === 0) {
-      alert(
-        'Para o Líder de Rota, a seleção de ao menos uma Região é obrigatória para definir o escopo da equipe.',
-      )
+      toast({
+        variant: 'destructive',
+        title: 'Região obrigatória',
+        description:
+          'Para o Líder de Rota, a seleção de ao menos uma Região é obrigatória para definir o escopo da equipe.',
+      })
       return
     }
 
@@ -447,12 +490,19 @@ export default function ConfiguracoesPage() {
         updatePayload.role = editUserRole
       }
       await pb.collection('users').update(editingUser.id, updatePayload)
-      alert(`Cadastro e permissões de ${editingUser.name} atualizados com sucesso!`)
+      toast({
+        title: 'Usuário atualizado',
+        description: `Cadastro e permissões de ${editingUser.name} atualizados com sucesso!`,
+      })
       setEditingUser(null)
       loadUsers()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao atualizar usuário'
-      alert(`Erro: ${msg}`)
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao atualizar',
+        description: msg,
+      })
     } finally {
       setSavingUserRegioes(false)
     }
@@ -499,12 +549,19 @@ export default function ConfiguracoesPage() {
         observacao: editingRegiao.observacao,
         ativo: editingRegiao.ativo,
       })
-      alert(`Região ${editingRegiao.nome} salva com sucesso!`)
+      toast({
+        title: 'Região salva',
+        description: `Região ${editingRegiao.nome} salva com sucesso!`,
+      })
       setEditingRegiao(null)
       loadRegioesData()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao salvar região'
-      alert(`Erro: ${msg}`)
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao salvar região',
+        description: msg,
+      })
     } finally {
       setSavingRegiao(false)
     }

@@ -30,6 +30,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { fetchClientes, reserveNextQueueClient, updateCliente, fetchRegioes } from '@/services/api'
 import type { Cliente, Regiao } from '@/types'
 import { TODAS_REGIOES_FILTRO } from '@/types'
+import { toast } from '@/hooks/use-toast'
 
 export default function FilaPage() {
   const { user, hasRole, hasRegiaoAccess } = useAuth()
@@ -42,6 +43,7 @@ export default function FilaPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRegiao, setSelectedRegiao] = useState<string>('todas')
   const [filterFaixa, setFilterFaixa] = useState<string>('todas')
+  const [selectedCategoria, setSelectedCategoria] = useState<string>('todas')
 
   useEffect(() => {
     if (user && (user.role === 'operador' || user.role === 'lider')) {
@@ -84,13 +86,25 @@ export default function FilaPage() {
       const res = await reserveNextQueueClient()
       if (res.cliente) {
         // Redireciona imediatamente para a tela de atendimento do cliente bloqueado
+        toast({
+          title: 'Contato reservado',
+          description: res.message || 'Cliente bloqueado para atendimento.',
+        })
         navigate(`/atendimento/${res.cliente.id}`)
       } else {
-        alert(res.message || 'Nenhum cliente disponível na fila no momento.')
+        toast({
+          variant: res.carteira_esgotada ? 'destructive' : 'default',
+          title: res.carteira_esgotada ? 'Carteira esgotada' : 'Fila vazia',
+          description: res.message || 'Nenhum cliente disponível na fila no momento.',
+        })
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao reservar cliente'
-      alert(`Erro: ${msg}`)
+      toast({
+        variant: 'destructive',
+        title: 'Erro na reserva',
+        description: msg,
+      })
     } finally {
       setReserving(false)
     }
@@ -103,6 +117,17 @@ export default function FilaPage() {
 
     if (selectedRegiao !== 'todas' && c.regiao !== selectedRegiao) return false
     if (filterFaixa !== 'todas' && c.faixa !== filterFaixa) return false
+
+    // Filtro de base especial na supervisão da fila
+    if (selectedCategoria === 'cliente_final' && c.base_categoria !== 'cliente_final') return false
+    if (selectedCategoria === 'atacado_fora_mapa' && c.base_categoria !== 'atacado_fora_mapa')
+      return false
+    if (selectedCategoria === 'sem_dono_equipe' && !c.sem_dono_equipe) return false
+    if (
+      selectedCategoria === 'normal' &&
+      (c.base_categoria === 'cliente_final' || c.base_categoria === 'atacado_fora_mapa')
+    )
+      return false
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase()
@@ -269,6 +294,20 @@ export default function FilaPage() {
               <SelectItem value="90_plus">90+ dias sem faturar</SelectItem>
               <SelectItem value="60_89">60-89 dias</SelectItem>
               <SelectItem value="recente">Recente (&lt; 60d)</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Categoria de Base */}
+          <Select value={selectedCategoria} onValueChange={setSelectedCategoria}>
+            <SelectTrigger className="h-9 text-xs w-48 border-[#253575]/30 bg-blue-50/20 font-medium text-slate-800">
+              <SelectValue placeholder="Base / Categoria" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas as Bases</SelectItem>
+              <SelectItem value="normal">🎯 Base Normal</SelectItem>
+              <SelectItem value="cliente_final">🛑 Base Cliente Final</SelectItem>
+              <SelectItem value="atacado_fora_mapa">📍 ATACADO — Fora do Mapa</SelectItem>
+              <SelectItem value="sem_dono_equipe">⚠️ Sem dono equipe</SelectItem>
             </SelectContent>
           </Select>
 

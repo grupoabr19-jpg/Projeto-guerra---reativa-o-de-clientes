@@ -40,6 +40,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import type { Cliente, Interacao, Regiao } from '@/types'
 import { TODAS_REGIOES_FILTRO } from '@/types'
+import { toast } from '@/hooks/use-toast'
 
 export default function ClientesPage() {
   const { user, hasRole, hasRegiaoAccess } = useAuth()
@@ -114,9 +115,17 @@ export default function ClientesPage() {
       })
       setSelectedClient({ ...selectedClient, estado: novoEstado as any })
       loadClientes()
-      alert('Status revertido pelo supervisor com sucesso.')
+      toast({
+        title: 'Status atualizado',
+        description: 'Status revertido pelo supervisor com sucesso.',
+      })
     } catch (err) {
       console.error('Erro ao reverter status:', err)
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao reverter',
+        description: 'Não foi possível alterar o status do cliente.',
+      })
     }
   }
 
@@ -296,7 +305,7 @@ export default function ClientesPage() {
                       </td>
                       <td className="py-3 px-3 text-center">
                         <span className="font-mono font-bold text-[#253575] bg-[#253575]/10 px-2 py-0.5 rounded border border-[#253575]/20">
-                          {item.codigo}
+                          {item.score ?? 0} pts
                         </span>{' '}
                       </td>
                       <td className="py-3 px-3 space-y-1">

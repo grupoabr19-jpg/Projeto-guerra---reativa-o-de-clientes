@@ -48,6 +48,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { toast } from '@/hooks/use-toast'
 import { useAuth } from '@/contexts/AuthContext'
 import { TODAS_REGIOES_FILTRO } from '@/types'
 import type {
@@ -81,6 +92,7 @@ export function RankingPage() {
   // Modais
   const [modalNovoConcursoOpen, setModalNovoConcursoOpen] = useState(false)
   const [modalCatalogoOpen, setModalCatalogoOpen] = useState(false)
+  const [concursoParaEncerrar, setConcursoParaEncerrar] = useState<ConcursoSazonal | null>(null)
   const [selectedUserModal, setSelectedUserModal] = useState<RankingUserRow | null>(null)
 
   // Formulário de Concurso Sazonal
@@ -214,18 +226,25 @@ export function RankingPage() {
         badge_exclusiva_emoji: '🎖️',
       })
       loadData()
-      alert('Concurso sazonal publicado com sucesso!')
+      toast({
+        title: 'Concurso publicado',
+        description: 'Concurso sazonal publicado com sucesso!',
+      })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao criar concurso'
-      alert(`Erro: ${msg}`)
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao criar concurso',
+        description: msg,
+      })
     } finally {
       setSalvandoConcurso(false)
     }
   }
 
-  const handleEncerrarConcurso = async (concurso: ConcursoSazonal) => {
-    if (!isAdmin) return
-    if (!confirm(`Deseja encerrar o concurso "${concurso.titulo}"?`)) return
+  const handleConfirmEncerrarConcurso = async () => {
+    if (!isAdmin || !concursoParaEncerrar) return
+    const concurso = concursoParaEncerrar
 
     try {
       // Determinar o usuário com melhor desempenho no concurso
@@ -250,11 +269,19 @@ export function RankingPage() {
             })`
           : 'Sem participantes',
       })
-      alert(`Concurso encerrado! Vencedor consagrado: ${winner?.usuario?.name || '—'}`)
+      toast({
+        title: 'Concurso encerrado!',
+        description: `Vencedor consagrado: ${winner?.usuario?.name || '—'}`,
+      })
+      setConcursoParaEncerrar(null)
       loadData()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao encerrar concurso'
-      alert(`Erro: ${msg}`)
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao encerrar concurso',
+        description: msg,
+      })
     }
   }
 
@@ -1008,7 +1035,7 @@ export function RankingPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => handleEncerrarConcurso(c)}
+                        onClick={() => setConcursoParaEncerrar(c)}
                         className="h-7 text-xs text-rose-600 hover:text-rose-700 border-rose-200 hover:bg-rose-50"
                       >
                         Encerrar Concurso & Eleger Vencedor
@@ -1536,6 +1563,37 @@ export function RankingPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* MODAL 4: CONFIRMAÇÃO DE ENCERRAMENTO DE CONCURSO (SHADCN ALERTDIALOG) */}
+      <AlertDialog
+        open={Boolean(concursoParaEncerrar)}
+        onOpenChange={(op) => !op && setConcursoParaEncerrar(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-bold text-slate-900">
+              Encerrar Concurso Sazonal?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600">
+              Deseja realmente encerrar o concurso{' '}
+              <strong className="text-slate-900">
+                &ldquo;{concursoParaEncerrar?.titulo}&rdquo;
+              </strong>
+              ? O operador com melhor pontuação será consagrado vencedor e o concurso será
+              arquivado.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="text-xs">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmEncerrarConcurso}
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold"
+            >
+              Confirmar e Eleger Vencedor
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -39,6 +39,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { toast } from '@/hooks/use-toast'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { fetchBasesReferencia, createBaseReferencia, deleteBaseReferencia } from '@/services/api'
 import { parseSpreadsheetWithSheetJS, type ParseProgress } from '@/lib/sheetParser'
@@ -105,9 +116,11 @@ export function BasesReferenciaTab() {
 
     const fileSizeMb = file.size / (1024 * 1024)
     if (fileSizeMb > 250) {
-      alert(
-        `O arquivo possui ${fileSizeMb.toFixed(1)} MB. O limite máximo absoluto suportado é de 250 MB.`,
-      )
+      toast({
+        variant: 'destructive',
+        title: 'Arquivo muito grande',
+        description: `O arquivo possui ${fileSizeMb.toFixed(1)} MB. O limite máximo absoluto suportado é de 250 MB.`,
+      })
       return
     }
 
@@ -235,24 +248,32 @@ export function BasesReferenciaTab() {
     }
   }
 
-  const handleDelete = async (base: BaseReferencia) => {
-    if (
-      !confirm(
-        `Tem certeza que deseja remover o registro da planilha de referência "${base.nome_arquivo}"?`,
-      )
-    ) {
-      return
-    }
+  const handleDelete = (base: BaseReferencia) => {
+    setBaseParaExcluir(base)
+  }
 
+  const handleConfirmDeleteBase = async () => {
+    if (!baseParaExcluir) return
+    const base = baseParaExcluir
     try {
       await deleteBaseReferencia(base.id)
       setBases((prev) => prev.filter((b) => b.id !== base.id))
       if (previewBase?.id === base.id) {
         setPreviewBase(null)
       }
+      toast({
+        title: 'Planilha removida',
+        description: `Registro de "${base.nome_arquivo}" removido com sucesso.`,
+      })
     } catch (err) {
       console.error('Falha ao remover base:', err)
-      alert('Falha ao remover registro da base.')
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao remover',
+        description: 'Falha ao remover registro da base.',
+      })
+    } finally {
+      setBaseParaExcluir(null)
     }
   }
 
@@ -339,6 +360,7 @@ export function BasesReferenciaTab() {
   }
 
   const [copiedPrompt, setCopiedPrompt] = useState(false)
+  const [baseParaExcluir, setBaseParaExcluir] = useState<BaseReferencia | null>(null)
 
   const PROMPT_FILTRAGEM = `Você é um analista de dados do Projeto Guerra (reativação de clientes inativos do Varejo). Você receberá duas planilhas:
 1. MARGEM_GABR — use apenas a aba "BD" (dados brutos); ignore as abas de tabela dinâmica como "Resumo" e "Desvios".
@@ -1243,6 +1265,36 @@ Regras de saída: uma linha por código de cliente (se duplicado, mantenha a de 
           </DialogContent>
         </Dialog>
       )}
+
+      {/* DIÁLOGO SHADCN: CONFIRMAÇÃO DE EXCLUSÃO DE BASE */}
+      <AlertDialog
+        open={Boolean(baseParaExcluir)}
+        onOpenChange={(op) => !op && setBaseParaExcluir(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-bold text-slate-900">
+              Remover Planilha de Referência?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600">
+              Tem certeza que deseja remover o registro da planilha{' '}
+              <strong className="text-slate-900">
+                &ldquo;{baseParaExcluir?.nome_arquivo}&rdquo;
+              </strong>
+              ? Esta ação excluirá metadados e amostras associadas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="text-xs">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteBase}
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold"
+            >
+              Remover Planilha
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
