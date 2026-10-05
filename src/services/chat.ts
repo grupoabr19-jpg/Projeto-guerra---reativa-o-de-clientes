@@ -21,7 +21,8 @@ export async function fetchConversasUsuario(
   // Filtrar de acordo com o escopo:
   // - 'geral': todos veem
   // - 'canal_rota': admin e supervisor veem todas; operador/lider veem se a região pertencer a eles
-  // - 'dm': apenas se o usuário for um dos participantes
+  // - 'dm': admin tem visão de supervisão total (pode ver e auditar conversas de qualquer vendedor);
+  //         não-admin (operador, líder, supervisor) acessa APENAS conversas onde é participante
   return allConversas.filter((c) => {
     if (c.tipo === 'geral') return true
     if (c.tipo === 'canal_rota') {
@@ -30,6 +31,7 @@ export async function fetchConversasUsuario(
       return userRegioes.includes(c.regiao_nome)
     }
     if (c.tipo === 'dm') {
+      if (userRole === 'admin') return true
       return Array.isArray(c.participantes) && c.participantes.includes(userId)
     }
     return false
@@ -77,12 +79,20 @@ export async function enviarMensagemChat(params: {
 }
 
 // 4. Iniciar ou obter conversa DM 1:1
-export async function getOrCreateDm(targetUserId: string): Promise<ChatConversa> {
+export async function getOrCreateDm(
+  targetUserId: string,
+  options?: { userAId?: string; userBId?: string },
+): Promise<ChatConversa> {
+  const body: Record<string, string> = { target_user_id: targetUserId }
+  if (options?.userAId && options?.userBId) {
+    body.user_a_id = options.userAId
+    body.user_b_id = options.userBId
+  }
   const res = await pb.send<{ conversa: ChatConversa; is_new: boolean }>(
     '/backend/v1/chat/get-or-create-dm',
     {
       method: 'POST',
-      body: { target_user_id: targetUserId },
+      body,
     },
   )
   return res.conversa

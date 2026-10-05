@@ -70,6 +70,7 @@ import {
   deleteAtendimentoFunilCard,
   fetchKommoRecentActivity,
 } from '@/services/hubAtendimento'
+import { fetchUsers } from '@/services/api'
 import {
   fetchConversasUsuario,
   fetchMensagensConversa,
@@ -109,6 +110,7 @@ export interface ContatoHubItem {
   initials: string
   conversaRef?: ChatConversa
   kommoRef?: KommoBridgeItem
+  userId?: string
 }
 
 export default function HubAtendimentoPage() {
@@ -210,6 +212,7 @@ export default function HubAtendimentoPage() {
   const [buscaContatoBarra, setBuscaContatoBarra] = useState('')
   const [filtroTipoContato, setFiltroTipoContato] = useState<'todos' | 'crm' | 'equipe'>('todos')
   const [contatoSelecionadoId, setContatoSelecionadoId] = useState<string | null>(null)
+  const [todosUsuarios, setTodosUsuarios] = useState<User[]>([])
 
   // ==========================================
   // ESTADOS: MODAL DE AVISO DO ADMIN PRESERVADO
@@ -273,8 +276,14 @@ export default function HubAtendimentoPage() {
     if (!user) return
     setLoadingConversas(true)
     try {
-      const list = await fetchConversasUsuario(user.role || 'admin', user.regioes || [], user.id)
+      const [list, usuariosList] = await Promise.all([
+        fetchConversasUsuario(user.role || 'admin', user.regioes || [], user.id),
+        fetchUsers().catch(() => [] as User[]),
+      ])
       setConversas(list)
+      if (usuariosList && usuariosList.length > 0) {
+        setTodosUsuarios(usuariosList)
+      }
 
       const unread = await fetchUnreadCounts()
       setUnreadCounts(unread)
@@ -871,36 +880,17 @@ export default function HubAtendimentoPage() {
   const funilAtual = funis.find((f) => f.id === funilAtivoId)
 
   // ==========================================
-  // MONTAGEM DA LISTA UNIFICADA DE CONTATOS (BARRA LATERAL FIXA ESTILO WHATSAPP)
+  // MONTAGEM DAS LISTAS SEPARADAS: EXTERNOS (KOMMO CRM) E INTERNOS (EQUIPE)
+  // Atendendo: "nessas 3 barrinhas, eu prefiro que separe o que é interno e o que é externo"
+  // e visão de supervisão do admin para ler conversa de qualquer vendedor
   // ==========================================
-  const contatosUnificados: ContatoHubItem[] = []
+  const contatosExternos: ContatoHubItem[] = []
+  const contatosInternos: ContatoHubItem[] = []
 
-  // 1. Canais e DMs do Chat Interno
-  for (const c of conversas) {
-    const isDm = c.tipo === 'dm'
-    const dmInfo = isDm ? getDmDisplay(c) : null
-    const nome = isDm ? dmInfo?.name || 'DM' : c.titulo || 'Canal'
-    const unread = unreadCounts.by_conversation[c.id] || 0
-
-    contatosUnificados.push({
-      id: c.id,
-      tipo: isDm ? 'chat_dm' : 'chat_canal',
-      nome,
-      subtitulo:
-        c.ultima_mensagem_texto ||
-        (c.tipo === 'geral' ? 'Canal Geral de comunicados' : 'Canal por rota'),
-      canal: isDm ? '1:1 Equipe' : 'Canal Interno',
-      unreadCount: unread,
-      isOnline: isDm ? dmInfo?.isOnline : undefined,
-      initials: isDm ? dmInfo?.initials || 'DM' : '#',
-      conversaRef: c,
-    })
-  }
-
-  // 2. Leads e Contatos do Bridge Kommo CRM (somente-leitura)
+  // 1. Contatos Externos (Kommo CRM - somente-leitura)
   if (kommoData?.items) {
     for (const item of kommoData.items) {
-      contatosUnificados.push({
+      contatosExternos.push({
         id: `kommo_${item.id}`,
         tipo: 'kommo',
         nome: item.nome_contato || item.nome_lead,
@@ -915,30 +905,122 @@ export default function HubAtendimentoPage() {
     }
   }
 
-  // Filtragem da Barra de Contatos
-  const contatosFiltrados = contatosUnificados.filter((item) => {
-    // Filtro por tipo
-    if (filtroTipoContato === 'crm' && item.tipo !== 'kommo') return false
-    if (filtroTipoContato === 'equipe' && item.tipo === 'kommo') return false
+  // 2. Contatos Internos (Equipe / Chat / Canais)
+  // 2.1 Canais e DMs já existentes
+  const userIdsComDm = new Set<string>()
+  for (const c of conversas) {
+    const isDm = c.tipo === 'dm'
+    const dmInfo = isDm ? getDmDisplay(c) : null
+    const nome = isDm ? dmInfo?.name || 'DM' : c.titulo || 'Canal'
+    const unread = unreadCounts.by_conversation[c.id] || 0
 
-    // Busca textual
+    if (isDm && Array.isArray(c.participantes)) {
+      c.participantes.forEach((p) => {
+        if (p !== user?.id) userIdsComDm.add(p)
+      })
+    }
+
+    contatosInternos.push({
+      id: c.id,
+      tipo: isDm ? 'chat_dm' : 'chat_canal',
+      nome,
+      subtitulo:
+        c.ultima_mensagem_texto ||
+        (c.tipo === 'geral' ? 'Canal Geral de comunicados' : 'Canal por rota'),
+      canal: isDm ? '1:1 Equipe' : 'Canal Interno',
+      unreadCount: unread,
+      isOnline: isDm ? dmInfo?.isOnline : undefined,
+      initials: isDm ? dmInfo?.initials || 'DM' : '#',
+      conversaRef: c,
+    })
+  }
+
+  // 2.2 Visão de supervisão do Admin: listar colaboradores da equipe mesmo sem DM iniciada
+  // permitindo que o admin filtre e abra a conversa de qualquer vendedor/operador diretamente
+  if (user?.role === 'admin' && todosUsuarios.length > 0) {
+    for (const colab of todosUsuarios) {
+      if (colab.id === user.id) continue
+      if (userIdsComDm.has(colab.id)) continue // Já possui DM na lista
+
+      const otherItem = presenceData?.users
+        ? presenceData.users.find((it) => it.id === colab.id)
+        : null
+      const presenceInfo = derivePresenceStatus(otherItem?.last_seen || colab.last_seen)
+      const roleLabel =
+        colab.role === 'admin'
+          ? 'Admin'
+          : colab.role === 'supervisor'
+            ? 'Supervisor'
+            : colab.role === 'lider'
+              ? 'Líder'
+              : 'Vendedor/Operador'
+
+      contatosInternos.push({
+        id: `colab_${colab.id}`,
+        tipo: 'chat_dm',
+        nome: colab.name || colab.email,
+        subtitulo: `${roleLabel}${colab.regioes && colab.regioes.length > 0 ? ` • ${colab.regioes.join(', ')}` : ''}`,
+        email: colab.email,
+        telefone: colab.telefone,
+        canal: 'Equipe Interna',
+        badge: roleLabel,
+        isOnline: presenceInfo.status === 'online',
+        initials: (colab.name || colab.email || 'CL').slice(0, 2).toUpperCase(),
+        userId: colab.id,
+      })
+    }
+  }
+
+  // Lista agregada unificada
+  const contatosUnificados: ContatoHubItem[] = [...contatosExternos, ...contatosInternos]
+
+  // Função auxiliar de busca textual
+  const matchesBusca = (item: ContatoHubItem) => {
     if (!buscaContatoBarra.trim()) return true
     const term = buscaContatoBarra.toLowerCase()
     return (
       item.nome.toLowerCase().includes(term) ||
       (item.subtitulo && item.subtitulo.toLowerCase().includes(term)) ||
       (item.telefone && item.telefone.includes(term)) ||
-      (item.email && item.email.toLowerCase().includes(term))
+      (item.email && item.email.toLowerCase().includes(term)) ||
+      (item.canal && item.canal.toLowerCase().includes(term))
     )
-  })
+  }
+
+  const externosFiltrados = contatosExternos.filter(matchesBusca)
+  const internosFiltrados = contatosInternos.filter(matchesBusca)
+
+  // Filtragem conforme o botão ativo: 'todos', 'crm' (externos) ou 'equipe' (internos)
+  const contatosFiltrados =
+    filtroTipoContato === 'crm'
+      ? externosFiltrados
+      : filtroTipoContato === 'equipe'
+        ? internosFiltrados
+        : [...externosFiltrados, ...internosFiltrados]
 
   // Clicar em um contato da barra fixa estilo WhatsApp
   const handleSelecionarContatoBarra = async (contato: ContatoHubItem) => {
     setContatoSelecionadoId(contato.id)
 
-    // Se for conversa do chat, abre a tela de conversa com ela ativa
+    // Se for conversa já existente do chat, abre
     if (contato.conversaRef) {
       await handleSelecionarConversa(contato.conversaRef)
+    } else if (contato.userId) {
+      // É um vendedor/colaborador sem DM iniciada: admin abre ou cria na hora
+      try {
+        const conv = await getOrCreateDm(contato.userId)
+        await carregarConversas()
+        setActiveConversa(conv)
+        setContatoSelecionadoId(conv.id)
+        await carregarMensagens(conv.id)
+        setHubTab('conversa')
+      } catch (err) {
+        toast({
+          title: 'Erro ao abrir conversa com colaborador',
+          description: String(err),
+          variant: 'destructive',
+        })
+      }
     }
 
     // Vinculação Contato ↔ Card no Pipeline
@@ -1182,42 +1264,47 @@ export default function HubAtendimentoPage() {
                 )}
               </div>
 
-              {/* Filtro Rápido: Todos, Kommo CRM, Equipe */}
-              <div className="flex items-center gap-1 text-[11px]">
+              {/* Filtro Rápido com separação inequívoca: Todos, Externos (Kommo CRM) e Interna (Equipe) */}
+              <div className="grid grid-cols-3 gap-1 text-[11px]">
                 <button
                   onClick={() => setFiltroTipoContato('todos')}
-                  className={`px-2 py-0.5 rounded-md font-medium transition-colors ${
+                  className={`px-1.5 py-1 rounded-md font-semibold text-center transition-all ${
                     filtroTipoContato === 'todos'
-                      ? 'bg-[#253575] text-white'
+                      ? 'bg-[#253575] text-white shadow-2xs'
                       : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
                   }`}
+                  title="Todos os contatos unificados"
                 >
                   Todos ({contatosUnificados.length})
                 </button>
                 <button
                   onClick={() => setFiltroTipoContato('crm')}
-                  className={`px-2 py-0.5 rounded-md font-medium transition-colors ${
+                  className={`px-1.5 py-1 rounded-md font-semibold text-center transition-all truncate flex items-center justify-center gap-1 ${
                     filtroTipoContato === 'crm'
-                      ? 'bg-[#253575] text-white'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      ? 'bg-blue-700 text-white shadow-2xs'
+                      : 'bg-blue-50/60 border border-blue-200 text-blue-900 hover:bg-blue-100/70'
                   }`}
+                  title="Contatos Externos (Clientes e Leads do Kommo CRM)"
                 >
-                  Kommo ({kommoData?.items?.length || 0})
+                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" />
+                  <span className="truncate">Externos ({contatosExternos.length})</span>
                 </button>
                 <button
                   onClick={() => setFiltroTipoContato('equipe')}
-                  className={`px-2 py-0.5 rounded-md font-medium transition-colors ${
+                  className={`px-1.5 py-1 rounded-md font-semibold text-center transition-all truncate flex items-center justify-center gap-1 ${
                     filtroTipoContato === 'equipe'
-                      ? 'bg-[#253575] text-white'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      ? 'bg-emerald-700 text-white shadow-2xs'
+                      : 'bg-emerald-50/60 border border-emerald-200 text-emerald-900 hover:bg-emerald-100/70'
                   }`}
+                  title="Contatos Internos (Equipe Guerra: operadores, líderes, supervisores, canais)"
                 >
-                  Equipe ({conversas.length})
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                  <span className="truncate">Interna ({contatosInternos.length})</span>
                 </button>
               </div>
             </div>
 
-            {/* Lista com Rolagem dos Contatos / Leads */}
+            {/* Lista com Rolagem dos Contatos / Leads com Agrupamento Visual */}
             <div className="flex-1 overflow-y-auto divide-y divide-slate-100 p-1.5 space-y-1">
               {loadingConversas || loadingKommo ? (
                 <div className="flex flex-col items-center justify-center h-48 text-slate-400 space-y-2 text-xs">
@@ -1230,116 +1317,236 @@ export default function HubAtendimentoPage() {
                   <p className="text-[11px] text-slate-400">Ajuste o filtro ou a busca acima.</p>
                 </div>
               ) : (
-                contatosFiltrados.map((contato) => {
-                  const isSelected = contatoSelecionadoId === contato.id
-                  const temCardVinculado = cards.some(
-                    (c) =>
-                      (contato.kommoRef && c.kommo_id === contato.kommoRef.id) ||
-                      c.contato_nome?.toLowerCase() === contato.nome.toLowerCase() ||
-                      c.titulo.toLowerCase().includes(contato.nome.toLowerCase()),
-                  )
-
-                  return (
-                    <div
-                      key={contato.id}
-                      onClick={() => handleSelecionarContatoBarra(contato)}
-                      className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer group flex items-start space-x-2.5 border ${
-                        isSelected
-                          ? 'bg-[#253575] text-white border-[#253575] shadow-xs'
-                          : 'bg-white text-slate-800 border-transparent hover:bg-slate-50 hover:border-slate-200'
-                      }`}
-                    >
-                      {/* Avatar / Iniciais estilo WhatsApp */}
-                      <div className="relative shrink-0 mt-0.5">
-                        <div
-                          className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold ${
-                            isSelected
-                              ? 'bg-white/20 text-white'
-                              : contato.tipo === 'kommo'
-                                ? 'bg-blue-100 text-[#253575]'
-                                : 'bg-slate-100 text-[#253575] border border-slate-200'
-                          }`}
-                        >
-                          {contato.initials}
-                        </div>
-                        {contato.isOnline !== undefined && (
-                          <span
-                            className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ${
-                              isSelected ? 'ring-[#253575]' : 'ring-white'
-                            } ${contato.isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                            title={contato.isOnline ? 'Online' : 'Offline'}
-                          />
-                        )}
-                      </div>
-
-                      {/* Dados do Contato */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1">
-                          <span
-                            className={`text-xs font-bold truncate ${
-                              isSelected ? 'text-white' : 'text-slate-900'
-                            }`}
-                          >
-                            {contato.nome}
-                          </span>
-                          {contato.unreadCount && contato.unreadCount > 0 ? (
-                            <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center shrink-0">
-                              {contato.unreadCount}
+                <>
+                  {/* SEÇÃO: CONTATOS EXTERNOS (KOMMO CRM) — visível em 'todos' ou 'crm' */}
+                  {(filtroTipoContato === 'todos' || filtroTipoContato === 'crm') &&
+                    externosFiltrados.length > 0 && (
+                      <div className="space-y-1 pt-1 first:pt-0">
+                        {filtroTipoContato === 'todos' && (
+                          <div className="px-2 py-1 text-[10px] font-bold text-blue-900 bg-blue-50/70 border border-blue-100 rounded-md flex items-center justify-between uppercase tracking-wider">
+                            <span className="flex items-center gap-1.5">
+                              <span className="h-2 w-2 rounded-full bg-blue-600" />
+                              Contatos Externos (Kommo CRM)
                             </span>
-                          ) : null}
-                        </div>
-
-                        <p
-                          className={`text-[11px] truncate mt-0.5 ${
-                            isSelected ? 'text-slate-200' : 'text-slate-500'
-                          }`}
-                        >
-                          {contato.subtitulo || contato.telefone || 'Sem mensagens recentes'}
-                        </p>
-
-                        <div className="flex items-center justify-between gap-1 mt-1 text-[10px]">
-                          <span
-                            className={`font-medium ${
-                              isSelected ? 'text-slate-300' : 'text-slate-400'
-                            }`}
-                          >
-                            {contato.canal}
-                          </span>
-
-                          <div className="flex items-center space-x-1 shrink-0">
-                            {temCardVinculado ? (
-                              <Badge
-                                variant="outline"
-                                className={`text-[9px] px-1 py-0 h-3.5 border ${
-                                  isSelected
-                                    ? 'bg-emerald-400/20 text-emerald-200 border-emerald-300/40'
-                                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                }`}
-                              >
-                                Card no Funil ✓
-                              </Badge>
-                            ) : (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleAdicionarContatoAoFunil(contato)
-                                }}
-                                className={`text-[9px] font-semibold px-1 py-0 rounded transition-colors ${
-                                  isSelected
-                                    ? 'bg-white/20 text-white hover:bg-white/30'
-                                    : 'bg-slate-100 text-[#253575] hover:bg-slate-200'
-                                }`}
-                                title="Criar card no pipeline deste contato"
-                              >
-                                + Funil
-                              </button>
-                            )}
+                            <span className="font-mono text-blue-700 font-semibold">
+                              {externosFiltrados.length}
+                            </span>
                           </div>
-                        </div>
+                        )}
+                        {externosFiltrados.map((contato) => {
+                          const isSelected = contatoSelecionadoId === contato.id
+                          const temCardVinculado = cards.some(
+                            (c) =>
+                              (contato.kommoRef && c.kommo_id === contato.kommoRef.id) ||
+                              c.contato_nome?.toLowerCase() === contato.nome.toLowerCase() ||
+                              c.titulo.toLowerCase().includes(contato.nome.toLowerCase()),
+                          )
+
+                          return (
+                            <div
+                              key={contato.id}
+                              onClick={() => handleSelecionarContatoBarra(contato)}
+                              className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer group flex items-start space-x-2.5 border ${
+                                isSelected
+                                  ? 'bg-[#253575] text-white border-[#253575] shadow-xs'
+                                  : 'bg-white text-slate-800 border-transparent hover:bg-blue-50/40 hover:border-blue-200'
+                              }`}
+                            >
+                              <div className="relative shrink-0 mt-0.5">
+                                <div
+                                  className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold ${
+                                    isSelected
+                                      ? 'bg-white/20 text-white'
+                                      : 'bg-blue-100 text-[#253575] border border-blue-200'
+                                  }`}
+                                >
+                                  {contato.initials}
+                                </div>
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span
+                                    className={`text-xs font-bold truncate ${
+                                      isSelected ? 'text-white' : 'text-slate-900'
+                                    }`}
+                                  >
+                                    {contato.nome}
+                                  </span>
+                                  <span
+                                    className={`text-[9px] px-1 py-0 rounded font-semibold uppercase shrink-0 ${
+                                      isSelected
+                                        ? 'bg-blue-400/20 text-blue-100 border border-blue-300/30'
+                                        : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                    }`}
+                                  >
+                                    Kommo
+                                  </span>
+                                </div>
+
+                                <p
+                                  className={`text-[11px] truncate mt-0.5 ${
+                                    isSelected ? 'text-slate-200' : 'text-slate-500'
+                                  }`}
+                                >
+                                  {contato.subtitulo ||
+                                    contato.telefone ||
+                                    'Sem telefone cadastrado'}
+                                </p>
+
+                                <div className="flex items-center justify-between gap-1 mt-1 text-[10px]">
+                                  <span
+                                    className={`font-medium ${
+                                      isSelected ? 'text-slate-300' : 'text-slate-400'
+                                    }`}
+                                  >
+                                    {contato.canal}
+                                  </span>
+
+                                  <div className="flex items-center space-x-1 shrink-0">
+                                    {temCardVinculado ? (
+                                      <Badge
+                                        variant="outline"
+                                        className={`text-[9px] px-1 py-0 h-3.5 border ${
+                                          isSelected
+                                            ? 'bg-emerald-400/20 text-emerald-200 border-emerald-300/40'
+                                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        }`}
+                                      >
+                                        Card no Funil ✓
+                                      </Badge>
+                                    ) : (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleAdicionarContatoAoFunil(contato)
+                                        }}
+                                        className={`text-[9px] font-semibold px-1 py-0 rounded transition-colors ${
+                                          isSelected
+                                            ? 'bg-white/20 text-white hover:bg-white/30'
+                                            : 'bg-slate-100 text-[#253575] hover:bg-slate-200'
+                                        }`}
+                                        title="Criar card no pipeline deste contato"
+                                      >
+                                        + Funil
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
-                    </div>
-                  )
-                })
+                    )}
+
+                  {/* SEÇÃO: CONTATOS INTERNOS (EQUIPE / SUPERVISÃO) — visível em 'todos' ou 'equipe' */}
+                  {(filtroTipoContato === 'todos' || filtroTipoContato === 'equipe') &&
+                    internosFiltrados.length > 0 && (
+                      <div className="space-y-1 pt-2">
+                        {filtroTipoContato === 'todos' && (
+                          <div className="px-2 py-1 text-[10px] font-bold text-emerald-900 bg-emerald-50/70 border border-emerald-100 rounded-md flex items-center justify-between uppercase tracking-wider">
+                            <span className="flex items-center gap-1.5">
+                              <span className="h-2 w-2 rounded-full bg-emerald-600" />
+                              Contatos Internos (Equipe & Supervisão)
+                            </span>
+                            <span className="font-mono text-emerald-700 font-semibold">
+                              {internosFiltrados.length}
+                            </span>
+                          </div>
+                        )}
+                        {internosFiltrados.map((contato) => {
+                          const isSelected = contatoSelecionadoId === contato.id
+                          return (
+                            <div
+                              key={contato.id}
+                              onClick={() => handleSelecionarContatoBarra(contato)}
+                              className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer group flex items-start space-x-2.5 border ${
+                                isSelected
+                                  ? 'bg-[#253575] text-white border-[#253575] shadow-xs'
+                                  : 'bg-white text-slate-800 border-transparent hover:bg-emerald-50/40 hover:border-emerald-200'
+                              }`}
+                            >
+                              <div className="relative shrink-0 mt-0.5">
+                                <div
+                                  className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold ${
+                                    isSelected
+                                      ? 'bg-white/20 text-white'
+                                      : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
+                                  }`}
+                                >
+                                  {contato.initials}
+                                </div>
+                                {contato.isOnline !== undefined && (
+                                  <span
+                                    className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ${
+                                      isSelected ? 'ring-[#253575]' : 'ring-white'
+                                    } ${contato.isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                                    title={contato.isOnline ? 'Online' : 'Offline'}
+                                  />
+                                )}
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span
+                                    className={`text-xs font-bold truncate ${
+                                      isSelected ? 'text-white' : 'text-slate-900'
+                                    }`}
+                                  >
+                                    {contato.nome}
+                                  </span>
+                                  {contato.unreadCount && contato.unreadCount > 0 ? (
+                                    <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                                      {contato.unreadCount}
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className={`text-[9px] px-1 py-0 rounded font-semibold uppercase shrink-0 ${
+                                        isSelected
+                                          ? 'bg-emerald-400/20 text-emerald-100 border border-emerald-300/30'
+                                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                      }`}
+                                    >
+                                      {contato.badge || 'Equipe'}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <p
+                                  className={`text-[11px] truncate mt-0.5 ${
+                                    isSelected ? 'text-slate-200' : 'text-slate-500'
+                                  }`}
+                                >
+                                  {contato.subtitulo || 'Conversa interna'}
+                                </p>
+
+                                <div className="flex items-center justify-between gap-1 mt-1 text-[10px]">
+                                  <span
+                                    className={`font-medium ${
+                                      isSelected ? 'text-slate-300' : 'text-slate-400'
+                                    }`}
+                                  >
+                                    {contato.canal}
+                                  </span>
+
+                                  {contato.userId && !contato.conversaRef && (
+                                    <span
+                                      className={`text-[9px] font-medium ${
+                                        isSelected ? 'text-amber-200' : 'text-slate-500'
+                                      }`}
+                                    >
+                                      Supervisão: clique para abrir
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                </>
               )}
             </div>
 

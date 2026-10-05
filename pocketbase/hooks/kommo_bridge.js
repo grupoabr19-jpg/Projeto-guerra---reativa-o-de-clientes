@@ -154,6 +154,27 @@ routerAdd(
         }
       }
 
+      // 3.1 Carregar lista de usuários do Kommo para cache e cruzamento de responsáveis (somente leitura)
+      let kommoUsersList = []
+      try {
+        const uRes = $http.send({
+          url: `${baseUrl}/api/v4/users?limit=100`,
+          method: 'GET',
+          headers: headers,
+          timeout: 5,
+        })
+        if (uRes && uRes.statusCode >= 200 && uRes.statusCode < 300) {
+          const rawUsers = uRes.json?._embedded?.users || []
+          kommoUsersList = rawUsers.map((u) => ({
+            id: String(u.id),
+            name: u.name || '',
+            email: u.email || '',
+          }))
+        }
+      } catch (uErr) {
+        console.log('[kommo_bridge] Aviso ao carregar usuários: ' + uErr.message)
+      }
+
       // 4. Formatar lista normalizada para a interface
       const items = leads.map((l) => {
         const lId = String(l.id)
@@ -222,6 +243,7 @@ routerAdd(
         subdomain: `${subdomain}.kommo.com`,
         items: items,
         total: items.length,
+        kommo_users: kommoUsersList,
         consultado_em: new Date().toISOString(),
       })
     } catch (err) {

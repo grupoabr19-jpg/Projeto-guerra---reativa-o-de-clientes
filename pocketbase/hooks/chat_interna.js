@@ -52,12 +52,13 @@ onRecordCreateRequest((e) => {
     }
 
     // Se a conversa for DM (1:1), garantir que o autor é participante
+    // Permite que o admin poste caso esteja intervindo, ou exija que seja um dos participantes
     if (convTipo === 'dm') {
       let parts = []
       try {
         parts = conversa.getStringSlice('participantes') || []
       } catch (_) {}
-      if (parts.length > 0 && !parts.includes(authRecord.id)) {
+      if (parts.length > 0 && !parts.includes(authRecord.id) && userRole !== 'admin') {
         throw new ForbiddenError('Você não faz parte desta conversa direta.')
       }
     }
@@ -105,6 +106,7 @@ onRecordAfterCreateSuccess((e) => {
 }, 'chat_mensagens')
 
 // 2. Endpoint: Obter ou criar conversa DM (1:1)
+// Suporta opcionalmente supervisor/admin abrindo DM entre dois outros usuários (userA e userB)
 routerAdd(
   'POST',
   '/backend/v1/chat/get-or-create-dm',
@@ -115,12 +117,27 @@ routerAdd(
         return e.json(401, { error: 'Autenticação obrigatória' })
       }
 
+      const userRole = authRecord.getString('role') || 'operador'
       const body = e.requestInfo().body || {}
-      const targetUserId = body.target_user_id
-      if (!targetUserId || targetUserId === authRecord.id) {
+      let targetUserId = body.target_user_id
+      let initiatorUserId = authRecord.id
+
+      // Se for admin e passar user_a e user_b explicitamente:
+      if (userRole === 'admin' && body.user_a_id && body.user_b_id) {
+        initiatorUserId = body.user_a_id
+        targetUserId = body.user_b_id
+      }
+
+      if (!targetUserId || targetUserId === initiatorUserId) {
         return e.json(400, { error: 'Destinatário inválido para conversa 1:1' })
       }
 
+      // Vendedores/operadores/líderes não-admin só podem criar DM onde eles mesmos são uma das pontas
+      if (userRole !== 'admin' && initiatorUserId !== authRecord.id) {
+        return e.json(403, {
+          error: 'Apenas administradores podem abrir conversas de supervisão de terceiros',
+        })
+      }
       // Validar existência do targetUser
       let targetUser = null
       try {
@@ -129,7 +146,17 @@ routerAdd(
         return e.json(404, { error: 'Colaborador destinatário não encontrado' })
       }
 
-      const myId = authRecord.id
+      // Validar existência do initiatorUser (caso seja terceiros)
+      let initiatorUser = authRecord
+      if (initiatorUserId !== authRecord.id) {
+        try {
+          initiatorUser = $app.findRecordById('users', initiatorUserId)
+        } catch (_) {
+          return e.json(404, { error: 'Usuário participante não encontrado' })
+        }
+      }
+
+      const myId = initiatorUserId
       // Gerar chave única normalizada ordenada alfabeticamente: menor:maior
       const pair = [myId, targetUserId].sort()
       const chaveDm = pair[0] + ':' + pair[1]
@@ -156,7 +183,11 @@ routerAdd(
         targetUser.getString('email') ||
         ''
       ).trim()
-      const myName = (authRecord.getString('name') || authRecord.getString('email') || '').trim()
+      const myName = (
+        initiatorUser.getString('name') ||
+        initiatorUser.getString('email') ||
+        ''
+      ).trim()
 
       const colConversas = $app.findCollectionByNameOrId('chat_conversas')
       const nova = new Record(colConversas)

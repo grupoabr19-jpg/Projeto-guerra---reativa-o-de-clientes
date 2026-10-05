@@ -9,8 +9,16 @@ export interface User {
   telefone?: string
   avatar?: string
   last_seen?: string | null
+  kommo_user_id?: string
+  kommo_user_nome?: string
   created: string
   updated: string
+}
+
+export interface KommoUserItem {
+  id: string
+  name: string
+  email?: string
 }
 
 export type PresenceStatusType = 'online' | 'today' | 'offline'

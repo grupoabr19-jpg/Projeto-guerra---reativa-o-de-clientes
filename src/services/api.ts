@@ -590,6 +590,53 @@ export async function testKommoConnection() {
   }
 }
 
+/**
+ * Consulta a lista de usuários do Kommo CRM em cache ou via bridge somente-leitura.
+ * Nunca grava no CRM.
+ */
+export async function fetchKommoUsers(): Promise<import('@/types').KommoUserItem[]> {
+  try {
+    // 1. Tentar obter via kommo_bridge recent-activity
+    const res = await fetch(
+      `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/kommo/recent-activity`,
+      {
+        headers: {
+          Authorization: pb.authStore.token,
+        },
+      },
+    )
+    if (res.ok) {
+      const data = await res.json()
+      if (Array.isArray(data.kommo_users) && data.kommo_users.length > 0) {
+        return data.kommo_users
+      }
+    }
+  } catch {
+    /* fallback to config */
+  }
+
+  // 2. Fallback: ler do registro 'kommo_config' em configuracoes (inspecao.users)
+  try {
+    const cfg = await pb
+      .collection('configuracoes')
+      .getFirstListItem<{ valor?: { inspecao?: { users?: import('@/types').KommoUserItem[] } } }>(
+        "chave = 'kommo_config'",
+      )
+    const cachedUsers = cfg.valor?.inspecao?.users
+    if (Array.isArray(cachedUsers) && cachedUsers.length > 0) {
+      return cachedUsers.map((u) => ({
+        id: String(u.id),
+        name: u.name || '',
+        email: u.email || '',
+      }))
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return []
+}
+
 export async function syncKommoLead(data: {
   cliente_id: string
   action: 'reserve' | 'finalize'
