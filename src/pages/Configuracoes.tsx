@@ -15,7 +15,11 @@ import {
   Trophy,
   Award,
   Target,
+  Radio,
+  Sparkles,
 } from 'lucide-react'
+import { emitirAtualizacaoVersaoAdmin } from '@/services/version'
+import { useVersion } from '@/contexts/VersionContext'
 import {
   fetchPesosGamificacao,
   updatePesosGamificacao,
@@ -228,6 +232,16 @@ export default function ConfiguracoesPage() {
 
   // Aba ativa nas Configurações
   const [activeTab, setActiveTab] = useState('bases')
+
+  // Estado para aba de Versão & Atualizações (Admin)
+  const { currentVersion, latestVersion, checkNow } = useVersion()
+  const [versaoInput, setVersaoInput] = useState<string>('1.0.1')
+  const [mensagemAtualizacao, setMensagemAtualizacao] = useState<string>(
+    'Nova versão liberada com correções e melhorias de desempenho. Por favor, recarregue!',
+  )
+  const [dispararChatAvisoTab, setDispararChatAvisoTab] = useState<boolean>(true)
+  const [enviandoPulsoVersao, setEnviandoPulsoVersao] = useState<boolean>(false)
+  const [pulsoSucessoMsg, setPulsoSucessoMsg] = useState<string | null>(null)
 
   useEffect(() => {
     if (user && (user.role === 'operador' || user.role === 'lider')) {
@@ -930,7 +944,188 @@ export default function ConfiguracoesPage() {
               </Badge>
             </TabsTrigger>
           )}
+          {user?.role === 'admin' && (
+            <TabsTrigger
+              value="versao"
+              className="text-xs font-medium flex items-center gap-1.5 data-[state=active]:bg-[#253575] data-[state=active]:text-white"
+            >
+              <Radio className="h-3.5 w-3.5 text-[#F18800] animate-pulse" />
+              <span>Pulso de Atualização</span>
+              <Badge
+                variant="secondary"
+                className="text-[9px] px-1.5 py-0 bg-orange-100 text-[#F18800] font-bold"
+              >
+                Novo
+              </Badge>
+            </TabsTrigger>
+          )}
         </TabsList>
+
+        {/* TAB NOVO: PULSO DE ATUALIZAÇÃO DO SISTEMA (ADMIN) */}
+        {user?.role === 'admin' && (
+          <TabsContent value="versao" className="space-y-4">
+            <Card className="border-slate-200 shadow-sm">
+              <CardHeader>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-sm font-semibold text-[#253575] flex items-center space-x-2">
+                      <Radio className="h-4 w-4 text-[#F18800] animate-pulse" />
+                      <span>Pulso de Atualização de Navegador (Broadcast de Versão)</span>
+                    </CardTitle>
+                    <CardDescription className="text-xs text-slate-500">
+                      Envie um sinal imediato para todos os colaboradores e navegadores conectados
+                      atualizarem a aplicação para a versão mais recente.
+                    </CardDescription>
+                  </div>
+                  <Badge className="bg-[#253575] text-white text-[11px] font-mono">
+                    Build Local: {currentVersion.buildId || currentVersion.version}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* Status da versão */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1">
+                    <span className="text-slate-500 block">Versão desta Aba</span>
+                    <strong className="text-base text-slate-800 font-mono">
+                      v{currentVersion.version}
+                    </strong>
+                    <div className="text-[10px] text-slate-400 font-mono truncate">
+                      Build: {currentVersion.buildId}
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-lg text-xs space-y-1">
+                    <span className="text-blue-700 block font-medium">
+                      Última Versão no Servidor
+                    </span>
+                    <strong className="text-base text-[#253575] font-mono">
+                      v{latestVersion?.version || currentVersion.version}
+                    </strong>
+                    <div className="text-[10px] text-blue-500 font-mono truncate">
+                      {latestVersion?.buildTime
+                        ? new Date(latestVersion.buildTime).toLocaleString('pt-BR')
+                        : 'Sincronizado'}
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs space-y-1">
+                    <span className="text-amber-800 block font-medium">Mecanismo de Proteção</span>
+                    <div className="text-xs text-amber-900 font-medium">
+                      Operadores em ligação ativa nunca são interrompidos.
+                    </div>
+                    <div className="text-[10px] text-amber-700">
+                      Auto-reload de 10s opera apenas fora de atendimento.
+                    </div>
+                  </div>
+                </div>
+
+                {pulsoSucessoMsg && (
+                  <Alert className="bg-emerald-50 border-emerald-300 text-emerald-900 text-xs py-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    <AlertTitle className="text-xs font-bold">
+                      Pulso emitido com sucesso!
+                    </AlertTitle>
+                    <AlertDescription className="text-xs">{pulsoSucessoMsg}</AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Formulário de emissão de novo pulso */}
+                <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-4 shadow-xs">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-[#F18800]" />
+                    <span>Emitir Novo Pulso de Atualização para a Equipe</span>
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-slate-700 font-semibold">
+                        Número da Versão
+                      </Label>
+                      <Input
+                        value={versaoInput}
+                        onChange={(e) => setVersaoInput(e.target.value)}
+                        placeholder="Ex: 1.0.2"
+                        className="h-8 text-xs font-mono font-bold"
+                      />
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label className="text-xs text-slate-700 font-semibold">
+                        Mensagem / Motivo do Aviso
+                      </Label>
+                      <Input
+                        value={mensagemAtualizacao}
+                        onChange={(e) => setMensagemAtualizacao(e.target.value)}
+                        placeholder="Ex: Atualização do sistema liberada com novas regras de carteira."
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="check-disparar-chat"
+                      checked={dispararChatAvisoTab}
+                      onChange={(e) => setDispararChatAvisoTab(e.target.checked)}
+                      className="rounded border-slate-300 text-[#253575] focus:ring-[#253575] h-4 w-4"
+                    />
+                    <label
+                      htmlFor="check-disparar-chat"
+                      className="text-xs text-slate-700 cursor-pointer select-none"
+                    >
+                      Também postar aviso em destaque com botão de recarregar no canal Geral do Chat
+                    </label>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-between pt-2 border-t border-slate-100 gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => checkNow()}
+                      className="text-xs h-8 text-slate-600 w-full sm:w-auto"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                      Consultar Versão do Servidor Agora
+                    </Button>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={enviandoPulsoVersao || !versaoInput.trim()}
+                      onClick={async () => {
+                        setEnviandoPulsoVersao(true)
+                        setPulsoSucessoMsg(null)
+                        try {
+                          await emitirAtualizacaoVersaoAdmin({
+                            version: versaoInput.trim(),
+                            mensagem: mensagemAtualizacao.trim(),
+                            dispararChatAviso: dispararChatAvisoTab,
+                          })
+                          setPulsoSucessoMsg(
+                            `Versão v${versaoInput.trim()} propagada! Todos os navegadores conectados exibirão o banner e o chat receberá a notificação.`,
+                          )
+                          await checkNow()
+                        } catch (err: any) {
+                          alert('Erro ao emitir pulso: ' + (err?.message || String(err)))
+                        } finally {
+                          setEnviandoPulsoVersao(false)
+                        }
+                      }}
+                      className="bg-[#F18800] hover:bg-[#d97b00] text-white text-xs h-8 font-bold shadow-sm w-full sm:w-auto"
+                    >
+                      <Radio className="h-3.5 w-3.5 mr-1" />
+                      {enviandoPulsoVersao
+                        ? 'Transmitindo Pulso...'
+                        : 'Disparar Pulso de Atualização'}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
 
         {/* TAB NOVO: BASES DE REFERÊNCIA */}
         <TabsContent value="bases" className="space-y-4">

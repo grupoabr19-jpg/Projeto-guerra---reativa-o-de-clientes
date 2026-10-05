@@ -35,6 +35,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { derivePresenceStatus } from '@/hooks/usePresence'
 import { formatarDataHoraBrasilia } from '@/lib/expediente'
+import { emitirAtualizacaoVersaoAdmin } from '@/services/version'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   fetchConversasUsuario,
   fetchMensagensConversa,
@@ -80,6 +82,7 @@ export function ChatWidget() {
   // Modal Aviso Broadcast (Admin Only)
   const [modalAvisoOpen, setModalAvisoOpen] = useState(false)
   const [avisoTexto, setAvisoTexto] = useState('')
+  const [avisoPedirAtualizacao, setAvisoPedirAtualizacao] = useState(false)
   const [enviandoAviso, setEnviandoAviso] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
@@ -255,16 +258,35 @@ export function ChatWidget() {
         return
       }
 
+      let textoFinal = avisoTexto.trim()
+      if (avisoPedirAtualizacao && !textoFinal.toLowerCase().includes('atualiz')) {
+        textoFinal = `[ATUALIZAÇÃO DE SISTEMA] ${textoFinal} (Por favor, clique em Atualizar Página ou pressione F5).`
+      }
+
       const msgAviso = await enviarMensagemChat({
         conversaId: canalGeral.id,
-        texto: avisoTexto.trim(),
+        texto: textoFinal,
         autorId: user.id,
         autorNome: user.name || 'Administrador',
         autorRole: 'admin',
         tipo: 'aviso',
       })
 
+      // Se marcou pedir atualização, também emite o pulso no backend para disparar o banner em todos os navegadores
+      if (avisoPedirAtualizacao) {
+        try {
+          await emitirAtualizacaoVersaoAdmin({
+            version: '1.0.' + Math.floor((Date.now() / 60000) % 1000),
+            mensagem: avisoTexto.trim(),
+            dispararChatAviso: false,
+          })
+        } catch (versionErr) {
+          console.warn('Falha ao disparar pulso no backend:', versionErr)
+        }
+      }
+
       setAvisoTexto('')
+      setAvisoPedirAtualizacao(false)
       setModalAvisoOpen(false)
       // Abre direto o canal geral com o aviso
       setActiveConversa(canalGeral)
@@ -712,10 +734,18 @@ export function ChatWidget() {
 
                     // MENSAGEM DE AVISO (BROADCAST / DESTAQUE ADMIN)
                     if (isAviso) {
+                      const msgTextoLower = (msg.texto || '').toLowerCase()
+                      const temGatilhoAtualizar =
+                        msgTextoLower.includes('atualiz') ||
+                        msgTextoLower.includes('relog') ||
+                        msgTextoLower.includes('f5') ||
+                        msgTextoLower.includes('versão') ||
+                        msgTextoLower.includes('versao')
+
                       return (
                         <div
                           key={msg.id}
-                          className="my-3 p-3 rounded-xl bg-gradient-to-r from-[#253575] to-[#142758] text-white border-2 border-[#F18800] shadow-md space-y-1 animate-in zoom-in-95"
+                          className="my-3 p-3 rounded-xl bg-gradient-to-r from-[#253575] to-[#142758] text-white border-2 border-[#F18800] shadow-md space-y-2 animate-in zoom-in-95"
                         >
                           <div className="flex items-center justify-between text-xs pb-1 border-b border-white/20">
                             <div className="flex items-center space-x-1.5 font-bold text-amber-300">
@@ -729,6 +759,18 @@ export function ChatWidget() {
                           <p className="text-xs text-white leading-relaxed whitespace-pre-wrap font-medium pt-1">
                             {msg.texto}
                           </p>
+                          {temGatilhoAtualizar && (
+                            <div className="pt-1">
+                              <Button
+                                size="sm"
+                                onClick={() => window.location.reload()}
+                                className="w-full h-7 bg-[#F18800] hover:bg-[#d97b00] text-white font-bold text-xs flex items-center justify-center space-x-1.5 shadow-sm"
+                              >
+                                <RefreshCw className="h-3 w-3" />
+                                <span>Recarregar Página Agora</span>
+                              </Button>
+                            </div>
+                          )}
                           <div className="text-[10px] text-slate-300 text-right pt-0.5">
                             Emitido por: {msg.autor_nome || 'Diretoria'}
                           </div>
@@ -930,6 +972,28 @@ export function ChatWidget() {
                   rows={4}
                   className="text-xs resize-none"
                 />
+              </div>
+
+              {/* Checkbox de Pedir Atualização de Página / Relogue */}
+              <div className="flex items-start space-x-2 pt-1 p-2 rounded-lg bg-slate-50 border border-slate-200">
+                <Checkbox
+                  id="check-pedir-atualizacao"
+                  checked={avisoPedirAtualizacao}
+                  onCheckedChange={(c) => setAvisoPedirAtualizacao(Boolean(c))}
+                  className="mt-0.5 border-[#253575] data-[state=checked]:bg-[#F18800] data-[state=checked]:border-[#F18800]"
+                />
+                <label
+                  htmlFor="check-pedir-atualizacao"
+                  className="text-xs text-slate-700 cursor-pointer leading-tight select-none"
+                >
+                  <strong className="text-[#253575] block font-semibold">
+                    Pedir atualização da página / relogue
+                  </strong>
+                  <span className="text-[11px] text-slate-500">
+                    Dispara o pulso de atualização na tela de todos os usuários logados e exibe o
+                    botão direto de recarregar.
+                  </span>
+                </label>
               </div>
             </div>
 

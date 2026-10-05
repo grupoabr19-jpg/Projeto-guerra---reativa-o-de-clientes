@@ -25,6 +25,7 @@ import { ExpedienteStatusBadge } from '@/components/ExpedienteStatusBadge'
 import { LogoAbr } from '@/components/LogoAbr'
 import { usePresence } from '@/hooks/usePresence'
 import { ChatWidget } from '@/components/ChatWidget'
+import { UpdateBanner } from '@/components/UpdateBanner'
 
 export default function Layout() {
   const { user, logout, hasRole } = useAuth()
@@ -342,6 +343,9 @@ export default function Layout() {
 
       {/* Main Container */}
       <div className="flex-1 flex flex-col lg:pl-64 min-w-0">
+        {/* Pulso de Atualização do Navegador: Banner discreto e fixo (Padrão ABR) */}
+        <UpdateBanner />
+
         {/* Top Header com detalhe de borda institucional */}
         <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200/80 h-16 flex items-center justify-between px-4 sm:px-6 shadow-sm">
           <div className="flex items-center space-x-3">

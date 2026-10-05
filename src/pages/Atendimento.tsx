@@ -82,11 +82,13 @@ import {
   getSugestaoReagendamentoHtml,
   formatarDataHoraBrasilia,
 } from '@/lib/expediente'
+import { useVersion } from '@/contexts/VersionContext'
 
 export default function AtendimentoPage() {
   const { clientId } = useParams<{ clientId?: string }>()
   const { user } = useAuth()
   const navigate = useNavigate()
+  const { setAtendimentoAtivo } = useVersion()
 
   const [cliente, setCliente] = useState<Cliente | null>(null)
   const [interacoes, setInteracoes] = useState<Interacao[]>([])
@@ -149,6 +151,15 @@ export default function AtendimentoPage() {
       checkExistingLockOrIdle()
     }
   }, [clientId])
+
+  // Notificar o VersionContext sobre o status de atendimento ativo para nunca interromper com auto-reload
+  useEffect(() => {
+    const isAtivo = Boolean(cliente && cliente.id)
+    setAtendimentoAtivo(isAtivo)
+    return () => {
+      setAtendimentoAtivo(false)
+    }
+  }, [cliente, setAtendimentoAtivo])
 
   // Debounce para busca de clientes por nome na carteira do operador
   useEffect(() => {
