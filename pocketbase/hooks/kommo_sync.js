@@ -3,13 +3,13 @@
 /**
  * kommo_sync.js
  *
- * Sincronização e ingestão de conversas WhatsApp da linha SDR (35 99770-9232):
+ * Sincronização e ingestão contínua de conversas WhatsApp da linha SDR (35 99770-9232):
  * 1. Processa eventos de entrada (webhook do Kommo ou polling sob demanda)
  * 2. Cria/atualiza registros em `chat_conversas` (tipo: 'kommo_whatsapp')
  * 3. Cria registros em `chat_mensagens` (direcao: 'entrada', kommo_status: 'recebida')
- * 4. Vincula automaticamente ao perfil do ADMIN (Thiago Almeida) como responsável
- * 5. Se o telefone/documento corresponder a um cliente da base local, vincula cliente_id
- * 6. Rota manual POST /backend/v1/kommo/sync-sdr
+ * 4. Faz cruzamento com a base de clientes por telefone e transfere para carteira/vendedor
+ * 5. Aciona triagem comercial ágil com o Skip Cloud AI Agent 'sdr-triagem-bot'
+ * 6. Rota POST /backend/v1/kommo/sync-sdr
  */
 
 routerAdd(
@@ -26,14 +26,13 @@ routerAdd(
       }
 
       const KOMMO_SDR_PHONE_TARGET = '35997709232'
-      const KOMMO_READONLY_OVERRIDE = false
 
-      function cleanPhoneNumber(phone) {
+      const cleanPhoneNumber = (phone) => {
         if (!phone) return ''
         return String(phone).replace(/\D/g, '')
       }
 
-      function isPhoneMatch(phoneA, phoneB) {
+      const isPhoneMatch = (phoneA, phoneB) => {
         const cleanA = cleanPhoneNumber(phoneA)
         const cleanB = cleanPhoneNumber(phoneB)
         if (!cleanA || !cleanB) return false
@@ -50,49 +49,13 @@ routerAdd(
         return false
       }
 
-      function isSdrPhone(phone) {
-        return isPhoneMatch(phone, KOMMO_SDR_PHONE_TARGET)
-      }
+      const isSdrPhone = (phone) => isPhoneMatch(phone, KOMMO_SDR_PHONE_TARGET)
 
-      function getKommoConfig() {
-        const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
-        const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
-        const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
-        const readonlyEnv = $os.getenv('KOMMO_READONLY_MODE') || 'false'
-        const isReadonly = KOMMO_READONLY_OVERRIDE || readonlyEnv.toLowerCase() === 'true'
-        const baseUrl = apiBaseUrlSecret
-          ? apiBaseUrlSecret.endsWith('/')
-            ? apiBaseUrlSecret.slice(0, -1)
-            : apiBaseUrlSecret
-          : subdomain
-            ? `https://${subdomain}.kommo.com`
-            : ''
-        return {
-          subdomain: subdomain,
-          accessToken: accessToken,
-          baseUrl: baseUrl,
-          isConfigured: Boolean(subdomain && accessToken),
-          isReadonly: isReadonly,
-        }
-      }
+      const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
+      const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
+      const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
 
-      function getKommoHeaders(accessToken) {
-        return {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        }
-      }
-
-      function getAdminUser() {
-        try {
-          return $app.findFirstRecordByData('users', 'role', 'admin')
-        } catch (_) {
-          return null
-        }
-      }
-      const cfg = getKommoConfig()
-      if (!cfg.isConfigured) {
+      if (!subdomain || !accessToken) {
         return e.json(200, {
           ok: false,
           configured: false,
@@ -100,14 +63,29 @@ routerAdd(
         })
       }
 
-      const admin = getAdminUser()
-      const adminId = admin ? admin.id : authRecord.id
-      const headers = getKommoHeaders(cfg.accessToken)
+      const baseUrl = apiBaseUrlSecret
+        ? apiBaseUrlSecret.endsWith('/')
+          ? apiBaseUrlSecret.slice(0, -1)
+          : apiBaseUrlSecret
+        : `https://${subdomain}.kommo.com`
+
+      let adminUser = null
+      try {
+        adminUser = $app.findFirstRecordByData('users', 'role', 'admin')
+      } catch (_) {}
+      const adminId = adminUser ? adminUser.id : authRecord.id
+
+      const headers = {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      }
+
       let totalProcessadas = 0
 
       // 1. Buscar leads recentes
       const leadsRes = $http.send({
-        url: `${cfg.baseUrl}/api/v4/leads?order[updated_at]=desc&limit=25&with=contacts`,
+        url: `${baseUrl}/api/v4/leads?order[updated_at]=desc&limit=30&with=contacts`,
         method: 'GET',
         headers: headers,
         timeout: 8,
@@ -135,7 +113,7 @@ routerAdd(
 
         try {
           const cRes = $http.send({
-            url: `${cfg.baseUrl}/api/v4/contacts/${contactId}`,
+            url: `${baseUrl}/api/v4/contacts/${contactId}`,
             method: 'GET',
             headers: headers,
             timeout: 5,
@@ -176,6 +154,7 @@ routerAdd(
 
           // Buscar cliente na base se houver
           let clienteId = ''
+          let clienteRecord = null
           if (cleanPhone && cleanPhone.length >= 8) {
             try {
               const suffix = cleanPhone.length >= 9 ? cleanPhone.slice(-9) : cleanPhone.slice(-8)
@@ -186,7 +165,8 @@ routerAdd(
                 1,
               )
               if (cliRecs && cliRecs.length > 0) {
-                clienteId = cliRecs[0].id
+                clienteRecord = cliRecs[0]
+                clienteId = clienteRecord.id
               }
             } catch (_) {}
           }
@@ -210,10 +190,6 @@ routerAdd(
             $app.save(conversa)
           } else {
             let changed = false
-            if (!conversa.get('responsavel_id') || conversa.get('responsavel_id') !== adminId) {
-              conversa.set('responsavel_id', adminId)
-              changed = true
-            }
             if (clienteId && !conversa.get('cliente_id')) {
               conversa.set('cliente_id', clienteId)
               changed = true
@@ -226,7 +202,7 @@ routerAdd(
           // Buscar notas/mensagens deste lead
           try {
             const notesRes = $http.send({
-              url: `${cfg.baseUrl}/api/v4/leads/${lead.id}/notes?limit=10&order[created_at]=desc`,
+              url: `${baseUrl}/api/v4/leads/${lead.id}/notes?limit=10&order[created_at]=desc`,
               method: 'GET',
               headers: headers,
               timeout: 5,
@@ -240,7 +216,6 @@ routerAdd(
                 if (!noteText.trim()) continue
 
                 const msgId = `kommo_note_${note.id}`
-                // Verificar se já existe
                 let duplicada = false
                 try {
                   const check = $app.findRecordsByFilter(

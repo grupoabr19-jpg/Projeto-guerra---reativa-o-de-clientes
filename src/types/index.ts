@@ -815,3 +815,76 @@ export interface KommoSendMessageResponse {
   error?: string
   detalhe?: string
 }
+
+// ==========================================
+// Bot SDR Triagem e Treinamento
+// ==========================================
+
+export interface SdrRotaRegra {
+  especialista: string
+  corporativo: string
+  externo?: string
+}
+
+export interface SdrAtacadoDddRegra {
+  operador_nome: string
+  ddds: string[]
+}
+
+export interface SdrBotConfig {
+  ativo: boolean
+  nome_sdr: string
+  saudacao: string
+  tom: string
+  instrucoes: string
+  regras_rotas: Record<string, SdrRotaRegra>
+  regras_atacado_ddd: Record<string, SdrAtacadoDddRegra>
+  fallback_admin?: {
+    nome: string
+    role: string
+  }
+}
+
+export interface SdrTriagemLogItem {
+  id: string
+  cliente_nome: string
+  telefone: string
+  telefone_limpo: string
+  documento?: string
+  canal: string
+  classificacao: 'VARE' | 'VCORP' | 'ATACADO' | 'SEM_ROTA' | string
+  regiao_nome: string
+  rota_destino: string
+  operador_destino?: string
+  operador_nome: string
+  kommo_user_id?: string
+  kommo_lead_id?: string
+  motivo_decisao: string
+  regra_aplicada: string
+  status_transferencia: string
+  nota_kommo?: string
+  conversa_resumo?: string
+  eh_simulacao: boolean
+  created: string
+}
+
+export interface SdrSimulacaoDecisao {
+  classificacao: 'VARE' | 'VCORP' | 'ATACADO' | 'SEM_ROTA' | string
+  rota_destino: string
+  operador_destino_id?: string
+  operador_destino_nome: string
+  kommo_user_id?: string
+  regra_aplicada: string
+  motivo_decisao: string
+  nota_kommo_preview?: string
+  status_transferencia: string
+}
+
+export interface SdrSimulacaoResponse {
+  ok: boolean
+  simulacao: boolean
+  resposta_sdr: string
+  decisao: SdrSimulacaoDecisao
+  log_id?: string
+  error?: string
+}

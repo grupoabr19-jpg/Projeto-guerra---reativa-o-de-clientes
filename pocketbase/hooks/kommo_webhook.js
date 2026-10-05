@@ -6,26 +6,23 @@
  * Endpoint público para recepção de webhooks do Kommo CRM.
  * URL: POST /backend/v1/kommo/webhook
  *
- * O Kommo envia notificações no formato application/x-www-form-urlencoded ou application/json
- * para eventos como:
- * - leads[add], leads[update], leads[status]
- * - contacts[add], contacts[update]
- * - message[add]
- *
- * Este webhook processa mensagens e leads novos da linha SDR (35 99770-9232) e
- * os injeta no Hub de Atendimento em tempo real vinculados à conta do Admin Thiago Almeida.
+ * Processa mensagens e leads novos da linha SDR (35 99770-9232) e
+ * os injeta no Hub de Atendimento em tempo real.
+ * Aciona o Skip Cloud AI Agent 'sdr-triagem-bot' para triagem automática
+ * e executa transferência inteligente para o vendedor responsável
+ * (VARE vs VCORP / 8 rotas + Atacado por DDD ou carteira da base local).
  */
 
 routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
   try {
     const KOMMO_SDR_PHONE_TARGET = '35997709232'
 
-    function cleanPhoneNumber(phone) {
+    const cleanPhoneNumber = (phone) => {
       if (!phone) return ''
       return String(phone).replace(/\D/g, '')
     }
 
-    function isPhoneMatch(phoneA, phoneB) {
+    const isPhoneMatch = (phoneA, phoneB) => {
       const cleanA = cleanPhoneNumber(phoneA)
       const cleanB = cleanPhoneNumber(phoneB)
       if (!cleanA || !cleanB) return false
@@ -42,18 +39,14 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
       return false
     }
 
-    function isSdrPhone(phone) {
-      return isPhoneMatch(phone, KOMMO_SDR_PHONE_TARGET)
-    }
+    const isSdrPhone = (phone) => isPhoneMatch(phone, KOMMO_SDR_PHONE_TARGET)
 
-    function auditKommoAction(action, details, userId) {
+    const auditAction = (action, details, userId) => {
       try {
         console.log(`[kommo_webhook] [AUDIT] ${action}: ` + JSON.stringify(details))
         const colEv = $app.findCollectionByNameOrId('eventos_log')
         const ev = new Record(colEv)
-        if (userId) {
-          ev.set('usuario', userId)
-        }
+        if (userId) ev.set('usuario', userId)
         ev.set('acao', `kommo_${action}`)
         ev.set('detalhes', {
           action: action,
@@ -66,21 +59,16 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
       }
     }
 
-    function getAdminUser() {
-      try {
-        return $app.findFirstRecordByData('users', 'role', 'admin')
-      } catch (_) {
-        return null
-      }
-    }
+    let adminRecord = null
+    try {
+      adminRecord = $app.findFirstRecordByData('users', 'role', 'admin')
+    } catch (_) {}
+    const adminId = adminRecord ? adminRecord.id : ''
 
     const rawBody = e.requestInfo().body || {}
     console.log(
       '[kommo_webhook] Recebido payload de webhook: ' + JSON.stringify(rawBody).slice(0, 300),
     )
-
-    const admin = getAdminUser()
-    const adminId = admin ? admin.id : ''
 
     const convCol = $app.findCollectionByNameOrId('chat_conversas')
     const msgCol = $app.findCollectionByNameOrId('chat_mensagens')
@@ -116,6 +104,7 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
         } catch (_) {}
       }
 
+      let clienteRecord = null
       let clienteId = ''
       if (cleanPhone && cleanPhone.length >= 8) {
         try {
@@ -126,7 +115,10 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
             '-created',
             1,
           )
-          if (cliRecs && cliRecs.length > 0) clienteId = cliRecs[0].id
+          if (cliRecs && cliRecs.length > 0) {
+            clienteRecord = cliRecs[0]
+            clienteId = clienteRecord.id
+          }
         } catch (_) {}
       }
 
@@ -150,10 +142,6 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
         $app.save(conversa)
       } else {
         let mudou = false
-        if (adminId && conversa.get('responsavel_id') !== adminId) {
-          conversa.set('responsavel_id', adminId)
-          mudou = true
-        }
         if (clienteId && !conversa.get('cliente_id')) {
           conversa.set('cliente_id', clienteId)
           mudou = true
@@ -161,12 +149,360 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
         if (mudou) $app.save(conversa)
       }
 
-      return conversa
+      return { conversa, clienteRecord }
     }
 
-    // Helper inline para registrar mensagem
-    const registrarMensagem = (convId, texto, autorNome, msgId) => {
-      if (!convId || !texto) return
+    // Helper para transferir conversa para vendedor responsável
+    const processarTransferenciaVendedor = (conversa, clienteRecord, textoMensagem) => {
+      try {
+        // Verificar se o Bot SDR está ativo nas configurações
+        let sdrAtivo = true
+        let sdrNome = 'SDR Virtual Grupo ABR'
+        try {
+          const cfg = $app.findFirstRecordByData('configuracoes', 'chave', 'sdr_bot_config')
+          if (cfg) {
+            const v = cfg.get('valor') || {}
+            if (v.ativo === false) sdrAtivo = false
+            if (v.nome_sdr) sdrNome = v.nome_sdr
+          }
+        } catch (_) {}
+
+        if (!sdrAtivo) {
+          console.log('[kommo_webhook] Bot SDR pausado. Conversa mantida com Admin.')
+          return
+        }
+
+        let vendedorAlvo = null
+        let motivoTransferencia = ''
+        let regraAplicada = ''
+        let classificacao = 'SEM_ROTA'
+        let rotaDestino = ''
+
+        // 1. Se cliente já existe na base, identificar carteira e vendedor
+        if (clienteRecord) {
+          const vendedorBase = (clienteRecord.getString('vendedor') || '').trim()
+          const tipoVendedor = (clienteRecord.getString('tipo_vendedor') || '').toUpperCase()
+          const regiaoCliente = (clienteRecord.getString('regiao') || '').trim()
+
+          if (regiaoCliente.toUpperCase() === 'ATACADO') {
+            classificacao = 'ATACADO'
+            rotaDestino = 'ATACADO'
+            const ddd = clienteRecord.getString('ddd_telefone') || ''
+            let nomeAlvoAtacado = ''
+            if (['11', '12', '13'].includes(ddd)) nomeAlvoAtacado = 'Larissa Terra'
+            else if (['15', '19'].includes(ddd)) nomeAlvoAtacado = 'Julio Melo'
+            else if (['14', '16', '17', '18'].includes(ddd)) nomeAlvoAtacado = 'Wilson Neto'
+
+            if (nomeAlvoAtacado) {
+              try {
+                const atacadoUsers = $app.findRecordsByFilter(
+                  'users',
+                  `name ~ '${nomeAlvoAtacado.split(' ')[0]}' && (role = 'operador' || role = 'lider')`,
+                  '-created',
+                  1,
+                )
+                if (atacadoUsers && atacadoUsers.length > 0) {
+                  vendedorAlvo = atacadoUsers[0]
+                  motivoTransferencia = `Fila ATACADO (DDD ${ddd})`
+                  regraAplicada = 'Base Clientes -> Região ATACADO'
+                }
+              } catch (_) {}
+            }
+          } else if (vendedorBase) {
+            let nomeLimpo = vendedorBase
+            const pfxList = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ']
+            for (let px = 0; px < pfxList.length; px++) {
+              if (nomeLimpo.startsWith(pfxList[px])) {
+                nomeLimpo = nomeLimpo.slice(pfxList[px].length).trim()
+                break
+              }
+            }
+
+            classificacao =
+              vendedorBase.startsWith('VCORP') || tipoVendedor === 'CORPORATIVO' ? 'VCORP' : 'VARE'
+            rotaDestino = regiaoCliente || 'Geral'
+
+            try {
+              const userMatches = $app.findRecordsByFilter(
+                'users',
+                `name ~ '${nomeLimpo}' && (role = 'operador' || role = 'lider')`,
+                '-created',
+                1,
+              )
+              if (userMatches && userMatches.length > 0) {
+                vendedorAlvo = userMatches[0]
+                motivoTransferencia = `Carteira prévia (${classificacao} - ${vendedorBase} / Rota: ${rotaDestino})`
+                regraAplicada = 'Base Clientes -> Carteira Prévia'
+              }
+            } catch (_) {}
+          }
+        }
+
+        // 2. Se não tem cliente na base, analisar DDD e texto para rota
+        if (!vendedorAlvo) {
+          const cleanPhone = conversa.getString('kommo_phone_clean') || ''
+          let ddd = ''
+          if (cleanPhone.length >= 10) {
+            let s = cleanPhone.startsWith('55') ? cleanPhone.slice(2) : cleanPhone
+            ddd = s.slice(0, 2)
+          }
+
+          const txt = (textoMensagem || '').toLowerCase()
+          const mapaRotas = [
+            {
+              rota: 'BRAGANÇA',
+              cidades: [
+                'bragança',
+                'braganca',
+                'atibaia',
+                'piracaia',
+                'nazaré',
+                'vargem',
+                'mairiporã',
+              ],
+            },
+            {
+              rota: 'JUNDIAÍ',
+              cidades: [
+                'jundiaí',
+                'jundiai',
+                'itatiba',
+                'jarinu',
+                'várzea paulista',
+                'campo limpo',
+                'itupeva',
+              ],
+            },
+            {
+              rota: 'VARGINHA',
+              cidades: ['varginha', 'três pontas', 'três corações', 'elói mendes', 'paraguaçu'],
+            },
+            {
+              rota: 'POUSO ALEGRE',
+              cidades: ['pouso alegre', 'jacutinga', 'borda da mata', 'bueno brandão', 'caxambu'],
+            },
+            {
+              rota: 'POÇOS DE CALDAS',
+              cidades: [
+                'poços de caldas',
+                'pocos de caldas',
+                'alfenas',
+                'machado',
+                'caldas',
+                'ouro fino',
+              ],
+            },
+            {
+              rota: 'ITAJUBÁ',
+              cidades: ['itajubá', 'itajuba', 'santa rita', 'pedralva', 'maria da fé'],
+            },
+            {
+              rota: 'EXTREMA',
+              cidades: ['extrema', 'toledo', 'munhoz', 'pedra bela', 'socorro', 'serra negra'],
+            },
+            {
+              rota: 'CAMBUÍ',
+              cidades: ['cambuí', 'cambui', 'bom repouso', 'estiva', 'camanducaia', 'monte verde'],
+            },
+          ]
+
+          let rotaEncontrada = null
+          for (let r = 0; r < mapaRotas.length; r++) {
+            if (mapaRotas[r].cidades.some((c) => txt.includes(c))) {
+              rotaEncontrada = mapaRotas[r].rota
+              break
+            }
+          }
+
+          if (rotaEncontrada) {
+            rotaDestino = rotaEncontrada
+            const isVcorp = [
+              'empresa',
+              'cnpj',
+              'indústria',
+              'revenda',
+              'construtora',
+              'serralheria',
+              'tonelada',
+            ].some((k) => txt.includes(k))
+            classificacao = isVcorp ? 'VCORP' : 'VARE'
+
+            try {
+              const regRecs = $app.findRecordsByFilter(
+                'regioes',
+                `nome = '${rotaDestino}'`,
+                '-created',
+                1,
+              )
+              if (regRecs && regRecs.length > 0) {
+                const targetName = isVcorp
+                  ? regRecs[0].getString('corporativo') || regRecs[0].getString('especialista')
+                  : regRecs[0].getString('especialista') || regRecs[0].getString('vendedor_externo')
+                if (targetName) {
+                  const uRecs = $app.findRecordsByFilter(
+                    'users',
+                    `name ~ '${targetName.trim().split(' ')[0]}'`,
+                    '-created',
+                    1,
+                  )
+                  if (uRecs && uRecs.length > 0) {
+                    vendedorAlvo = uRecs[0]
+                    motivoTransferencia = `Detecção Geográfica (Rota ${rotaDestino} - ${classificacao})`
+                    regraAplicada = `Rota ${rotaDestino}`
+                  }
+                }
+              }
+            } catch (_) {}
+          } else if (ddd && ['11', '12', '13', '14', '15', '16', '17', '18', '19'].includes(ddd)) {
+            classificacao = 'ATACADO'
+            rotaDestino = 'ATACADO'
+            let nomeAlvo = ''
+            if (['11', '12', '13'].includes(ddd)) nomeAlvo = 'Larissa Terra'
+            else if (['15', '19'].includes(ddd)) nomeAlvo = 'Julio Melo'
+            else nomeAlvo = 'Wilson Neto'
+
+            try {
+              const uRecs = $app.findRecordsByFilter(
+                'users',
+                `name ~ '${nomeAlvo.split(' ')[0]}'`,
+                '-created',
+                1,
+              )
+              if (uRecs && uRecs.length > 0) {
+                vendedorAlvo = uRecs[0]
+                motivoTransferencia = `Fila ATACADO (DDD ${ddd})`
+                regraAplicada = 'DDD ATACADO'
+              }
+            } catch (_) {}
+          }
+        }
+
+        // Se identificou vendedor alvo diferente do responsável atual
+        if (vendedorAlvo && vendedorAlvo.id !== conversa.getString('responsavel_id')) {
+          conversa.set('responsavel_id', vendedorAlvo.id)
+          const parts = conversa.get('participantes') || []
+          if (!parts.includes(vendedorAlvo.id)) {
+            parts.push(vendedorAlvo.id)
+            conversa.set('participantes', parts)
+          }
+          $app.save(conversa)
+
+          // Registrar mensagem/aviso de transferência no chat
+          const avisoTransferencia = `[SDR Triagem] Transferido para ${vendedorAlvo.getString('name')} — ${motivoTransferencia}`
+          const m = new Record(msgCol)
+          m.set('conversa', conversa.id)
+          m.set('autor', adminId || vendedorAlvo.id)
+          m.set('autor_nome', `${sdrNome} (Triagem)`)
+          m.set('autor_role', 'supervisor')
+          m.set('texto', avisoTransferencia)
+          m.set('tipo', 'aviso')
+          m.set('direcao', 'saida')
+          m.set('kommo_status', 'enviada')
+          m.set('kommo_message_id', `transfer_${Date.now()}`)
+          $app.save(m)
+
+          const kommoUserIdAlvo = vendedorAlvo.getString('kommo_user_id') || ''
+          const leadId = conversa.getString('kommo_lead_id')
+          const notaKommoTexto = `[SDR Triagem Grupo ABR]: Transferido para ${vendedorAlvo.getString('name')}. Regra: ${regraAplicada}. Motivo: ${motivoTransferencia}.`
+
+          // Registrar auditoria na coleção sdr_triagens_log
+          try {
+            const triCol = $app.findCollectionByNameOrId('sdr_triagens_log')
+            const triRec = new Record(triCol)
+            triRec.set('cliente_nome', conversa.getString('titulo') || 'Cliente WhatsApp SDR')
+            triRec.set('telefone', conversa.getString('kommo_phone'))
+            triRec.set('telefone_limpo', conversa.getString('kommo_phone_clean'))
+            triRec.set('canal', 'WhatsApp SDR (35) 99770-9232')
+            triRec.set('classificacao', classificacao)
+            triRec.set('regiao_nome', rotaDestino)
+            triRec.set('rota_destino', rotaDestino)
+            triRec.set('operador_destino', vendedorAlvo.id)
+            triRec.set('operador_nome', vendedorAlvo.getString('name'))
+            triRec.set('kommo_user_id', kommoUserIdAlvo)
+            triRec.set('kommo_lead_id', leadId)
+            triRec.set('conversa', conversa.id)
+            triRec.set('motivo_decisao', motivoTransferencia)
+            triRec.set('regra_aplicada', regraAplicada)
+            triRec.set('status_transferencia', 'sucesso')
+            triRec.set('nota_kommo', notaKommoTexto)
+            triRec.set('conversa_resumo', textoMensagem || '')
+            triRec.set('eh_simulacao', false)
+            $app.save(triRec)
+          } catch (trLogErr) {
+            console.log('[kommo_webhook] Falha ao registrar sdr_triagens_log: ' + trLogErr.message)
+          }
+
+          // Se lead existe no Kommo, atualizar responsável e/ou nota
+          if (leadId) {
+            try {
+              const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
+              const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
+              const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
+              const baseUrl = apiBaseUrlSecret
+                ? apiBaseUrlSecret.endsWith('/')
+                  ? apiBaseUrlSecret.slice(0, -1)
+                  : apiBaseUrlSecret
+                : `https://${subdomain}.kommo.com`
+
+              if (subdomain && accessToken) {
+                const headers = {
+                  Authorization: `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json',
+                  Accept: 'application/json',
+                }
+
+                // 1. Inserir nota de auditoria da triagem no Lead Kommo
+                $http.send({
+                  url: `${baseUrl}/api/v4/leads/${leadId}/notes`,
+                  method: 'POST',
+                  headers: headers,
+                  data: JSON.stringify([
+                    {
+                      note_type: 'common',
+                      params: { text: notaKommoTexto },
+                    },
+                  ]),
+                  timeout: 5,
+                })
+
+                // 2. Se houver kommo_user_id vinculado, atualizar responsible_user_id do Lead no Kommo
+                if (kommoUserIdAlvo) {
+                  $http.send({
+                    url: `${baseUrl}/api/v4/leads/${leadId}`,
+                    method: 'PATCH',
+                    headers: headers,
+                    data: JSON.stringify({
+                      responsible_user_id: parseInt(kommoUserIdAlvo, 10),
+                    }),
+                    timeout: 5,
+                  })
+                }
+              }
+            } catch (kLeadErr) {
+              console.log('[kommo_webhook] Aviso ao sincronizar lead no Kommo: ' + kLeadErr.message)
+            }
+          }
+
+          auditAction(
+            'conversa_transferida_sdr',
+            {
+              conversa_id: conversa.id,
+              vendedor_id: vendedorAlvo.id,
+              vendedor_nome: vendedorAlvo.getString('name'),
+              kommo_user_id: kommoUserIdAlvo,
+              motivo: motivoTransferencia,
+            },
+            adminId,
+          )
+        }
+      } catch (trErr) {
+        console.log('[kommo_webhook] Aviso na transferência: ' + trErr.message)
+      }
+    }
+
+    // Helper inline para registrar mensagem e acionar IA SDR se couber
+    const registrarMensagem = (conversa, texto, autorNome, msgId, clienteRecord) => {
+      if (!conversa || !conversa.id || !texto) return
       if (msgId) {
         try {
           const dup = $app.findRecordsByFilter(
@@ -180,7 +516,7 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
       }
 
       const m = new Record(msgCol)
-      m.set('conversa', convId)
+      m.set('conversa', conversa.id)
       m.set('autor', adminId || '')
       m.set('autor_nome', autorNome || 'Cliente (WhatsApp SDR)')
       m.set('autor_role', 'operador')
@@ -192,15 +528,119 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
       $app.save(m)
 
       try {
-        const c = $app.findRecordById('chat_conversas', convId)
-        c.set('ultima_mensagem_texto', texto.slice(0, 97))
-        c.set('ultimo_autor_nome', autorNome || 'Cliente (WhatsApp SDR)')
-        c.set('ultima_mensagem_tipo', 'normal')
-        c.set('ultima_mensagem_data', new Date().toISOString())
-        const tot = c.getInt('total_mensagens') || 0
-        c.set('total_mensagens', tot + 1)
-        $app.save(c)
+        conversa.set('ultima_mensagem_texto', texto.slice(0, 97))
+        conversa.set('ultimo_autor_nome', autorNome || 'Cliente (WhatsApp SDR)')
+        conversa.set('ultima_mensagem_tipo', 'normal')
+        conversa.set('ultima_mensagem_data', new Date().toISOString())
+        const tot = conversa.getInt('total_mensagens') || 0
+        conversa.set('total_mensagens', tot + 1)
+        $app.save(conversa)
       } catch (_) {}
+
+      // Executar transferência se aplicável
+      processarTransferenciaVendedor(conversa, clienteRecord, texto)
+
+      // Se a conversa ainda estiver sob o admin e for mensagem recente de entrada,
+      // aciona o Skip Cloud AI Agent nativo 'sdr-triagem-bot' para responder e qualificar
+      if (adminId && conversa.getString('responsavel_id') === adminId) {
+        // Checar se o bot está ativo e ler saudação/instruções das configurações
+        let botAtivo = true
+        let botPromptExtra = ''
+        let botNome = 'SDR Virtual Grupo ABR'
+        try {
+          const cfg = $app.findFirstRecordByData('configuracoes', 'chave', 'sdr_bot_config')
+          if (cfg) {
+            const v = cfg.get('valor') || {}
+            if (v.ativo === false) botAtivo = false
+            if (v.nome_sdr) botNome = v.nome_sdr
+            if (v.instrucoes) botPromptExtra = ` Diretrizes do Admin: ${v.instrucoes}`
+          }
+        } catch (_) {}
+
+        if (!botAtivo) {
+          console.log('[kommo_webhook] Bot SDR inativo. Resposta IA pulada.')
+          return
+        }
+
+        try {
+          const agentRes = $ai.agent('sdr-triagem-bot').chat({
+            user_id: adminId,
+            message: `O cliente WhatsApp ${autorNome || ''} enviou: "${texto}". Faça a triagem rápida de soluções siderúrgicas do Grupo ABR como ${botNome}. Qualifique se é Varejo ou Corporativo e a cidade/local de entrega.${botPromptExtra}`,
+          })
+
+          const aiReply = agentRes && agentRes.content ? agentRes.content.trim() : ''
+          if (aiReply) {
+            // Registrar resposta do agente no chat local
+            const botMsg = new Record(msgCol)
+            botMsg.set('conversa', conversa.id)
+            botMsg.set('autor', adminId)
+            botMsg.set('autor_nome', 'SDR Virtual Grupo ABR (IA)')
+            botMsg.set('autor_role', 'supervisor')
+            botMsg.set('texto', aiReply)
+            botMsg.set('tipo', 'normal')
+            botMsg.set('direcao', 'saida')
+            botMsg.set('kommo_status', 'enviada')
+            botMsg.set('kommo_message_id', `sdr_ai_${Date.now()}`)
+            $app.save(botMsg)
+
+            conversa.set('ultima_mensagem_texto', aiReply.slice(0, 97))
+            conversa.set('ultimo_autor_nome', 'SDR Virtual Grupo ABR')
+            conversa.set('ultima_mensagem_tipo', 'normal')
+            conversa.set('ultima_mensagem_data', new Date().toISOString())
+            const totBot = conversa.getInt('total_mensagens') || 0
+            conversa.set('total_mensagens', totBot + 1)
+            $app.save(conversa)
+
+            // Tentar enviar a resposta do bot para o Kommo CRM (Talks / Notes)
+            try {
+              const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
+              const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
+              const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
+              const baseUrl = apiBaseUrlSecret
+                ? apiBaseUrlSecret.endsWith('/')
+                  ? apiBaseUrlSecret.slice(0, -1)
+                  : apiBaseUrlSecret
+                : `https://${subdomain}.kommo.com`
+
+              if (subdomain && accessToken) {
+                const headers = {
+                  Authorization: `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json',
+                  Accept: 'application/json',
+                }
+                const chatId = conversa.getString('kommo_chat_id')
+                const leadId = conversa.getString('kommo_lead_id')
+                if (chatId) {
+                  $http.send({
+                    url: `${baseUrl}/api/v4/talks/${chatId}/messages`,
+                    method: 'POST',
+                    headers: headers,
+                    data: JSON.stringify({ text: aiReply }),
+                    timeout: 5,
+                  })
+                } else if (leadId) {
+                  $http.send({
+                    url: `${baseUrl}/api/v4/leads/${leadId}/notes`,
+                    method: 'POST',
+                    headers: headers,
+                    data: JSON.stringify([
+                      {
+                        note_type: 'common',
+                        params: { text: `[Resposta SDR Virtual Grupo ABR]:\n${aiReply}` },
+                      },
+                    ]),
+                    timeout: 5,
+                  })
+                }
+              }
+            } catch (kErr) {
+              console.log('[kommo_webhook] Falha no envio externo da resposta IA: ' + kErr.message)
+            }
+          }
+        } catch (aiErr) {
+          console.log('[kommo_webhook] IA SDR ignorada/fallback: ' + aiErr.message)
+        }
+      }
     }
 
     // Caso 1: leads adicionados ou atualizados
@@ -232,7 +672,7 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
         (lead.name && (lead.name.includes('997709232') || lead.name.includes('99770-9232')))
 
       if (phone || isSdrMatch) {
-        const conv = obterOuCriarConversa(
+        const { conversa, clienteRecord } = obterOuCriarConversa(
           phone || KOMMO_SDR_PHONE_TARGET,
           contactName,
           '',
@@ -240,10 +680,11 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
           '',
         )
         registrarMensagem(
-          conv.id,
+          conversa,
           `[Lead Kommo] ${lead.name || 'Lead SDR'} (Etapa: ${lead.status_id || 'Entrada'})`,
           contactName || 'Kommo SDR',
           `webhook_lead_${lead.id}_${Date.now()}`,
+          clienteRecord,
         )
         eventosProcessados++
       }
@@ -276,7 +717,7 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
       }
     }
 
-    // Caso 3: Mensagens de chat (message[add])
+    // Caso 3: Mensagens de chat (message[add] ou talk)
     const msgPayload = rawBody.message || rawBody.talk || {}
     const addedMsgs = msgPayload.add || []
     const msgsArray = Array.isArray(addedMsgs) ? addedMsgs : Object.values(addedMsgs)
@@ -287,7 +728,7 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
       const phone = item.phone || item.contact_phone || ''
       const senderName = item.sender_name || item.name || 'Cliente WhatsApp SDR'
       if (text) {
-        const conv = obterOuCriarConversa(
+        const { conversa, clienteRecord } = obterOuCriarConversa(
           phone || KOMMO_SDR_PHONE_TARGET,
           senderName,
           '',
@@ -295,16 +736,17 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
           item.chat_id || item.talk_id || '',
         )
         registrarMensagem(
-          conv.id,
+          conversa,
           text,
           senderName,
           item.id ? String(item.id) : `webhook_msg_${Date.now()}`,
+          clienteRecord,
         )
         eventosProcessados++
       }
     }
 
-    auditKommoAction(
+    auditAction(
       'webhook_processado',
       {
         eventos: eventosProcessados,

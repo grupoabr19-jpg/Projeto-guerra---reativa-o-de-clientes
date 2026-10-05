@@ -495,14 +495,13 @@ cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
     }
 
     const KOMMO_SDR_PHONE_TARGET = '35997709232'
-    const KOMMO_READONLY_OVERRIDE = false
 
-    function cleanPhoneNumber(phone) {
+    const cleanPhoneNumber = (phone) => {
       if (!phone) return ''
       return String(phone).replace(/\D/g, '')
     }
 
-    function isPhoneMatch(phoneA, phoneB) {
+    const isPhoneMatch = (phoneA, phoneB) => {
       const cleanA = cleanPhoneNumber(phoneA)
       const cleanB = cleanPhoneNumber(phoneB)
       if (!cleanA || !cleanB) return false
@@ -519,56 +518,33 @@ cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
       return false
     }
 
-    function isSdrPhone(phone) {
-      return isPhoneMatch(phone, KOMMO_SDR_PHONE_TARGET)
+    const isSdrPhone = (phone) => isPhoneMatch(phone, KOMMO_SDR_PHONE_TARGET)
+
+    const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
+    const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
+    const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
+
+    if (!subdomain || !accessToken) return
+
+    const baseUrl = apiBaseUrlSecret
+      ? apiBaseUrlSecret.endsWith('/')
+        ? apiBaseUrlSecret.slice(0, -1)
+        : apiBaseUrlSecret
+      : `https://${subdomain}.kommo.com`
+
+    let adminUser = null
+    try {
+      adminUser = $app.findFirstRecordByData('users', 'role', 'admin')
+    } catch (_) {}
+    const adminId = adminUser ? adminUser.id : ''
+
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
     }
-
-    function getKommoConfig() {
-      const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
-      const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
-      const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
-      const readonlyEnv = $os.getenv('KOMMO_READONLY_MODE') || 'false'
-      const isReadonly = KOMMO_READONLY_OVERRIDE || readonlyEnv.toLowerCase() === 'true'
-      const baseUrl = apiBaseUrlSecret
-        ? apiBaseUrlSecret.endsWith('/')
-          ? apiBaseUrlSecret.slice(0, -1)
-          : apiBaseUrlSecret
-        : subdomain
-          ? `https://${subdomain}.kommo.com`
-          : ''
-      return {
-        subdomain: subdomain,
-        accessToken: accessToken,
-        baseUrl: baseUrl,
-        isConfigured: Boolean(subdomain && accessToken),
-        isReadonly: isReadonly,
-      }
-    }
-
-    function getKommoHeaders(accessToken) {
-      return {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      }
-    }
-
-    function getAdminUser() {
-      try {
-        return $app.findFirstRecordByData('users', 'role', 'admin')
-      } catch (_) {
-        return null
-      }
-    }
-    const cfg = getKommoConfig()
-    if (!cfg.isConfigured) return
-
-    const admin = getAdminUser()
-    const adminId = admin ? admin.id : ''
-
-    const headers = getKommoHeaders(cfg.accessToken)
     const leadsRes = $http.send({
-      url: `${cfg.baseUrl}/api/v4/leads?order[updated_at]=desc&limit=20&with=contacts`,
+      url: `${baseUrl}/api/v4/leads?order[updated_at]=desc&limit=25&with=contacts`,
       method: 'GET',
       headers: headers,
       timeout: 7,
@@ -588,7 +564,7 @@ cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
       let contactName = ''
       try {
         const cRes = $http.send({
-          url: `${cfg.baseUrl}/api/v4/contacts/${contacts[0].id}`,
+          url: `${baseUrl}/api/v4/contacts/${contacts[0].id}`,
           method: 'GET',
           headers: headers,
           timeout: 4,

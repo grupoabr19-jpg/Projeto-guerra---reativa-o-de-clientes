@@ -17,6 +17,7 @@ import {
   MessagesSquare,
   ChevronLeft,
   ChevronRight,
+  Bot,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -237,6 +238,12 @@ export default function Layout() {
             : []),
           ...(hasRole('admin')
             ? [
+                {
+                  title: 'Treinamento do SDR',
+                  href: '/treinamento-sdr',
+                  icon: Bot,
+                  badgeText: 'IA',
+                },
                 {
                   title: 'Configurações',
                   href: '/configuracoes',

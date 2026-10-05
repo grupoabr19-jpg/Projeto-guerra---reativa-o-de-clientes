@@ -17,6 +17,7 @@ import AtendimentoPage from '@/pages/Atendimento'
 import ClientesPage from '@/pages/Clientes'
 import RelatoriosPage from '@/pages/Relatorios'
 import ConfiguracoesPage from '@/pages/Configuracoes'
+import TreinamentoSdrPage from '@/pages/TreinamentoSdr'
 import MeuPainelPage from '@/pages/MeuPainel'
 import RankingPage from '@/pages/Ranking'
 import EquipePage from '@/pages/Equipe'
@@ -143,6 +144,14 @@ const App = () => (
                 element={
                   <RoleRoute allowedRoles={['admin']}>
                     <ImportacaoPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/treinamento-sdr"
+                element={
+                  <RoleRoute allowedRoles={['admin']}>
+                    <TreinamentoSdrPage />
                   </RoleRoute>
                 }
               />
