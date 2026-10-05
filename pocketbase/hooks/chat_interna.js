@@ -74,6 +74,8 @@ onRecordCreateRequest((e) => {
         throw new ForbiddenError('Acesso restrito aos colaboradores da rota ' + regiaoNome)
       }
     }
+
+    return e.next()
   } catch (err) {
     if (err && err.status) throw err
     const msg = err && err.message ? err.message : String(err)

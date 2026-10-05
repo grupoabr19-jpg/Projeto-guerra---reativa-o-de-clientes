@@ -5,26 +5,7 @@
  *
  * Envio de respostas do Hub de Atendimento para o Kommo CRM / WhatsApp:
  * Rota: POST /backend/v1/kommo/send-message
- *
- * Permissões:
- * - Apenas administradores autenticados (Thiago Almeida)
- *
- * Fluxo de Envio:
- * 1. Verifica flag de segurança (modo de escrita liberado)
- * 2. Valida conversa e telefone de destino
- * 3. Envia para a API da Kommo (tenta endpoint de Talk/Chat ou insere nota de serviço no Lead)
- * 4. Grava a mensagem em `chat_mensagens` local com direcao='saida', autor=admin, kommo_status='enviada'
- * 5. Registra auditoria completa em `eventos_log`
- * 6. Se falhar, retorna erro transparente com mensagem descritiva para a interface sem enganar o usuário.
  */
-
-const {
-  cleanPhoneNumber,
-  getKommoConfig,
-  getKommoHeaders,
-  auditKommoAction,
-  getAdminUser,
-} = require(`${__hooks}/kommo_client.js`)
 
 routerAdd(
   'POST',
@@ -62,9 +43,13 @@ routerAdd(
         return e.json(404, { error: 'Conversa não encontrada.' })
       }
 
-      const cfg = getKommoConfig()
+      const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
+      const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
+      const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
+      const readonlyEnv = $os.getenv('KOMMO_READONLY_MODE') || 'false'
+      const isReadonly = readonlyEnv.toLowerCase() === 'true' // escrita permitida
 
-      if (cfg.isReadonly) {
+      if (isReadonly) {
         return e.json(403, {
           error:
             'O sistema está com o modo somente-leitura ativo. Nenhuma escrita ou mensagem pode ser enviada ao Kommo.',
@@ -72,7 +57,7 @@ routerAdd(
         })
       }
 
-      if (!cfg.isConfigured) {
+      if (!subdomain || !accessToken) {
         return e.json(400, {
           error:
             'Credenciais do Kommo CRM não configuradas (KOMMO_SUBDOMAIN ou KOMMO_ACCESS_TOKEN ausentes).',
@@ -80,7 +65,36 @@ routerAdd(
         })
       }
 
-      const headers = getKommoHeaders(cfg.accessToken)
+      const baseUrl = apiBaseUrlSecret
+        ? apiBaseUrlSecret.endsWith('/')
+          ? apiBaseUrlSecret.slice(0, -1)
+          : apiBaseUrlSecret
+        : `https://${subdomain}.kommo.com`
+
+      const headers = {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      }
+
+      const auditAction = (action, details) => {
+        try {
+          console.log(`[kommo_send_message] [AUDIT] ${action}: ` + JSON.stringify(details))
+          const colEv = $app.findCollectionByNameOrId('eventos_log')
+          const ev = new Record(colEv)
+          ev.set('usuario', authRecord.id)
+          ev.set('acao', `kommo_${action}`)
+          ev.set('detalhes', {
+            action: action,
+            ...details,
+            timestamp: new Date().toISOString(),
+          })
+          $app.save(ev)
+        } catch (auditErr) {
+          console.log('[kommo_send_message] Falha ao registrar auditoria: ' + auditErr.message)
+        }
+      }
+
       const leadId = conversa.getString('kommo_lead_id')
       const contactId = conversa.getString('kommo_contact_id')
       const chatId = conversa.getString('kommo_chat_id')
@@ -97,7 +111,7 @@ routerAdd(
         try {
           endpointUtilizado = `/api/v4/talks/${chatId}/messages`
           const talkRes = $http.send({
-            url: `${cfg.baseUrl}${endpointUtilizado}`,
+            url: `${baseUrl}${endpointUtilizado}`,
             method: 'POST',
             headers: headers,
             data: JSON.stringify({
@@ -118,7 +132,6 @@ routerAdd(
       }
 
       // Tentativa 2: Adicionar nota de serviço / mensagem oficial no Lead ou Contato
-      // Endpoint oficial da API v4: POST /api/v4/leads/{id}/notes ou /api/v4/contacts/{id}/notes
       if (!envioSucesso && leadId) {
         try {
           endpointUtilizado = `/api/v4/leads/${leadId}/notes`
@@ -131,7 +144,7 @@ routerAdd(
             },
           ]
           const noteRes = $http.send({
-            url: `${cfg.baseUrl}${endpointUtilizado}`,
+            url: `${baseUrl}${endpointUtilizado}`,
             method: 'POST',
             headers: headers,
             data: JSON.stringify(notePayload),
@@ -169,7 +182,7 @@ routerAdd(
             },
           ]
           const contactNoteRes = $http.send({
-            url: `${cfg.baseUrl}${endpointUtilizado}`,
+            url: `${baseUrl}${endpointUtilizado}`,
             method: 'POST',
             headers: headers,
             data: JSON.stringify(contactNotePayload),
@@ -195,18 +208,14 @@ routerAdd(
 
       // Se todas as tentativas falharam
       if (!envioSucesso) {
-        auditKommoAction(
-          'falha_envio_mensagem',
-          {
-            conversa_id: conversaId,
-            lead_id: leadId,
-            contact_id: contactId,
-            telefone: telefone,
-            texto: texto,
-            erro: detalheErro || 'Não foi possível despachar mensagem para nenhum canal Kommo.',
-          },
-          authRecord.id,
-        )
+        auditAction('falha_envio_mensagem', {
+          conversa_id: conversaId,
+          lead_id: leadId,
+          contact_id: contactId,
+          telefone: telefone,
+          texto: texto,
+          erro: detalheErro || 'Não foi possível despachar mensagem para nenhum canal Kommo.',
+        })
 
         return e.json(502, {
           ok: false,
@@ -242,20 +251,16 @@ routerAdd(
       $app.save(conversa)
 
       // Registrar auditoria de sucesso
-      auditKommoAction(
-        'mensagem_enviada',
-        {
-          conversa_id: conversaId,
-          mensagem_id: msg.id,
-          kommo_message_id: kommoMessageId,
-          endpoint: endpointUtilizado,
-          lead_id: leadId,
-          contact_id: contactId,
-          telefone: telefone,
-          texto_preview: texto.slice(0, 80),
-        },
-        authRecord.id,
-      )
+      auditAction('mensagem_enviada', {
+        conversa_id: conversaId,
+        mensagem_id: msg.id,
+        kommo_message_id: kommoMessageId,
+        endpoint: endpointUtilizado,
+        lead_id: leadId,
+        contact_id: contactId,
+        telefone: telefone,
+        texto_preview: texto.slice(0, 80),
+      })
 
       return e.json(200, {
         ok: true,

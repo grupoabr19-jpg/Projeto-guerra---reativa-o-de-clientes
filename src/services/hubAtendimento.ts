@@ -230,6 +230,9 @@ export async function fetchKommoRecentActivity(): Promise<KommoBridgeResponse> {
 }
 
 // 9. Obter status do Kommo CRM (conexão, permissões de escrita, SDR)
+import type { KommoStatusResponse, KommoSendMessageResponse } from '@/types'
+export type { KommoStatusResponse, KommoSendMessageResponse }
+
 export async function fetchKommoStatus(): Promise<KommoStatusResponse | null> {
   try {
     return await pb.send<KommoStatusResponse>('/backend/v1/kommo/status', {

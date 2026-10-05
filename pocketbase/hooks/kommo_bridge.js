@@ -4,19 +4,10 @@
  * kommo_bridge.js
  *
  * Expõe endpoints para o Hub de Atendimento:
- * 1. GET /backend/v1/kommo/recent-activity: Retorna leads e contatos recentes (com status de read-only desativado).
- * 2. GET /backend/v1/kommo/users: Retorna operadores Kommo para vínculo de identidade.
- * 3. POST /backend/v1/kommo/link-user: Salva vínculo do usuário do sistema ao Kommo.
- * 4. GET /backend/v1/kommo/status: Status detalhado da conexão, modo de escrita e telefone SDR monitorado.
+ * 1. GET /backend/v1/kommo/recent-activity
+ * 2. GET /backend/v1/kommo/users
+ * 3. POST /backend/v1/kommo/link-user
  */
-
-const {
-  getKommoConfig,
-  getKommoHeaders,
-  isSdrPhone,
-  KOMMO_SDR_PHONE_TARGET,
-  auditKommoAction,
-} = require(`${__hooks}/kommo_client.js`)
 
 routerAdd(
   'GET',
@@ -36,14 +27,51 @@ routerAdd(
         })
       }
 
-      const cfg = getKommoConfig()
+      const sdrPhoneTarget = '35997709232'
+      const cleanPhoneNumber = (phone) => {
+        if (!phone) return ''
+        return String(phone).replace(/\D/g, '')
+      }
+      const isPhoneMatch = (phoneA, phoneB) => {
+        const cleanA = cleanPhoneNumber(phoneA)
+        const cleanB = cleanPhoneNumber(phoneB)
+        if (!cleanA || !cleanB) return false
+        if (cleanA === cleanB) return true
+        const shortA = cleanA.startsWith('55') && cleanA.length >= 12 ? cleanA.slice(2) : cleanA
+        const shortB = cleanB.startsWith('55') && cleanB.length >= 12 ? cleanB.slice(2) : cleanB
+        if (shortA === shortB) return true
+        if (shortA.length === 11 && shortB.length === 10) {
+          return shortA.slice(0, 2) === shortB.slice(0, 2) && shortA.slice(3) === shortB.slice(2)
+        }
+        if (shortB.length === 11 && shortA.length === 10) {
+          return shortB.slice(0, 2) === shortA.slice(0, 2) && shortB.slice(3) === shortA.slice(2)
+        }
+        return false
+      }
+      const isSdrPhone = (phone) => isPhoneMatch(phone, sdrPhoneTarget)
 
-      if (!cfg.isConfigured) {
+      const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
+      const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
+      const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
+      const readonlyEnv = $os.getenv('KOMMO_READONLY_MODE') || 'false'
+      const isReadonly = readonlyEnv.toLowerCase() === 'true'
+
+      const baseUrl = apiBaseUrlSecret
+        ? apiBaseUrlSecret.endsWith('/')
+          ? apiBaseUrlSecret.slice(0, -1)
+          : apiBaseUrlSecret
+        : subdomain
+          ? `https://${subdomain}.kommo.com`
+          : ''
+
+      const isConfigured = Boolean(subdomain && accessToken)
+
+      if (!isConfigured) {
         return e.json(200, {
           ok: false,
           configured: false,
-          somente_leitura: cfg.isReadonly,
-          sdr_phone: KOMMO_SDR_PHONE_TARGET,
+          somente_leitura: isReadonly,
+          sdr_phone: sdrPhoneTarget,
           error_code: 'MISSING_CREDENTIALS',
           message:
             'Credenciais do Kommo CRM (KOMMO_SUBDOMAIN ou KOMMO_ACCESS_TOKEN) não configuradas no backend.',
@@ -52,14 +80,18 @@ routerAdd(
         })
       }
 
-      const headers = getKommoHeaders(cfg.accessToken)
+      const headers = {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      }
 
       // 1. Obter mapa de pipelines/funis para traduzir pipeline_id e status_id para nomes legíveis
       const pipelineMap = {}
       const statusMap = {}
       try {
         const pipRes = $http.send({
-          url: `${cfg.baseUrl}/api/v4/leads/pipelines`,
+          url: `${baseUrl}/api/v4/leads/pipelines`,
           method: 'GET',
           headers: headers,
           timeout: 6,
@@ -87,7 +119,7 @@ routerAdd(
       let leads = []
       try {
         const leadsRes = $http.send({
-          url: `${cfg.baseUrl}/api/v4/leads?order[updated_at]=desc&limit=30&with=contacts`,
+          url: `${baseUrl}/api/v4/leads?order[updated_at]=desc&limit=30&with=contacts`,
           method: 'GET',
           headers: headers,
           timeout: 7,
@@ -98,8 +130,8 @@ routerAdd(
           return e.json(200, {
             ok: false,
             configured: true,
-            somente_leitura: cfg.isReadonly,
-            sdr_phone: KOMMO_SDR_PHONE_TARGET,
+            somente_leitura: isReadonly,
+            sdr_phone: sdrPhoneTarget,
             error_code: `HTTP_${code}`,
             message: `Falha ao consultar leads recentes no Kommo CRM (HTTP ${code}). Verifique se o token de acesso continua válido.`,
             items: [],
@@ -112,8 +144,8 @@ routerAdd(
         return e.json(200, {
           ok: false,
           configured: true,
-          somente_leitura: cfg.isReadonly,
-          sdr_phone: KOMMO_SDR_PHONE_TARGET,
+          somente_leitura: isReadonly,
+          sdr_phone: sdrPhoneTarget,
           error_code: 'TIMEOUT_OR_NETWORK',
           message: `Tempo limite ou erro de conexão com a API do Kommo CRM: ${httpErr.message}`,
           items: [],
@@ -136,7 +168,7 @@ routerAdd(
         try {
           const filterQuery = contactIds.map((id) => `filter[id][]=${id}`).join('&')
           const contactsRes = $http.send({
-            url: `${cfg.baseUrl}/api/v4/contacts?${filterQuery}&limit=50`,
+            url: `${baseUrl}/api/v4/contacts?${filterQuery}&limit=50`,
             method: 'GET',
             headers: headers,
             timeout: 6,
@@ -217,10 +249,10 @@ routerAdd(
       return e.json(200, {
         ok: true,
         configured: true,
-        somente_leitura: cfg.isReadonly,
-        escrita_habilitada: !cfg.isReadonly,
-        subdomain: `${cfg.subdomain}.kommo.com`,
-        sdr_phone: KOMMO_SDR_PHONE_TARGET,
+        somente_leitura: isReadonly,
+        escrita_habilitada: !isReadonly,
+        subdomain: `${subdomain}.kommo.com`,
+        sdr_phone: sdrPhoneTarget,
         items: items,
         total: items.length,
         consultado_em: new Date().toISOString(),
@@ -259,8 +291,10 @@ routerAdd(
         return e.json(403, { error: 'Acesso restrito a administradores.' })
       }
 
-      const cfg = getKommoConfig()
-      if (!cfg.isConfigured) {
+      const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
+      const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
+      const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
+      if (!subdomain || !accessToken) {
         return e.json(200, {
           ok: false,
           configured: false,
@@ -269,9 +303,20 @@ routerAdd(
         })
       }
 
-      const headers = getKommoHeaders(cfg.accessToken)
+      const baseUrl = apiBaseUrlSecret
+        ? apiBaseUrlSecret.endsWith('/')
+          ? apiBaseUrlSecret.slice(0, -1)
+          : apiBaseUrlSecret
+        : `https://${subdomain}.kommo.com`
+
+      const headers = {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      }
+
       const uRes = $http.send({
-        url: `${cfg.baseUrl}/api/v4/users?limit=250`,
+        url: `${baseUrl}/api/v4/users?limit=250`,
         method: 'GET',
         headers: headers,
         timeout: 6,
@@ -352,17 +397,20 @@ routerAdd(
       targetUser.set('kommo_user_nome', kommoUserNome)
       $app.save(targetUser)
 
-      auditKommoAction(
-        kommoUserId ? 'usuario_vinculado' : 'usuario_desvinculado',
-        {
+      try {
+        const colEv = $app.findCollectionByNameOrId('eventos_log')
+        const ev = new Record(colEv)
+        ev.set('usuario', authRecord.id)
+        ev.set('acao', kommoUserId ? 'kommo_usuario_vinculado' : 'kommo_usuario_desvinculado')
+        ev.set('detalhes', {
           target_user_id: userId,
           target_user_name: targetUser.getString('name'),
           kommo_user_id: kommoUserId,
           kommo_user_nome: kommoUserNome,
-          executado_por: authRecord.getString('name') || authRecord.id,
-        },
-        authRecord.id,
-      )
+          timestamp: new Date().toISOString(),
+        })
+        $app.save(ev)
+      } catch (_) {}
 
       return e.json(200, {
         ok: true,

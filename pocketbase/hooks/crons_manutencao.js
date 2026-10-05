@@ -475,28 +475,91 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
 })
 
 /**
- * Cron para sincronização periódica de fallback da linha SDR do Kommo CRM
- * Executa a cada 15 minutos e respeita estritamente o horário de expediente da equipe (7h às 17h no horário de Brasília)
+ * Cron para sincronização periódica contínua da linha SDR do Kommo CRM (35 99770-9232):
+ * - Executa a cada 2 minutos continuamente (* /2 * * * *)
+ * - No expediente (7h às 17h no horário de Brasília): roda a cada 2 min imperceptível
+ * - Fora do expediente (17h às 7h no horário de Brasília): aplica backoff para rodar apenas nos minutos múltiplos de 30
  */
-cronAdd('kommo_sdr_polling_fallback', '*/15 * * * *', () => {
+cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
   try {
     const now = new Date()
     const utcHours = now.getUTCHours()
+    const minutes = now.getUTCMinutes()
     // Horário de Brasília é UTC-3: 7h às 17h BRT corresponde a 10h às 20h UTC
     const brasiliaHours = (utcHours - 3 + 24) % 24
-    if (brasiliaHours < 7 || brasiliaHours >= 17) {
+    const dentroExpediente = brasiliaHours >= 7 && brasiliaHours < 17
+
+    // Fora do expediente: backoff maior (executa apenas nos minutos :00 e :30)
+    if (!dentroExpediente && minutes % 30 !== 0) {
       return
     }
 
-    const {
-      cleanPhoneNumber,
-      isSdrPhone,
-      KOMMO_SDR_PHONE_TARGET,
-      getKommoConfig,
-      getKommoHeaders,
-      getAdminUser,
-    } = require(`${__hooks}/kommo_client.js`)
+    const KOMMO_SDR_PHONE_TARGET = '35997709232'
+    const KOMMO_READONLY_OVERRIDE = false
 
+    function cleanPhoneNumber(phone) {
+      if (!phone) return ''
+      return String(phone).replace(/\D/g, '')
+    }
+
+    function isPhoneMatch(phoneA, phoneB) {
+      const cleanA = cleanPhoneNumber(phoneA)
+      const cleanB = cleanPhoneNumber(phoneB)
+      if (!cleanA || !cleanB) return false
+      if (cleanA === cleanB) return true
+      const shortA = cleanA.startsWith('55') && cleanA.length >= 12 ? cleanA.slice(2) : cleanA
+      const shortB = cleanB.startsWith('55') && cleanB.length >= 12 ? cleanB.slice(2) : cleanB
+      if (shortA === shortB) return true
+      if (shortA.length === 11 && shortB.length === 10) {
+        return shortA.slice(0, 2) === shortB.slice(0, 2) && shortA.slice(3) === shortB.slice(2)
+      }
+      if (shortB.length === 11 && shortA.length === 10) {
+        return shortB.slice(0, 2) === shortA.slice(0, 2) && shortB.slice(3) === shortA.slice(2)
+      }
+      return false
+    }
+
+    function isSdrPhone(phone) {
+      return isPhoneMatch(phone, KOMMO_SDR_PHONE_TARGET)
+    }
+
+    function getKommoConfig() {
+      const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
+      const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
+      const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
+      const readonlyEnv = $os.getenv('KOMMO_READONLY_MODE') || 'false'
+      const isReadonly = KOMMO_READONLY_OVERRIDE || readonlyEnv.toLowerCase() === 'true'
+      const baseUrl = apiBaseUrlSecret
+        ? apiBaseUrlSecret.endsWith('/')
+          ? apiBaseUrlSecret.slice(0, -1)
+          : apiBaseUrlSecret
+        : subdomain
+          ? `https://${subdomain}.kommo.com`
+          : ''
+      return {
+        subdomain: subdomain,
+        accessToken: accessToken,
+        baseUrl: baseUrl,
+        isConfigured: Boolean(subdomain && accessToken),
+        isReadonly: isReadonly,
+      }
+    }
+
+    function getKommoHeaders(accessToken) {
+      return {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      }
+    }
+
+    function getAdminUser() {
+      try {
+        return $app.findFirstRecordByData('users', 'role', 'admin')
+      } catch (_) {
+        return null
+      }
+    }
     const cfg = getKommoConfig()
     if (!cfg.isConfigured) return
 

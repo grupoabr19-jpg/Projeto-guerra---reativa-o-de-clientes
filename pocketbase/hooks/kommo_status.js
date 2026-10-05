@@ -7,17 +7,7 @@
  * GET /backend/v1/kommo/status
  *
  * Exclusivo para administradores.
- * Informa:
- * - Credenciais configuradas (sim/não)
- * - Modo somente-leitura (desativado / ativado)
- * - Telefone monitorado da linha SDR ((35) 99770-9232)
- * - Teste de ping contra a API do Kommo
- * - URL do Webhook a ser colada no Kommo
  */
-
-const { getKommoConfig, getKommoHeaders, KOMMO_SDR_PHONE_TARGET } = require(
-  `${__hooks}/kommo_client.js`,
-)
 
 routerAdd(
   'GET',
@@ -32,18 +22,37 @@ routerAdd(
         return e.json(403, { error: 'Acesso restrito ao administrador.' })
       }
 
-      const cfg = getKommoConfig()
+      const sdrPhoneTarget = '35997709232'
+      const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
+      const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
+      const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
+      const readonlyEnv = $os.getenv('KOMMO_READONLY_MODE') || 'false'
+      const isReadonly = readonlyEnv.toLowerCase() === 'true' // KOMMO_READONLY_OVERRIDE=false
+
+      const baseUrl = apiBaseUrlSecret
+        ? apiBaseUrlSecret.endsWith('/')
+          ? apiBaseUrlSecret.slice(0, -1)
+          : apiBaseUrlSecret
+        : subdomain
+          ? `https://${subdomain}.kommo.com`
+          : ''
+
+      const isConfigured = Boolean(subdomain && accessToken)
       let pingOk = false
       let pingLatencyMs = 0
       let pingError = ''
 
-      if (cfg.isConfigured) {
+      if (isConfigured) {
         const start = Date.now()
         try {
           const res = $http.send({
-            url: `${cfg.baseUrl}/api/v4/account`,
+            url: `${baseUrl}/api/v4/account`,
             method: 'GET',
-            headers: getKommoHeaders(cfg.accessToken),
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
             timeout: 5,
           })
           pingLatencyMs = Date.now() - start
@@ -57,7 +66,7 @@ routerAdd(
         }
       }
 
-      // Descobrir total de conversas WhatsApp SDR locais
+      // Total de conversas WhatsApp SDR locais
       let totalConversasSdr = 0
       try {
         const total = $app.countRecords('chat_conversas', "tipo = 'kommo_whatsapp'")
@@ -66,11 +75,11 @@ routerAdd(
 
       return e.json(200, {
         ok: true,
-        configured: cfg.isConfigured,
-        somente_leitura: cfg.isReadonly,
-        escrita_habilitada: !cfg.isReadonly,
-        subdomain: cfg.subdomain,
-        sdr_phone: KOMMO_SDR_PHONE_TARGET,
+        configured: isConfigured,
+        somente_leitura: isReadonly,
+        escrita_habilitada: !isReadonly,
+        subdomain: subdomain,
+        sdr_phone: sdrPhoneTarget,
         sdr_phone_formatted: '(35) 99770-9232',
         webhook_endpoint: '/backend/v1/kommo/webhook',
         ping_ok: pingOk,

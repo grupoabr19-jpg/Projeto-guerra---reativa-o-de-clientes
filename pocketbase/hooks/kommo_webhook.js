@@ -18,13 +18,61 @@
 
 routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
   try {
-    const {
-      cleanPhoneNumber,
-      isSdrPhone,
-      KOMMO_SDR_PHONE_TARGET,
-      auditKommoAction,
-      getAdminUser,
-    } = require(`${__hooks}/kommo_client.js`)
+    const KOMMO_SDR_PHONE_TARGET = '35997709232'
+
+    function cleanPhoneNumber(phone) {
+      if (!phone) return ''
+      return String(phone).replace(/\D/g, '')
+    }
+
+    function isPhoneMatch(phoneA, phoneB) {
+      const cleanA = cleanPhoneNumber(phoneA)
+      const cleanB = cleanPhoneNumber(phoneB)
+      if (!cleanA || !cleanB) return false
+      if (cleanA === cleanB) return true
+      const shortA = cleanA.startsWith('55') && cleanA.length >= 12 ? cleanA.slice(2) : cleanA
+      const shortB = cleanB.startsWith('55') && cleanB.length >= 12 ? cleanB.slice(2) : cleanB
+      if (shortA === shortB) return true
+      if (shortA.length === 11 && shortB.length === 10) {
+        return shortA.slice(0, 2) === shortB.slice(0, 2) && shortA.slice(3) === shortB.slice(2)
+      }
+      if (shortB.length === 11 && shortA.length === 10) {
+        return shortB.slice(0, 2) === shortA.slice(0, 2) && shortB.slice(3) === shortA.slice(2)
+      }
+      return false
+    }
+
+    function isSdrPhone(phone) {
+      return isPhoneMatch(phone, KOMMO_SDR_PHONE_TARGET)
+    }
+
+    function auditKommoAction(action, details, userId) {
+      try {
+        console.log(`[kommo_webhook] [AUDIT] ${action}: ` + JSON.stringify(details))
+        const colEv = $app.findCollectionByNameOrId('eventos_log')
+        const ev = new Record(colEv)
+        if (userId) {
+          ev.set('usuario', userId)
+        }
+        ev.set('acao', `kommo_${action}`)
+        ev.set('detalhes', {
+          action: action,
+          ...details,
+          timestamp: new Date().toISOString(),
+        })
+        $app.save(ev)
+      } catch (err) {
+        console.log('[kommo_webhook] Falha ao registrar log de auditoria: ' + err.message)
+      }
+    }
+
+    function getAdminUser() {
+      try {
+        return $app.findFirstRecordByData('users', 'role', 'admin')
+      } catch (_) {
+        return null
+      }
+    }
 
     const rawBody = e.requestInfo().body || {}
     console.log(
