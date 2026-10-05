@@ -210,9 +210,17 @@ export default function HubAtendimentoPage() {
   // ESTADOS: BARRA FIXA DE CONTATOS (ESTILO WHATSAPP)
   // ==========================================
   const [buscaContatoBarra, setBuscaContatoBarra] = useState('')
-  const [filtroTipoContato, setFiltroTipoContato] = useState<'todos' | 'crm' | 'equipe'>('todos')
+  const [filtroTipoContato, setFiltroTipoContato] = useState<'todos' | 'crm' | 'equipe'>('crm')
   const [contatoSelecionadoId, setContatoSelecionadoId] = useState<string | null>(null)
   const [todosUsuarios, setTodosUsuarios] = useState<User[]>([])
+
+  // ==========================================
+  // ESTADOS: MODO SUPERVISÃO DE CONVERSAS (EXCLUSIVO ADMIN)
+  // ==========================================
+  // Permite ao admin filtrar e ler conversas de qualquer vendedor em modo somente-leitura
+  const [vendedorSupervisionadoId, setVendedorSupervisionadoId] = useState<string>('')
+  const [conversasSupervisaoVendedor, setConversasSupervisaoVendedor] = useState<ChatConversa[]>([])
+  const [loadingSupervisao, setLoadingSupervisao] = useState(false)
 
   // ==========================================
   // ESTADOS: MODAL DE AVISO DO ADMIN PRESERVADO
@@ -328,8 +336,11 @@ export default function HubAtendimentoPage() {
   useEffect(() => {
     carregarFunis()
     carregarKommo()
-    carregarConversas()
   }, [user])
+
+  useEffect(() => {
+    carregarConversas()
+  }, [carregarConversas])
 
   useEffect(() => {
     if (funilAtivoId) {
@@ -858,11 +869,33 @@ export default function HubAtendimentoPage() {
     }
   }
 
+  // Identificar se a conversa ativa está em modo de supervisão (admin lendo conversa de terceiro ou vendedor selecionado)
+  const vendedorSupervisionadoObj = todosUsuarios.find((u) => u.id === vendedorSupervisionadoId)
+
+  const isModoSupervisao = Boolean(
+    user?.role === 'admin' &&
+    (vendedorSupervisionadoId ||
+      (activeConversa?.tipo === 'dm' &&
+        Array.isArray(activeConversa.participantes) &&
+        !activeConversa.participantes.includes(user.id))),
+  )
+
+  // Nome do vendedor supervisionado para o banner
+  const nomeVendedorSupervisao =
+    vendedorSupervisionadoObj?.name ||
+    vendedorSupervisionadoObj?.email ||
+    (activeConversa?.tipo === 'dm'
+      ? activeConversa.titulo?.replace('&', 'e')
+      : 'Vendedor Selecionado')
+
   // Formatação de DM para exibição estilo WhatsApp
   const getDmDisplay = (conv: ChatConversa) => {
     const parts = conv.titulo?.split('&').map((s) => s.trim()) || []
     const myName = (user?.name || user?.email || '').trim()
-    const otherName = parts.find((p) => p !== myName) || parts[0] || 'Colaborador'
+    // Se o admin não participa da conversa, mostra os participantes da DM
+    const otherName =
+      parts.find((p) => p !== myName) ||
+      (parts.length > 1 ? `${parts[0]} e ${parts[1]}` : parts[0] || 'Colaborador')
 
     const otherId = (conv.participantes || []).find((id) => id !== user?.id)
     const otherItem =
@@ -887,7 +920,7 @@ export default function HubAtendimentoPage() {
   const contatosExternos: ContatoHubItem[] = []
   const contatosInternos: ContatoHubItem[] = []
 
-  // 1. Contatos Externos (Kommo CRM - somente-leitura)
+  // 1. Contatos Externos (Kommo CRM — clientes e leads, badge azul #253575)
   if (kommoData?.items) {
     for (const item of kommoData.items) {
       contatosExternos.push({
@@ -898,17 +931,29 @@ export default function HubAtendimentoPage() {
         telefone: item.telefone,
         email: item.email,
         canal: item.canal || 'Kommo CRM',
-        badge: item.status_nome,
+        badge: item.status_nome || 'Kommo',
         initials: (item.nome_contato || item.nome_lead || 'KM').slice(0, 2).toUpperCase(),
         kommoRef: item,
       })
     }
   }
 
-  // 2. Contatos Internos (Equipe / Chat / Canais)
+  // 2. Contatos Internos (Equipe do sistema + canais de rota/Geral, badge esmeralda)
   // 2.1 Canais e DMs já existentes
   const userIdsComDm = new Set<string>()
-  for (const c of conversas) {
+
+  // Se o admin selecionou um vendedor para supervisão, filtramos as conversas pelo vendedor selecionado
+  const conversasFiltradasPorSupervisao = conversas.filter((c) => {
+    if (!vendedorSupervisionadoId) return true
+    // Canais gerais/rota continuam acessíveis ou são filtrados se rota coincidir
+    if (c.tipo === 'geral' || c.tipo === 'canal_rota') return true
+    if (c.tipo === 'dm') {
+      return Array.isArray(c.participantes) && c.participantes.includes(vendedorSupervisionadoId)
+    }
+    return true
+  })
+
+  for (const c of conversasFiltradasPorSupervisao) {
     const isDm = c.tipo === 'dm'
     const dmInfo = isDm ? getDmDisplay(c) : null
     const nome = isDm ? dmInfo?.name || 'DM' : c.titulo || 'Canal'
@@ -929,17 +974,20 @@ export default function HubAtendimentoPage() {
         (c.tipo === 'geral' ? 'Canal Geral de comunicados' : 'Canal por rota'),
       canal: isDm ? '1:1 Equipe' : 'Canal Interno',
       unreadCount: unread,
+      badge: c.tipo === 'geral' ? 'Geral' : c.tipo === 'canal_rota' ? 'Rota' : 'Equipe',
       isOnline: isDm ? dmInfo?.isOnline : undefined,
       initials: isDm ? dmInfo?.initials || 'DM' : '#',
       conversaRef: c,
     })
   }
 
-  // 2.2 Visão de supervisão do Admin: listar colaboradores da equipe mesmo sem DM iniciada
+  // 2.2 Visão de equipe / supervisão do Admin: listar colaboradores da equipe mesmo sem DM iniciada
   // permitindo que o admin filtre e abra a conversa de qualquer vendedor/operador diretamente
   if (user?.role === 'admin' && todosUsuarios.length > 0) {
     for (const colab of todosUsuarios) {
       if (colab.id === user.id) continue
+      // Se há um vendedor sob supervisão selecionado e não for ele, ignorar
+      if (vendedorSupervisionadoId && colab.id !== vendedorSupervisionadoId) continue
       if (userIdsComDm.has(colab.id)) continue // Já possui DM na lista
 
       const otherItem = presenceData?.users
@@ -1215,9 +1263,9 @@ export default function HubAtendimentoPage() {
          * "a barra que ficará sempre aberta, deve ser a dos contatos"
          * ======================================================================= */}
         <div className="lg:col-span-4 xl:col-span-3">
-          <Card className="border-slate-200/90 shadow-sm flex flex-col h-[740px] overflow-hidden bg-white">
+          <Card className="border-slate-200/90 shadow-sm flex flex-col h-[740px] overflow-hidden bg-slate-100/90">
             {/* Header da Barra de Contatos */}
-            <div className="p-3.5 bg-slate-50/90 border-b border-slate-200 space-y-2.5">
+            <div className="p-3.5 bg-slate-50/95 border-b border-slate-200/90 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <div className="h-7 w-7 rounded-lg bg-[#253575] text-white flex items-center justify-center font-bold">
@@ -1264,71 +1312,119 @@ export default function HubAtendimentoPage() {
                 )}
               </div>
 
-              {/* Filtro Rápido com separação inequívoca: Todos, Externos (Kommo CRM) e Interna (Equipe) */}
-              <div className="grid grid-cols-3 gap-1 text-[11px]">
-                <button
-                  onClick={() => setFiltroTipoContato('todos')}
-                  className={`px-1.5 py-1 rounded-md font-semibold text-center transition-all ${
-                    filtroTipoContato === 'todos'
-                      ? 'bg-[#253575] text-white shadow-2xs'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                  }`}
-                  title="Todos os contatos unificados"
-                >
-                  Todos ({contatosUnificados.length})
-                </button>
-                <button
-                  onClick={() => setFiltroTipoContato('crm')}
-                  className={`px-1.5 py-1 rounded-md font-semibold text-center transition-all truncate flex items-center justify-center gap-1 ${
-                    filtroTipoContato === 'crm'
-                      ? 'bg-blue-700 text-white shadow-2xs'
-                      : 'bg-blue-50/60 border border-blue-200 text-blue-900 hover:bg-blue-100/70'
-                  }`}
-                  title="Contatos Externos (Clientes e Leads do Kommo CRM)"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" />
-                  <span className="truncate">Externos ({contatosExternos.length})</span>
-                </button>
-                <button
-                  onClick={() => setFiltroTipoContato('equipe')}
-                  className={`px-1.5 py-1 rounded-md font-semibold text-center transition-all truncate flex items-center justify-center gap-1 ${
-                    filtroTipoContato === 'equipe'
-                      ? 'bg-emerald-700 text-white shadow-2xs'
-                      : 'bg-emerald-50/60 border border-emerald-200 text-emerald-900 hover:bg-emerald-100/70'
-                  }`}
-                  title="Contatos Internos (Equipe Guerra: operadores, líderes, supervisores, canais)"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
-                  <span className="truncate">Interna ({contatosInternos.length})</span>
-                </button>
+              {/* Abas / Filtros de Separação Explícita: Externos (Kommo CRM) e Internos (Equipe / Canais) */}
+              <div className="flex flex-col gap-1.5">
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-200/60 rounded-xl">
+                  {/* Aba EXTERNOS (Kommo CRM) — Badge azul #253575 dominante */}
+                  <button
+                    type="button"
+                    onClick={() => setFiltroTipoContato('crm')}
+                    className={`flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      filtroTipoContato === 'crm'
+                        ? 'bg-[#253575] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-[#253575] hover:bg-white/60'
+                    }`}
+                    title="Contatos Externos (Clientes e Leads Kommo CRM)"
+                  >
+                    <span
+                      className={`h-2 w-2 rounded-full shrink-0 ${
+                        filtroTipoContato === 'crm' ? 'bg-[#F18800]' : 'bg-[#253575]'
+                      }`}
+                    />
+                    <span className="truncate">Externos</span>
+                    <Badge
+                      className={`text-[10px] px-1.5 py-0 h-4 font-mono font-bold shrink-0 ${
+                        filtroTipoContato === 'crm'
+                          ? 'bg-white/20 text-white'
+                          : 'bg-[#253575] text-white'
+                      }`}
+                    >
+                      {contatosExternos.length}
+                    </Badge>
+                  </button>
+
+                  {/* Aba INTERNOS (Equipe + Canais) — Badge esmeralda */}
+                  <button
+                    type="button"
+                    onClick={() => setFiltroTipoContato('equipe')}
+                    className={`flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      filtroTipoContato === 'equipe'
+                        ? 'bg-emerald-700 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-emerald-800 hover:bg-white/60'
+                    }`}
+                    title="Contatos Internos (Equipe do sistema, DMs 1:1 e Canais de Rota / Geral)"
+                  >
+                    <span
+                      className={`h-2 w-2 rounded-full shrink-0 ${
+                        filtroTipoContato === 'equipe' ? 'bg-emerald-300' : 'bg-emerald-600'
+                      }`}
+                    />
+                    <span className="truncate">Internos</span>
+                    <Badge
+                      className={`text-[10px] px-1.5 py-0 h-4 font-mono font-bold shrink-0 ${
+                        filtroTipoContato === 'equipe'
+                          ? 'bg-white/20 text-white'
+                          : 'bg-emerald-600 text-white'
+                      }`}
+                    >
+                      {contatosInternos.length}
+                    </Badge>
+                  </button>
+                </div>
+
+                {/* Subfiltro Rápido opcional para "Ver Todos Agrupados" */}
+                <div className="flex items-center justify-between px-1 text-[11px] text-slate-500">
+                  <span className="text-[10px] uppercase tracking-wider font-semibold">
+                    {filtroTipoContato === 'crm'
+                      ? 'Clientes & Leads Kommo'
+                      : filtroTipoContato === 'equipe'
+                        ? 'Equipe & Canais do Sistema'
+                        : 'Lista Completa'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFiltroTipoContato((prev) => (prev === 'todos' ? 'crm' : 'todos'))
+                    }
+                    className={`text-[10px] font-semibold underline underline-offset-2 transition-colors ${
+                      filtroTipoContato === 'todos'
+                        ? 'text-[#253575] font-bold'
+                        : 'text-slate-400 hover:text-slate-700'
+                    }`}
+                  >
+                    {filtroTipoContato === 'todos'
+                      ? 'Voltar para Abas'
+                      : `Ver Todos (${contatosUnificados.length})`}
+                  </button>
+                </div>
               </div>
             </div>
 
             {/* Lista com Rolagem dos Contatos / Leads com Agrupamento Visual */}
-            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 p-1.5 space-y-1">
+            <div className="flex-1 overflow-y-auto p-2 space-y-2 bg-slate-100/90">
               {loadingConversas || loadingKommo ? (
                 <div className="flex flex-col items-center justify-center h-48 text-slate-400 space-y-2 text-xs">
                   <RefreshCw className="h-4 w-4 animate-spin text-[#253575]" />
                   <span>Carregando contatos...</span>
                 </div>
               ) : contatosFiltrados.length === 0 ? (
-                <div className="p-6 text-center text-xs text-slate-400 space-y-1">
-                  <p>Nenhum contato encontrado.</p>
+                <div className="p-6 text-center text-xs text-slate-400 space-y-1 bg-white/60 rounded-xl border border-dashed border-slate-300">
+                  <p className="font-semibold text-slate-600">Nenhum contato encontrado.</p>
                   <p className="text-[11px] text-slate-400">Ajuste o filtro ou a busca acima.</p>
                 </div>
               ) : (
                 <>
-                  {/* SEÇÃO: CONTATOS EXTERNOS (KOMMO CRM) — visível em 'todos' ou 'crm' */}
+                  {/* SEÇÃO: CONTATOS EXTERNOS (KOMMO CRM) — Clientes/Leads */}
                   {(filtroTipoContato === 'todos' || filtroTipoContato === 'crm') &&
                     externosFiltrados.length > 0 && (
-                      <div className="space-y-1 pt-1 first:pt-0">
+                      <div className="space-y-1.5 pt-0.5 first:pt-0">
                         {filtroTipoContato === 'todos' && (
-                          <div className="px-2 py-1 text-[10px] font-bold text-blue-900 bg-blue-50/70 border border-blue-100 rounded-md flex items-center justify-between uppercase tracking-wider">
+                          <div className="px-2.5 py-1 text-[10px] font-bold text-white bg-[#253575] rounded-lg flex items-center justify-between uppercase tracking-wider shadow-2xs">
                             <span className="flex items-center gap-1.5">
-                              <span className="h-2 w-2 rounded-full bg-blue-600" />
-                              Contatos Externos (Kommo CRM)
+                              <span className="h-2 w-2 rounded-full bg-[#F18800]" />
+                              Externos (Kommo CRM — Clientes / Leads)
                             </span>
-                            <span className="font-mono text-blue-700 font-semibold">
+                            <span className="font-mono bg-white/20 px-1.5 py-0.2 rounded text-white font-semibold">
                               {externosFiltrados.length}
                             </span>
                           </div>
@@ -1346,18 +1442,18 @@ export default function HubAtendimentoPage() {
                             <div
                               key={contato.id}
                               onClick={() => handleSelecionarContatoBarra(contato)}
-                              className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer group flex items-start space-x-2.5 border ${
+                              className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer group flex items-start space-x-2.5 border shadow-2xs ${
                                 isSelected
-                                  ? 'bg-[#253575] text-white border-[#253575] shadow-xs'
-                                  : 'bg-white text-slate-800 border-transparent hover:bg-blue-50/40 hover:border-blue-200'
+                                  ? 'bg-[#253575] text-white border-[#253575] shadow-xs ring-2 ring-[#253575]/20'
+                                  : 'bg-white text-slate-800 border-slate-200/90 hover:bg-blue-50/60 hover:border-blue-300 hover:shadow-xs'
                               }`}
                             >
                               <div className="relative shrink-0 mt-0.5">
                                 <div
-                                  className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold ${
+                                  className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
                                     isSelected
                                       ? 'bg-white/20 text-white'
-                                      : 'bg-blue-100 text-[#253575] border border-blue-200'
+                                      : 'bg-[#253575]/10 text-[#253575] border border-[#253575]/20 font-black group-hover:bg-[#253575]/15'
                                   }`}
                                 >
                                   {contato.initials}
@@ -1368,20 +1464,23 @@ export default function HubAtendimentoPage() {
                                 <div className="flex items-center justify-between gap-1">
                                   <span
                                     className={`text-xs font-bold truncate ${
-                                      isSelected ? 'text-white' : 'text-slate-900'
+                                      isSelected
+                                        ? 'text-white'
+                                        : 'text-slate-900 group-hover:text-[#253575]'
                                     }`}
                                   >
                                     {contato.nome}
                                   </span>
-                                  <span
-                                    className={`text-[9px] px-1 py-0 rounded font-semibold uppercase shrink-0 ${
+                                  {/* Badge Azul #253575 dos contatos externos Kommo CRM */}
+                                  <Badge
+                                    className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
                                       isSelected
-                                        ? 'bg-blue-400/20 text-blue-100 border border-blue-300/30'
-                                        : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                        ? 'bg-white/25 text-white border-transparent'
+                                        : 'bg-[#253575] text-white hover:bg-[#253575]'
                                     }`}
                                   >
-                                    Kommo
-                                  </span>
+                                    {contato.badge || 'Kommo'}
+                                  </Badge>
                                 </div>
 
                                 <p
@@ -1394,7 +1493,7 @@ export default function HubAtendimentoPage() {
                                     'Sem telefone cadastrado'}
                                 </p>
 
-                                <div className="flex items-center justify-between gap-1 mt-1 text-[10px]">
+                                <div className="flex items-center justify-between gap-1 mt-1.5 text-[10px]">
                                   <span
                                     className={`font-medium ${
                                       isSelected ? 'text-slate-300' : 'text-slate-400'
@@ -1407,10 +1506,10 @@ export default function HubAtendimentoPage() {
                                     {temCardVinculado ? (
                                       <Badge
                                         variant="outline"
-                                        className={`text-[9px] px-1 py-0 h-3.5 border ${
+                                        className={`text-[9px] px-1.5 py-0 h-4 border ${
                                           isSelected
                                             ? 'bg-emerald-400/20 text-emerald-200 border-emerald-300/40'
-                                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                            : 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold'
                                         }`}
                                       >
                                         Card no Funil ✓
@@ -1421,12 +1520,12 @@ export default function HubAtendimentoPage() {
                                           e.stopPropagation()
                                           handleAdicionarContatoAoFunil(contato)
                                         }}
-                                        className={`text-[9px] font-semibold px-1 py-0 rounded transition-colors ${
+                                        className={`text-[9px] font-semibold px-1.5 py-0.5 rounded transition-colors ${
                                           isSelected
                                             ? 'bg-white/20 text-white hover:bg-white/30'
-                                            : 'bg-slate-100 text-[#253575] hover:bg-slate-200'
+                                            : 'bg-slate-100 text-[#253575] hover:bg-slate-200 border border-slate-200'
                                         }`}
-                                        title="Criar card no pipeline deste contato"
+                                        title="Criar card no pipeline deste contato externo"
                                       >
                                         + Funil
                                       </button>
@@ -1440,39 +1539,44 @@ export default function HubAtendimentoPage() {
                       </div>
                     )}
 
-                  {/* SEÇÃO: CONTATOS INTERNOS (EQUIPE / SUPERVISÃO) — visível em 'todos' ou 'equipe' */}
+                  {/* SEÇÃO: CONTATOS INTERNOS (EQUIPE + CANAIS) */}
                   {(filtroTipoContato === 'todos' || filtroTipoContato === 'equipe') &&
                     internosFiltrados.length > 0 && (
-                      <div className="space-y-1 pt-2">
+                      <div className="space-y-1.5 pt-1">
                         {filtroTipoContato === 'todos' && (
-                          <div className="px-2 py-1 text-[10px] font-bold text-emerald-900 bg-emerald-50/70 border border-emerald-100 rounded-md flex items-center justify-between uppercase tracking-wider">
+                          <div className="px-2.5 py-1 text-[10px] font-bold text-white bg-emerald-700 rounded-lg flex items-center justify-between uppercase tracking-wider shadow-2xs">
                             <span className="flex items-center gap-1.5">
-                              <span className="h-2 w-2 rounded-full bg-emerald-600" />
-                              Contatos Internos (Equipe & Supervisão)
+                              <span className="h-2 w-2 rounded-full bg-emerald-300" />
+                              Internos (Equipe Guerra & Canais)
                             </span>
-                            <span className="font-mono text-emerald-700 font-semibold">
+                            <span className="font-mono bg-white/20 px-1.5 py-0.2 rounded text-white font-semibold">
                               {internosFiltrados.length}
                             </span>
                           </div>
                         )}
                         {internosFiltrados.map((contato) => {
                           const isSelected = contatoSelecionadoId === contato.id
+                          const hasUnread = Boolean(contato.unreadCount && contato.unreadCount > 0)
                           return (
                             <div
                               key={contato.id}
                               onClick={() => handleSelecionarContatoBarra(contato)}
-                              className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer group flex items-start space-x-2.5 border ${
+                              className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer group flex items-start space-x-2.5 border shadow-2xs ${
                                 isSelected
-                                  ? 'bg-[#253575] text-white border-[#253575] shadow-xs'
-                                  : 'bg-white text-slate-800 border-transparent hover:bg-emerald-50/40 hover:border-emerald-200'
+                                  ? 'bg-[#253575] text-white border-[#253575] shadow-xs ring-2 ring-[#253575]/20'
+                                  : hasUnread
+                                    ? 'bg-amber-50/80 text-slate-800 border-amber-300 hover:bg-amber-50 hover:border-amber-400 hover:shadow-xs'
+                                    : 'bg-white text-slate-800 border-slate-200/90 hover:bg-emerald-50/50 hover:border-emerald-300 hover:shadow-xs'
                               }`}
                             >
                               <div className="relative shrink-0 mt-0.5">
                                 <div
-                                  className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold ${
+                                  className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
                                     isSelected
                                       ? 'bg-white/20 text-white'
-                                      : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
+                                      : hasUnread
+                                        ? 'bg-[#F18800]/15 text-[#F18800] border border-[#F18800]/30 font-black'
+                                        : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                                   }`}
                                 >
                                   {contato.initials}
@@ -1481,7 +1585,7 @@ export default function HubAtendimentoPage() {
                                   <span
                                     className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ${
                                       isSelected ? 'ring-[#253575]' : 'ring-white'
-                                    } ${contato.isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                                    } ${contato.isOnline ? 'bg-emerald-400' : 'bg-slate-300'}`}
                                     title={contato.isOnline ? 'Online' : 'Offline'}
                                   />
                                 )}
@@ -1491,40 +1595,51 @@ export default function HubAtendimentoPage() {
                                 <div className="flex items-center justify-between gap-1">
                                   <span
                                     className={`text-xs font-bold truncate ${
-                                      isSelected ? 'text-white' : 'text-slate-900'
+                                      isSelected
+                                        ? 'text-white'
+                                        : 'text-slate-900 group-hover:text-[#253575]'
                                     }`}
                                   >
                                     {contato.nome}
                                   </span>
-                                  {contato.unreadCount && contato.unreadCount > 0 ? (
-                                    <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                                  {hasUnread ? (
+                                    <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center shrink-0 shadow-2xs">
                                       {contato.unreadCount}
                                     </span>
                                   ) : (
-                                    <span
-                                      className={`text-[9px] px-1 py-0 rounded font-semibold uppercase shrink-0 ${
+                                    /* Badge dos contatos internos */
+                                    <Badge
+                                      className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
                                         isSelected
-                                          ? 'bg-emerald-400/20 text-emerald-100 border border-emerald-300/30'
-                                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                          ? 'bg-white/25 text-white border-transparent'
+                                          : 'bg-emerald-600 text-white hover:bg-emerald-600'
                                       }`}
                                     >
-                                      {contato.badge || 'Equipe'}
-                                    </span>
+                                      {contato.badge || 'Interno'}
+                                    </Badge>
                                   )}
                                 </div>
 
                                 <p
                                   className={`text-[11px] truncate mt-0.5 ${
-                                    isSelected ? 'text-slate-200' : 'text-slate-500'
+                                    isSelected
+                                      ? 'text-slate-200'
+                                      : hasUnread
+                                        ? 'text-slate-700 font-medium'
+                                        : 'text-slate-500'
                                   }`}
                                 >
                                   {contato.subtitulo || 'Conversa interna'}
                                 </p>
 
-                                <div className="flex items-center justify-between gap-1 mt-1 text-[10px]">
+                                <div className="flex items-center justify-between gap-1 mt-1.5 text-[10px]">
                                   <span
                                     className={`font-medium ${
-                                      isSelected ? 'text-slate-300' : 'text-slate-400'
+                                      isSelected
+                                        ? 'text-slate-300'
+                                        : hasUnread
+                                          ? 'text-[#F18800] font-semibold'
+                                          : 'text-slate-400'
                                     }`}
                                   >
                                     {contato.canal}
@@ -1532,11 +1647,11 @@ export default function HubAtendimentoPage() {
 
                                   {contato.userId && !contato.conversaRef && (
                                     <span
-                                      className={`text-[9px] font-medium ${
-                                        isSelected ? 'text-amber-200' : 'text-slate-500'
+                                      className={`text-[9px] font-semibold ${
+                                        isSelected ? 'text-amber-200' : 'text-emerald-800'
                                       }`}
                                     >
-                                      Supervisão: clique para abrir
+                                      {user?.role === 'admin' ? 'Supervisionar' : 'Iniciar DM'}
                                     </span>
                                   )}
                                 </div>
@@ -1551,7 +1666,7 @@ export default function HubAtendimentoPage() {
             </div>
 
             {/* Rodapé da Barra com Status */}
-            <div className="p-2.5 bg-slate-50 border-t border-slate-200 text-[10px] text-slate-500 flex items-center justify-between shrink-0">
+            <div className="p-2.5 bg-slate-50/95 border-t border-slate-200/90 text-[10px] text-slate-500 flex items-center justify-between shrink-0">
               <span>{contatosFiltrados.length} contatos visíveis</span>
               <span className="font-semibold text-slate-700">Barra Fixa</span>
             </div>
@@ -1980,10 +2095,10 @@ export default function HubAtendimentoPage() {
                                   draggable
                                   onDragStart={(e) => handleDragStart(e, card.id)}
                                   onClick={() => handleSelecionarCardPipeline(card)}
-                                  className={`p-3 rounded-xl border bg-white shadow-2xs transition-all cursor-grab active:cursor-grabbing space-y-2 relative group hover:border-[#253575]/50 hover:shadow-xs ${
+                                  className={`p-3 rounded-xl border bg-white shadow-xs transition-all cursor-grab active:cursor-grabbing space-y-2 relative group hover:border-[#253575] hover:shadow-md ${
                                     isDestacado
-                                      ? 'border-[#253575] ring-2 ring-[#253575]/30 bg-blue-50/30'
-                                      : 'border-slate-200'
+                                      ? 'border-[#253575] ring-2 ring-[#253575]/40 bg-blue-50/50 shadow-sm'
+                                      : 'border-slate-200/90'
                                   } ${isArrastando ? 'opacity-40' : 'opacity-100'}`}
                                 >
                                   {/* Título e Ações Rápidas do Card */}
