@@ -217,6 +217,9 @@ export default function HubAtendimentoPage() {
   // ESTADOS: BARRA FIXA DE CONTATOS (ESTILO WHATSAPP)
   // ==========================================
   const [buscaContatoBarra, setBuscaContatoBarra] = useState('')
+  const [filtroSdrStatus, setFiltroSdrStatus] = useState<'novos' | 'transferidos' | 'todos_sdr'>(
+    'novos',
+  )
   const [filtroTipoContato, setFiltroTipoContato] = useState<'todos' | 'crm' | 'equipe'>('crm')
   const [contatoSelecionadoId, setContatoSelecionadoId] = useState<string | null>(null)
   const [todosUsuarios, setTodosUsuarios] = useState<User[]>([])
@@ -1065,6 +1068,18 @@ export default function HubAtendimentoPage() {
   const conversasKommoSdr = conversas.filter((c) => c.tipo === 'kommo_whatsapp')
   for (const c of conversasKommoSdr) {
     const unread = unreadCounts.by_conversation[c.id] || 0
+    const respUser = c.responsavel_id ? todosUsuarios.find((u) => u.id === c.responsavel_id) : null
+    const respNome = respUser ? respUser.name || respUser.email : ''
+
+    let badgeText = 'Novo Lead SDR'
+    if (c.status_sdr === 're_superficie') {
+      badgeText = 'Sem resposta do vendedor (+24h)'
+    } else if (c.status_sdr === 'transferido') {
+      badgeText = respNome ? `Vendedor: ${respNome}` : 'Transferido'
+    } else if (c.responsavel_id && c.responsavel_id !== user?.id && respNome) {
+      badgeText = `Vendedor: ${respNome}`
+    }
+
     contatosExternos.push({
       id: c.id,
       tipo: 'kommo',
@@ -1072,7 +1087,7 @@ export default function HubAtendimentoPage() {
       subtitulo: c.ultima_mensagem_texto || `Linha SDR (${c.kommo_phone || '35 99770-9232'})`,
       telefone: c.kommo_phone || '35 99770-9232',
       canal: 'WhatsApp SDR (35 99770-9232)',
-      badge: 'WhatsApp SDR',
+      badge: badgeText,
       unreadCount: unread,
       initials: (c.titulo || 'WS').slice(0, 2).toUpperCase(),
       conversaRef: c,
@@ -1082,14 +1097,19 @@ export default function HubAtendimentoPage() {
   // 1.2 Leads recentes do Kommo CRM
   if (kommoData?.items) {
     for (const item of kommoData.items) {
-      // Evitar duplicar se já houver conversa ativa com o mesmo telefone ou lead
-      const jaExisteConversa = conversasKommoSdr.some(
+      // Cruzar se já existe conversa ativa para este lead ou telefone
+      const conversaExistente = conversasKommoSdr.find(
         (c) =>
           (c.kommo_lead_id && c.kommo_lead_id === item.id) ||
           (item.telefone && c.kommo_phone && c.kommo_phone.includes(item.telefone.slice(-8))),
       )
-      if (jaExisteConversa) continue
 
+      if (conversaExistente) {
+        // Se já está na lista via conversaRef, não duplica
+        continue
+      }
+
+      // CORREÇÃO 1 — Causa B: contato do recent-activity sempre resolve conversaRef se existir
       contatosExternos.push({
         id: `kommo_${item.id}`,
         tipo: 'kommo',
@@ -1203,8 +1223,33 @@ export default function HubAtendimentoPage() {
     )
   }
 
-  const externosFiltrados = contatosExternos.filter(matchesBusca)
+  const externosFiltrados = contatosExternos.filter(matchesBusca).filter((c) => {
+    if (filtroSdrStatus === 'todos_sdr') return true
+    const sdrStatus = c.conversaRef?.status_sdr
+    const isTransferido = sdrStatus === 'transferido'
+    const isReSuperficie = sdrStatus === 're_superficie'
+
+    if (filtroSdrStatus === 'novos') {
+      // Mostra novos leads SDR e re-superfície (+24h sem resposta)
+      return !isTransferido || isReSuperficie
+    }
+    if (filtroSdrStatus === 'transferidos') {
+      // Mostra leads transferidos para vendedores em andamento
+      return isTransferido
+    }
+    return true
+  })
+
   const internosFiltrados = contatosInternos.filter(matchesBusca)
+
+  // Contadores para as sub-abas SDR
+  const contagemNovosSdr = contatosExternos.filter((c) => {
+    const s = c.conversaRef?.status_sdr
+    return s !== 'transferido'
+  }).length
+  const contagemTransferidosSdr = contatosExternos.filter(
+    (c) => c.conversaRef?.status_sdr === 'transferido',
+  ).length
 
   // Filtragem conforme o botão ativo: 'todos', 'crm' (externos) ou 'equipe' (internos)
   const contatosFiltrados =
@@ -1218,9 +1263,82 @@ export default function HubAtendimentoPage() {
   const handleSelecionarContatoBarra = async (contato: ContatoHubItem) => {
     setContatoSelecionadoId(contato.id)
 
-    // Se for conversa já existente do chat, abre
+    // CORREÇÃO 1 — Causa B: se for contato Kommo sem conversaRef, resolver/criar registro em chat_conversas
     if (contato.conversaRef) {
       await handleSelecionarConversa(contato.conversaRef)
+    } else if (contato.tipo === 'kommo') {
+      try {
+        const phone = contato.telefone || contato.kommoRef?.telefone || ''
+        const cleanPhone = phone.replace(/\D/g, '')
+        const leadId = contato.kommoRef?.id || contato.id.replace('kommo_', '')
+        const nome = contato.nome || 'Cliente WhatsApp SDR'
+
+        // 1. Procurar no PocketBase se já existe registro
+        let convRecord: ChatConversa | null = null
+        try {
+          if (cleanPhone && cleanPhone.length >= 8) {
+            const suffix = cleanPhone.length >= 9 ? cleanPhone.slice(-9) : cleanPhone.slice(-8)
+            convRecord = await pb
+              .collection('chat_conversas')
+              .getFirstListItem<ChatConversa>(
+                `tipo = 'kommo_whatsapp' && (kommo_phone_clean ~ '${suffix}' || kommo_lead_id = '${leadId}')`,
+              )
+          } else if (leadId) {
+            convRecord = await pb
+              .collection('chat_conversas')
+              .getFirstListItem<ChatConversa>(
+                `tipo = 'kommo_whatsapp' && kommo_lead_id = '${leadId}'`,
+              )
+          }
+        } catch {
+          /* intentionally ignored */
+        }
+
+        // 2. Se não existir, criar registro em chat_conversas vinculado ao admin
+        if (!convRecord) {
+          const respKommoId = contato.kommoRef?.responsible_user_id || ''
+          const vendedorObj = respKommoId
+            ? todosUsuarios.find((u) => u.kommo_user_id === respKommoId)
+            : null
+          const respId =
+            vendedorObj && (vendedorObj.role === 'operador' || vendedorObj.role === 'lider')
+              ? vendedorObj.id
+              : user?.id || ''
+          const statusSdr = respId && respId !== user?.id ? 'transferido' : 'novo_lead'
+
+          const parts = [user?.id || '']
+          if (respId && !parts.includes(respId)) parts.push(respId)
+
+          convRecord = await pb.collection('chat_conversas').create<ChatConversa>({
+            tipo: 'kommo_whatsapp',
+            titulo: `${nome} (WhatsApp SDR)`,
+            participantes: parts.filter(Boolean),
+            kommo_phone: phone || '35 99770-9232',
+            kommo_phone_clean: cleanPhone || '35997709232',
+            kommo_lead_id: leadId,
+            responsavel_id: respId,
+            status_sdr: statusSdr,
+            transferido_em: statusSdr === 'transferido' ? new Date().toISOString() : '',
+            total_mensagens: 0,
+          })
+
+          // Sincronizar mensagens históricas em segundo plano
+          triggerKommoSdrSync().catch(() => {})
+        }
+
+        // 3. Atualizar referência e selecionar conversa
+        contato.conversaRef = convRecord
+        await carregarConversas()
+        await handleSelecionarConversa(convRecord)
+        setHubTab('conversa')
+      } catch (err) {
+        console.error('Erro ao resolver conversa Kommo:', err)
+        toast({
+          title: 'Erro ao abrir conversa Kommo',
+          description: String(err),
+          variant: 'destructive',
+        })
+      }
     } else if (contato.userId) {
       // É um vendedor/colaborador sem DM iniciada: admin abre ou cria na hora
       try {
@@ -1483,88 +1601,156 @@ export default function HubAtendimentoPage() {
               {/* Abas / Filtros de Separação Explícita: Externos (Kommo CRM) e Internos (Equipe / Canais) */}
               <div className="flex flex-col gap-1.5">
                 <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-200/60 rounded-xl">
-                  {/* Aba EXTERNOS (Kommo CRM) — Badge azul #253575 dominante */}
-                  <button
-                    type="button"
-                    onClick={() => setFiltroTipoContato('crm')}
-                    className={`flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      filtroTipoContato === 'crm'
-                        ? 'bg-[#253575] text-white shadow-xs'
-                        : 'text-slate-600 hover:text-[#253575] hover:bg-white/60'
-                    }`}
-                    title="Contatos Externos (Clientes e Leads Kommo CRM)"
-                  >
-                    <span
-                      className={`h-2 w-2 rounded-full shrink-0 ${
-                        filtroTipoContato === 'crm' ? 'bg-[#F18800]' : 'bg-[#253575]'
-                      }`}
-                    />
-                    <span className="truncate">Externos</span>
-                    <Badge
-                      className={`text-[10px] px-1.5 py-0 h-4 font-mono font-bold shrink-0 ${
-                        filtroTipoContato === 'crm'
-                          ? 'bg-white/20 text-white'
-                          : 'bg-[#253575] text-white'
-                      }`}
-                    >
-                      {contatosExternos.length}
-                    </Badge>
-                  </button>
+                  {/* Aba EXTERNOS (Kommo CRM) — Badge azul #253575 dominante com pílula de não lidas */}
+                  {(() => {
+                    const unreadExternos = contatosExternos.reduce(
+                      (acc, c) => acc + (c.unreadCount || 0),
+                      0,
+                    )
+                    const unreadInternos = contatosInternos.reduce(
+                      (acc, c) => acc + (c.unreadCount || 0),
+                      0,
+                    )
+                    return (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setFiltroTipoContato('crm')}
+                          className={`flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            filtroTipoContato === 'crm'
+                              ? 'bg-[#253575] text-white shadow-xs'
+                              : 'text-slate-600 hover:text-[#253575] hover:bg-white/60'
+                          }`}
+                          title="Contatos Externos (Clientes e Leads Kommo CRM)"
+                        >
+                          <span
+                            className={`h-2 w-2 rounded-full shrink-0 ${
+                              filtroTipoContato === 'crm' ? 'bg-[#F18800]' : 'bg-[#253575]'
+                            }`}
+                          />
+                          <span className="truncate">Externos</span>
+                          {unreadExternos > 0 ? (
+                            <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                              {unreadExternos}
+                            </span>
+                          ) : (
+                            <Badge
+                              className={`text-[10px] px-1.5 py-0 h-4 font-mono font-bold shrink-0 ${
+                                filtroTipoContato === 'crm'
+                                  ? 'bg-white/20 text-white'
+                                  : 'bg-[#253575] text-white'
+                              }`}
+                            >
+                              {contatosExternos.length}
+                            </Badge>
+                          )}
+                        </button>
 
-                  {/* Aba INTERNOS (Equipe + Canais) — Badge esmeralda */}
-                  <button
-                    type="button"
-                    onClick={() => setFiltroTipoContato('equipe')}
-                    className={`flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      filtroTipoContato === 'equipe'
-                        ? 'bg-emerald-700 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-emerald-800 hover:bg-white/60'
-                    }`}
-                    title="Contatos Internos (Equipe do sistema, DMs 1:1 e Canais de Rota / Geral)"
-                  >
-                    <span
-                      className={`h-2 w-2 rounded-full shrink-0 ${
-                        filtroTipoContato === 'equipe' ? 'bg-emerald-300' : 'bg-emerald-600'
-                      }`}
-                    />
-                    <span className="truncate">Internos</span>
-                    <Badge
-                      className={`text-[10px] px-1.5 py-0 h-4 font-mono font-bold shrink-0 ${
-                        filtroTipoContato === 'equipe'
-                          ? 'bg-white/20 text-white'
-                          : 'bg-emerald-600 text-white'
-                      }`}
-                    >
-                      {contatosInternos.length}
-                    </Badge>
-                  </button>
+                        <button
+                          type="button"
+                          onClick={() => setFiltroTipoContato('equipe')}
+                          className={`flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            filtroTipoContato === 'equipe'
+                              ? 'bg-emerald-700 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-emerald-800 hover:bg-white/60'
+                          }`}
+                          title="Contatos Internos (Equipe do sistema, DMs 1:1 e Canais de Rota / Geral)"
+                        >
+                          <span
+                            className={`h-2 w-2 rounded-full shrink-0 ${
+                              filtroTipoContato === 'equipe' ? 'bg-emerald-300' : 'bg-emerald-600'
+                            }`}
+                          />
+                          <span className="truncate">Internos</span>
+                          {unreadInternos > 0 ? (
+                            <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                              {unreadInternos}
+                            </span>
+                          ) : (
+                            <Badge
+                              className={`text-[10px] px-1.5 py-0 h-4 font-mono font-bold shrink-0 ${
+                                filtroTipoContato === 'equipe'
+                                  ? 'bg-white/20 text-white'
+                                  : 'bg-emerald-600 text-white'
+                              }`}
+                            >
+                              {contatosInternos.length}
+                            </Badge>
+                          )}
+                        </button>
+                      </>
+                    )
+                  })()}
                 </div>
 
-                {/* Subfiltro Rápido opcional para "Ver Todos Agrupados" */}
-                <div className="flex items-center justify-between px-1 text-[11px] text-slate-500">
-                  <span className="text-[10px] uppercase tracking-wider font-semibold">
-                    {filtroTipoContato === 'crm'
-                      ? 'Clientes & Leads Kommo'
-                      : filtroTipoContato === 'equipe'
+                {/* Subfiltro Rápido: Se estiver em Externos (Kommo/SDR), sub-abas "Novos SDR" e "Transferidos" */}
+                {filtroTipoContato === 'crm' ? (
+                  <div className="flex items-center gap-1 p-0.5 bg-slate-100 rounded-lg text-[10px] font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setFiltroSdrStatus('novos')}
+                      className={`flex-1 py-1 px-1.5 rounded-md text-center transition-all flex items-center justify-center gap-1 ${
+                        filtroSdrStatus === 'novos'
+                          ? 'bg-white text-[#253575] shadow-xs font-bold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <span>Novos Leads SDR</span>
+                      <span className="px-1 rounded-full bg-[#F18800] text-white text-[9px] font-bold">
+                        {contagemNovosSdr}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFiltroSdrStatus('transferidos')}
+                      className={`flex-1 py-1 px-1.5 rounded-md text-center transition-all flex items-center justify-center gap-1 ${
+                        filtroSdrStatus === 'transferidos'
+                          ? 'bg-white text-[#253575] shadow-xs font-bold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <span>Transferidos</span>
+                      <span className="px-1 rounded-full bg-slate-200 text-slate-700 text-[9px] font-bold">
+                        {contagemTransferidosSdr}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFiltroSdrStatus('todos_sdr')}
+                      className={`py-1 px-1.5 rounded-md text-center transition-all ${
+                        filtroSdrStatus === 'todos_sdr'
+                          ? 'bg-white text-[#253575] shadow-xs font-bold'
+                          : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                      title="Ver todos os leads externos"
+                    >
+                      Todos
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between px-1 text-[11px] text-slate-500">
+                    <span className="text-[10px] uppercase tracking-wider font-semibold">
+                      {filtroTipoContato === 'equipe'
                         ? 'Equipe & Canais do Sistema'
                         : 'Lista Completa'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setFiltroTipoContato((prev) => (prev === 'todos' ? 'crm' : 'todos'))
-                    }
-                    className={`text-[10px] font-semibold underline underline-offset-2 transition-colors ${
-                      filtroTipoContato === 'todos'
-                        ? 'text-[#253575] font-bold'
-                        : 'text-slate-400 hover:text-slate-700'
-                    }`}
-                  >
-                    {filtroTipoContato === 'todos'
-                      ? 'Voltar para Abas'
-                      : `Ver Todos (${contatosUnificados.length})`}
-                  </button>
-                </div>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFiltroTipoContato((prev) => (prev === 'todos' ? 'crm' : 'todos'))
+                      }
+                      className={`text-[10px] font-semibold underline underline-offset-2 transition-colors ${
+                        filtroTipoContato === 'todos'
+                          ? 'text-[#253575] font-bold'
+                          : 'text-slate-400 hover:text-slate-700'
+                      }`}
+                    >
+                      {filtroTipoContato === 'todos'
+                        ? 'Voltar para Abas'
+                        : `Ver Todos (${contatosUnificados.length})`}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1639,16 +1825,42 @@ export default function HubAtendimentoPage() {
                                   >
                                     {contato.nome}
                                   </span>
-                                  {/* Badge Azul #253575 dos contatos externos Kommo CRM */}
-                                  <Badge
-                                    className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
-                                      isSelected
-                                        ? 'bg-white/25 text-white border-transparent'
-                                        : 'bg-[#253575] text-white hover:bg-[#253575]'
-                                    }`}
-                                  >
-                                    {contato.badge || 'Kommo'}
-                                  </Badge>
+                                  {/* Pílula de Não Lidas ou Badge de Status SDR / Kommo */}
+                                  {contato.unreadCount && contato.unreadCount > 0 ? (
+                                    <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center shrink-0 shadow-2xs">
+                                      {contato.unreadCount}
+                                    </span>
+                                  ) : contato.conversaRef?.status_sdr === 're_superficie' ? (
+                                    <Badge
+                                      className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
+                                        isSelected
+                                          ? 'bg-red-500 text-white'
+                                          : 'bg-red-600 text-white animate-pulse'
+                                      }`}
+                                    >
+                                      Sem resposta (+24h)
+                                    </Badge>
+                                  ) : contato.conversaRef?.status_sdr === 'transferido' ? (
+                                    <Badge
+                                      className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
+                                        isSelected
+                                          ? 'bg-white/25 text-white border-transparent'
+                                          : 'bg-slate-600 text-white hover:bg-slate-700'
+                                      }`}
+                                    >
+                                      {contato.badge || 'Transferido'}
+                                    </Badge>
+                                  ) : (
+                                    <Badge
+                                      className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
+                                        isSelected
+                                          ? 'bg-white/25 text-white border-transparent'
+                                          : 'bg-[#253575] text-white hover:bg-[#253575]'
+                                      }`}
+                                    >
+                                      {contato.badge || 'Novo Lead SDR'}
+                                    </Badge>
+                                  )}
                                 </div>
 
                                 <p

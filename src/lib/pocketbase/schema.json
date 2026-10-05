@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T19:52:21.899Z",
+  "generatedAt": "2026-10-05T20:09:53.875Z",
   "collections": [
     {
       "name": "users",
@@ -1481,6 +1481,19 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "status_sdr",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["novo_lead", "transferido", "re_superficie"]
+        },
+        {
+          "name": "transferido_em",
+          "type": "date",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -1489,7 +1502,9 @@
         "CREATE INDEX idx_chat_conversas_regiao ON chat_conversas (regiao_nome)",
         "CREATE INDEX idx_chat_conversas_updated ON chat_conversas (updated DESC)",
         "CREATE INDEX idx_chat_conv_kommo_phone ON chat_conversas (kommo_phone_clean)",
-        "CREATE INDEX idx_chat_conv_kommo_chat ON chat_conversas (kommo_chat_id)"
+        "CREATE INDEX idx_chat_conv_kommo_chat ON chat_conversas (kommo_chat_id)",
+        "CREATE INDEX `idx_chat_conv_status_sdr` ON `chat_conversas` (status_sdr)",
+        "CREATE INDEX `idx_chat_conv_responsavel` ON `chat_conversas` (responsavel_id)"
       ]
     },
     {

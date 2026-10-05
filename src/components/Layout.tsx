@@ -25,6 +25,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { useAuth } from '@/contexts/AuthContext'
 import { checkKommoStatus, testKommoConnection } from '@/services/api'
+import { fetchUnreadCounts } from '@/services/chat'
+import pb from '@/lib/pocketbase/client'
 import { ExpedienteStatusBadge } from '@/components/ExpedienteStatusBadge'
 import { LogoAbr } from '@/components/LogoAbr'
 import { usePresence } from '@/hooks/usePresence'
@@ -48,6 +50,7 @@ export default function Layout() {
   // Presença online em tempo real: batimento de quem está logado + contagem para admin e supervisor
   const { presenceData } = usePresence({ pollStatus: true })
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [hubUnreadCount, setHubUnreadCount] = useState<number>(0)
 
   // Barra lateral esquerda retrátil (persistida em localStorage)
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -109,6 +112,33 @@ export default function Layout() {
       // Não dispara testKommoConnection() automaticamente a cada montagem para evitar chamadas externas pesadas
       const interval = setInterval(refreshKommo, 120000)
       return () => clearInterval(interval)
+    }
+  }, [user])
+
+  // Contagem dinâmica de mensagens não lidas para o Hub de Atendimento
+  useEffect(() => {
+    if (!user || user.role !== 'admin') return
+
+    const carregarUnread = async () => {
+      try {
+        const data = await fetchUnreadCounts()
+        setHubUnreadCount(data.total_unread || 0)
+      } catch {
+        /* intentionally ignored */
+      }
+    }
+
+    carregarUnread()
+    const timer = setInterval(carregarUnread, 20000)
+
+    // Inscrição realtime na coleção chat_mensagens para atualizar badge sem recarregar tela
+    const unsubPromise = pb.collection('chat_mensagens').subscribe('*', () => {
+      carregarUnread()
+    })
+
+    return () => {
+      clearInterval(timer)
+      unsubPromise.then((unsub) => unsub()).catch(() => {})
     }
   }, [user])
 
@@ -194,7 +224,7 @@ export default function Layout() {
                   title: 'Atendimento (Hub)',
                   href: '/hub-atendimento',
                   icon: MessagesSquare,
-                  badgeText: 'Admin',
+                  badgeCount: hubUnreadCount > 0 ? hubUnreadCount : undefined,
                 },
               ]
             : []),
@@ -352,6 +382,18 @@ export default function Layout() {
                   }`}
                 />
                 {!isCollapsed && <span className="truncate flex-1">{item.title}</span>}
+                {'badgeCount' in item &&
+                  typeof item.badgeCount === 'number' &&
+                  item.badgeCount > 0 && (
+                    <span
+                      className={`h-5 min-w-5 px-1.5 rounded-full bg-[#F18800] text-white text-[11px] font-black flex items-center justify-center shrink-0 shadow-xs ${
+                        isCollapsed ? 'absolute -top-1 -right-1 ring-2 ring-[#142758]' : ''
+                      }`}
+                      title={`${item.badgeCount} mensagens não lidas`}
+                    >
+                      {item.badgeCount > 99 ? '99+' : item.badgeCount}
+                    </span>
+                  )}
                 {!isCollapsed && 'badgeText' in item && item.badgeText && (
                   <span className="text-[10px] uppercase font-bold text-[#F18800] bg-[#F18800]/15 border border-[#F18800]/30 px-1.5 py-0.2 rounded shrink-0">
                     {item.badgeText}
@@ -366,6 +408,10 @@ export default function Layout() {
                   <TooltipTrigger asChild>{navLinkElement}</TooltipTrigger>
                   <TooltipContent side="right" className="font-semibold text-xs">
                     {item.title}
+                    {'badgeCount' in item &&
+                      typeof item.badgeCount === 'number' &&
+                      item.badgeCount > 0 &&
+                      ` (${item.badgeCount} não lidas)`}
                     {'badgeText' in item && item.badgeText && ` (${item.badgeText})`}
                   </TooltipContent>
                 </Tooltip>

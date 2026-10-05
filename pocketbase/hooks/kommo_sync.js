@@ -175,23 +175,83 @@ routerAdd(
             ? `${contactName} (WhatsApp SDR)`
             : `WhatsApp SDR (${cleanPhone || KOMMO_SDR_PHONE_TARGET})`
 
+          // Cruzar responsible_user_id do Kommo com usuário do sistema
+          let leadRespKommoId = lead.responsible_user_id ? String(lead.responsible_user_id) : ''
+          let vendedorVinculado = null
+          if (leadRespKommoId) {
+            try {
+              const matched = $app.findRecordsByFilter(
+                'users',
+                `kommo_user_id = '${leadRespKommoId}'`,
+                '-created',
+                1,
+              )
+              if (matched && matched.length > 0) vendedorVinculado = matched[0]
+            } catch (_) {}
+          }
+
+          let targetResponsavelId = adminId
+          let targetStatusSdr = 'novo_lead'
+          let targetTransferidoEm = ''
+
+          if (
+            vendedorVinculado &&
+            vendedorVinculado.id !== adminId &&
+            (vendedorVinculado.getString('role') === 'operador' ||
+              vendedorVinculado.getString('role') === 'lider')
+          ) {
+            targetResponsavelId = vendedorVinculado.id
+            targetStatusSdr = 'transferido'
+            targetTransferidoEm = new Date().toISOString()
+          }
+
           if (!conversa) {
             conversa = new Record(convCol)
             conversa.set('tipo', 'kommo_whatsapp')
             conversa.set('titulo', tituloFinal)
-            conversa.set('participantes', [adminId])
+            const parts = [adminId]
+            if (targetResponsavelId && !parts.includes(targetResponsavelId))
+              parts.push(targetResponsavelId)
+            conversa.set('participantes', parts)
             conversa.set('kommo_phone', contactPhone || KOMMO_SDR_PHONE_TARGET)
             conversa.set('kommo_phone_clean', cleanPhone || KOMMO_SDR_PHONE_TARGET)
             conversa.set('kommo_contact_id', String(contactId))
             conversa.set('kommo_lead_id', String(lead.id))
             conversa.set('cliente_id', clienteId)
-            conversa.set('responsavel_id', adminId)
+            conversa.set('responsavel_id', targetResponsavelId)
+            conversa.set('status_sdr', targetStatusSdr)
+            if (targetTransferidoEm) conversa.set('transferido_em', targetTransferidoEm)
             conversa.set('total_mensagens', 0)
             $app.save(conversa)
           } else {
             let changed = false
-            if (clienteId && !conversa.get('cliente_id')) {
+            if (clienteId && !conversa.getString('cliente_id')) {
               conversa.set('cliente_id', clienteId)
+              changed = true
+            }
+            if (
+              vendedorVinculado &&
+              vendedorVinculado.id !== conversa.getString('responsavel_id')
+            ) {
+              conversa.set('responsavel_id', vendedorVinculado.id)
+              conversa.set('status_sdr', 'transferido')
+              if (!conversa.getString('transferido_em'))
+                conversa.set('transferido_em', new Date().toISOString())
+              const curParts = conversa.get('participantes') || []
+              if (!curParts.includes(vendedorVinculado.id)) {
+                curParts.push(vendedorVinculado.id)
+                conversa.set('participantes', curParts)
+              }
+              changed = true
+            }
+            if (!conversa.getString('status_sdr')) {
+              conversa.set(
+                'status_sdr',
+                conversa.getString('responsavel_id') &&
+                  conversa.getString('responsavel_id') !== adminId
+                  ? 'transferido'
+                  : 'novo_lead',
+              )
               changed = true
             }
             if (changed) {
@@ -246,6 +306,34 @@ routerAdd(
                   conversa.set('ultima_mensagem_data', new Date().toISOString())
                   const tot = conversa.getInt('total_mensagens') || 0
                   conversa.set('total_mensagens', tot + 1)
+
+                  // Checar re-superfície
+                  if (conversa.getString('status_sdr') === 'transferido') {
+                    const respId = conversa.getString('responsavel_id')
+                    let horasSemResp = 999
+                    try {
+                      const msgsResp = $app.findRecordsByFilter(
+                        'chat_mensagens',
+                        `conversa = '${conversa.id}' && autor = '${respId}' && direcao = 'saida'`,
+                        '-created',
+                        1,
+                      )
+                      if (msgsResp && msgsResp.length > 0) {
+                        const lastDate = new Date(msgsResp[0].getString('created'))
+                        horasSemResp = (Date.now() - lastDate.getTime()) / (1000 * 60 * 60)
+                      } else {
+                        const transDate = conversa.getString('transferido_em')
+                          ? new Date(conversa.getString('transferido_em'))
+                          : new Date(conversa.getString('created'))
+                        horasSemResp = (Date.now() - transDate.getTime()) / (1000 * 60 * 60)
+                      }
+                    } catch (_) {}
+
+                    if (horasSemResp >= 24) {
+                      conversa.set('status_sdr', 're_superficie')
+                    }
+                  }
+
                   $app.save(conversa)
 
                   totalProcessadas++

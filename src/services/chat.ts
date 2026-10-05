@@ -34,6 +34,11 @@ export async function fetchConversasUsuario(
       if (userRole === 'admin') return true
       return Array.isArray(c.participantes) && c.participantes.includes(userId)
     }
+    if (c.tipo === 'kommo_whatsapp') {
+      if (userRole === 'admin' || userRole === 'supervisor') return true
+      if (c.responsavel_id === userId) return true
+      return Array.isArray(c.participantes) && c.participantes.includes(userId)
+    }
     return false
   })
 }

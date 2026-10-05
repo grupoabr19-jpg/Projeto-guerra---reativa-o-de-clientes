@@ -555,6 +555,22 @@ cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
     const convCol = $app.findCollectionByNameOrId('chat_conversas')
     const msgCol = $app.findCollectionByNameOrId('chat_mensagens')
 
+    // Helper: mapear responsible_user_id do Kommo para vendedor no sistema
+    const resolveResponsavelKommo = (respUserId) => {
+      if (!respUserId) return null
+      const kIdStr = String(respUserId).trim()
+      try {
+        const matched = $app.findRecordsByFilter(
+          'users',
+          `kommo_user_id = '${kIdStr}'`,
+          '-created',
+          1,
+        )
+        if (matched && matched.length > 0) return matched[0]
+      } catch (_) {}
+      return null
+    }
+
     for (let i = 0; i < leads.length; i++) {
       const lead = leads[i]
       const contacts = lead._embedded?.contacts || []
@@ -595,6 +611,41 @@ cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
             if (existing && existing.length > 0) conv = existing[0]
           } catch (_) {}
         }
+
+        // Buscar cliente na base se houver
+        let clienteId = ''
+        if (cleanPhone && cleanPhone.length >= 8) {
+          try {
+            const suffix = cleanPhone.length >= 9 ? cleanPhone.slice(-9) : cleanPhone.slice(-8)
+            const cliRecs = $app.findRecordsByFilter(
+              'clientes',
+              `telefone ~ '${suffix}' || whatsapp ~ '${suffix}'`,
+              '-created',
+              1,
+            )
+            if (cliRecs && cliRecs.length > 0) clienteId = cliRecs[0].id
+          } catch (_) {}
+        }
+
+        // Cruzar responsible_user_id do Kommo com vendedor vinculado
+        const leadRespKommoId = lead.responsible_user_id ? String(lead.responsible_user_id) : ''
+        const vendedorVinculado = resolveResponsavelKommo(leadRespKommoId)
+
+        let targetResponsavelId = adminId || ''
+        let targetStatusSdr = 'novo_lead'
+        let targetTransferidoEm = ''
+
+        if (
+          vendedorVinculado &&
+          vendedorVinculado.id !== adminId &&
+          (vendedorVinculado.getString('role') === 'operador' ||
+            vendedorVinculado.getString('role') === 'lider')
+        ) {
+          targetResponsavelId = vendedorVinculado.id
+          targetStatusSdr = 'transferido'
+          targetTransferidoEm = new Date().toISOString()
+        }
+
         if (!conv) {
           conv = new Record(convCol)
           conv.set('tipo', 'kommo_whatsapp')
@@ -604,14 +655,149 @@ cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
               ? `${contactName} (WhatsApp SDR)`
               : `WhatsApp SDR (${cleanPhone || KOMMO_SDR_PHONE_TARGET})`,
           )
-          conv.set('participantes', adminId ? [adminId] : [])
+          const parts = []
+          if (adminId) parts.push(adminId)
+          if (targetResponsavelId && !parts.includes(targetResponsavelId))
+            parts.push(targetResponsavelId)
+          conv.set('participantes', parts)
           conv.set('kommo_phone', contactPhone || KOMMO_SDR_PHONE_TARGET)
           conv.set('kommo_phone_clean', cleanPhone || KOMMO_SDR_PHONE_TARGET)
           conv.set('kommo_contact_id', String(contacts[0].id))
           conv.set('kommo_lead_id', String(lead.id))
-          conv.set('responsavel_id', adminId || '')
+          conv.set('cliente_id', clienteId)
+          conv.set('responsavel_id', targetResponsavelId)
+          conv.set('status_sdr', targetStatusSdr)
+          if (targetTransferidoEm) conv.set('transferido_em', targetTransferidoEm)
           conv.set('total_mensagens', 0)
           $app.save(conv)
+        } else {
+          let mudou = false
+          if (clienteId && !conv.getString('cliente_id')) {
+            conv.set('cliente_id', clienteId)
+            mudou = true
+          }
+          if (vendedorVinculado && vendedorVinculado.id !== conv.getString('responsavel_id')) {
+            conv.set('responsavel_id', vendedorVinculado.id)
+            conv.set('status_sdr', 'transferido')
+            if (!conv.getString('transferido_em'))
+              conv.set('transferido_em', new Date().toISOString())
+            const curParts = conv.get('participantes') || []
+            if (!curParts.includes(vendedorVinculado.id)) {
+              curParts.push(vendedorVinculado.id)
+              conv.set('participantes', curParts)
+            }
+            mudou = true
+          }
+          if (!conv.getString('status_sdr')) {
+            conv.set(
+              'status_sdr',
+              conv.getString('responsavel_id') && conv.getString('responsavel_id') !== adminId
+                ? 'transferido'
+                : 'novo_lead',
+            )
+            mudou = true
+          }
+          if (mudou) $app.save(conv)
+        }
+
+        // CORREÇÃO 1 — Causa A: Buscar e sincronizar notas/mensagens do lead no Kommo para chat_mensagens
+        try {
+          const notesRes = $http.send({
+            url: `${baseUrl}/api/v4/leads/${lead.id}/notes?limit=10&order[created_at]=desc`,
+            method: 'GET',
+            headers: headers,
+            timeout: 5,
+          })
+
+          if (notesRes && notesRes.statusCode === 200 && notesRes.json?._embedded?.notes) {
+            const notes = notesRes.json._embedded.notes
+            let novasMsgs = 0
+            let ultimaNotaTexto = ''
+
+            for (let n = notes.length - 1; n >= 0; n--) {
+              const note = notes[n]
+              const noteText = (note.params?.text || note.params?.message || '').trim()
+              if (!noteText) continue
+
+              const msgId = `kommo_note_${note.id}`
+              let jaExiste = false
+              try {
+                const check = $app.findRecordsByFilter(
+                  'chat_mensagens',
+                  `kommo_message_id = '${msgId}'`,
+                  '-created',
+                  1,
+                )
+                if (check && check.length > 0) jaExiste = true
+              } catch (_) {}
+
+              if (!jaExiste) {
+                const msg = new Record(msgCol)
+                msg.set('conversa', conv.id)
+                msg.set('autor', adminId || conv.getString('responsavel_id'))
+                msg.set('autor_nome', contactName || 'Cliente SDR')
+                msg.set('autor_role', 'operador')
+                msg.set('texto', noteText)
+                msg.set('tipo', 'normal')
+                msg.set('direcao', 'entrada')
+                msg.set('kommo_status', 'recebida')
+                msg.set('kommo_message_id', msgId)
+                if (note.created_at) {
+                  msg.set('created', new Date(note.created_at * 1000).toISOString())
+                }
+                $app.save(msg)
+                novasMsgs++
+                ultimaNotaTexto = noteText
+              }
+            }
+
+            if (novasMsgs > 0) {
+              const totalAtual = conv.getInt('total_mensagens') || 0
+              conv.set('total_mensagens', totalAtual + novasMsgs)
+              if (ultimaNotaTexto) {
+                conv.set('ultima_mensagem_texto', ultimaNotaTexto.slice(0, 97))
+                conv.set('ultimo_autor_nome', contactName || 'Cliente SDR')
+                conv.set('ultima_mensagem_tipo', 'normal')
+                conv.set('ultima_mensagem_data', new Date().toISOString())
+              }
+
+              // Checar re-superfície: se conversa é transferido e há nova mensagem do cliente sem resposta do vendedor há +24h
+              if (conv.getString('status_sdr') === 'transferido') {
+                const respId = conv.getString('responsavel_id')
+                let horasSemResposta = 999
+                try {
+                  const msgsResp = $app.findRecordsByFilter(
+                    'chat_mensagens',
+                    `conversa = '${conv.id}' && autor = '${respId}' && direcao = 'saida'`,
+                    '-created',
+                    1,
+                  )
+                  if (msgsResp && msgsResp.length > 0) {
+                    const lastRespDate = new Date(msgsResp[0].getString('created'))
+                    horasSemResposta = (Date.now() - lastRespDate.getTime()) / (1000 * 60 * 60)
+                  } else {
+                    const transDate = conv.getString('transferido_em')
+                      ? new Date(conv.getString('transferido_em'))
+                      : new Date(conv.getString('created'))
+                    horasSemResposta = (Date.now() - transDate.getTime()) / (1000 * 60 * 60)
+                  }
+                } catch (_) {}
+
+                if (horasSemResposta >= 24) {
+                  conv.set('status_sdr', 're_superficie')
+                }
+              }
+
+              $app.save(conv)
+            }
+          }
+        } catch (noteErr) {
+          console.log(
+            '[cron_kommo_sdr] Erro ao sincronizar notas do lead ' +
+              lead.id +
+              ': ' +
+              noteErr.message,
+          )
         }
       }
     }

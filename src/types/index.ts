@@ -658,6 +658,8 @@ export interface ChatConversa {
   kommo_phone_clean?: string
   cliente_id?: string
   responsavel_id?: string
+  status_sdr?: 'novo_lead' | 'transferido' | 're_superficie'
+  transferido_em?: string
   created: string
   updated: string
   // Campos expandidos opcionais
@@ -775,6 +777,7 @@ export interface KommoBridgeItem {
   status_cor?: string
   ultima_atividade: string
   criado_em: string
+  responsible_user_id?: string
 }
 
 export interface KommoBridgeResponse {

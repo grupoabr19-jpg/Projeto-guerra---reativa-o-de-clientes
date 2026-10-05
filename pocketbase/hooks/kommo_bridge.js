@@ -243,6 +243,7 @@ routerAdd(
           status_cor: statusInfo.color,
           ultima_atividade: updatedAtIso,
           criado_em: l.created_at ? new Date(l.created_at * 1000).toISOString() : updatedAtIso,
+          responsible_user_id: l.responsible_user_id ? String(l.responsible_user_id) : '',
         }
       })
 
