@@ -15,6 +15,8 @@ import {
   Trophy,
   Flag,
   MessagesSquare,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -45,6 +47,27 @@ export default function Layout() {
   // Presença online em tempo real: batimento de quem está logado + contagem para admin e supervisor
   const { presenceData } = usePresence({ pollStatus: true })
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  // Barra lateral esquerda retrátil (persistida em localStorage)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('guerra_sidebar_collapsed') === 'true'
+    } catch {
+      return false
+    }
+  })
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem('guerra_sidebar_collapsed', String(next))
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }
 
   const isPublicAuthPage = [
     '/',
@@ -121,8 +144,8 @@ export default function Layout() {
           icon: Activity,
         },
         {
-          title: 'Atendimento',
-          href: '/atendimento',
+          title: 'Base de Inativos',
+          href: '/base-inativos',
           icon: Headphones,
         },
         {
@@ -139,8 +162,8 @@ export default function Layout() {
             icon: Activity,
           },
           {
-            title: 'Atendimento',
-            href: '/atendimento',
+            title: 'Base de Inativos',
+            href: '/base-inativos',
             icon: Headphones,
           },
           {
@@ -189,8 +212,8 @@ export default function Layout() {
             icon: ListOrdered,
           },
           {
-            title: 'Atendimento',
-            href: '/atendimento',
+            title: 'Base de Inativos',
+            href: '/base-inativos',
             icon: Headphones,
           },
           {
@@ -223,142 +246,215 @@ export default function Layout() {
             : []),
         ]
 
-  const SidebarContent = () => (
-    <div className="flex flex-col h-full bg-[#142758] text-white relative">
-      {/* Detalhe superior da curva/grafismo laranja ABR */}
-      <div className="h-1 w-full bg-[#253575] flex">
-        <div className="h-full w-24 bg-[#F18800] rounded-r-full" />
-      </div>
+  const SidebarContent = ({ isMobile = false }: { isMobile?: boolean }) => {
+    const isCollapsed = !isMobile && sidebarCollapsed
 
-      {/* Brand Header com Logo Oficial */}
-      <div className="p-4 border-b border-[#253575]/80 flex items-center space-x-3 bg-[#112048]">
-        <div className="relative shrink-0">
-          <LogoAbr
-            className="h-11 w-11 rounded-lg object-contain shadow-md ring-1 ring-white/15 bg-[#253575]"
-            alt="Grupo ABR — Seu parceiraço!"
-          />
+    return (
+      <div className="flex flex-col h-full bg-[#142758] text-white relative transition-all duration-300">
+        {/* Detalhe superior da curva/grafismo laranja ABR */}
+        <div className="h-1 w-full bg-[#253575] flex">
+          <div className="h-full w-24 bg-[#F18800] rounded-r-full" />
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center space-x-1.5">
-            <span className="font-bold text-sm tracking-tight text-white leading-tight">
-              GRUPO ABR
-            </span>
-            <span className="text-[10px] uppercase font-bold text-[#F18800] bg-[#F18800]/15 px-1.5 py-0.2 rounded">
-              Guerra
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-300 truncate font-medium mt-0.5">
-            Sistema de Reativação
-          </p>
-        </div>
-      </div>
 
-      {/* Nav List */}
-      <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-        <div className="text-[10px] uppercase font-bold text-slate-300/80 px-3 pb-2 tracking-wider">
-          Menu Operacional
-        </div>
-        {navItems.map((item) => {
-          const Icon = item.icon
-          const isActive =
-            location.pathname === item.href ||
-            (item.href !== '/dashboard' && location.pathname.startsWith(item.href))
-          return (
-            <NavLink
-              key={item.href}
-              to={item.href}
-              onClick={() => setMobileMenuOpen(false)}
-              className={`group flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all relative ${
-                isActive
-                  ? 'bg-[#253575] text-white shadow-sm font-semibold'
-                  : 'text-slate-200 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              {isActive && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#F18800] rounded-r-full" />
-              )}
-              <Icon
-                className={`h-4 w-4 shrink-0 transition-colors ${
-                  isActive ? 'text-[#F18800]' : 'text-slate-300 group-hover:text-white'
-                }`}
-              />
-              <span className="truncate flex-1">{item.title}</span>
-              {'badgeText' in item && item.badgeText && (
-                <span className="text-[10px] uppercase font-bold text-[#F18800] bg-[#F18800]/15 border border-[#F18800]/30 px-1.5 py-0.2 rounded shrink-0">
-                  {item.badgeText}
-                </span>
-              )}
-            </NavLink>
-          )
-        })}
-      </div>
-
-      {/* Curva ABR decorativa discreta no rodapé */}
-      <div className="px-4 py-2 text-[10px] text-slate-300/80 flex items-center justify-between border-t border-[#253575]/60 bg-[#0f1d42]">
-        <span className="truncate">Seu parceiraço! 2026–2027</span>
-        <div className="w-6 h-1 rounded-full bg-[#F18800]" />
-      </div>
-
-      {/* User Info & Footer */}
-      <div className="p-3.5 border-t border-[#253575] bg-[#0c1836]">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2.5 overflow-hidden">
+        {/* Brand Header com Logo Oficial */}
+        <div
+          className={`p-3.5 border-b border-[#253575]/80 flex items-center bg-[#112048] ${
+            isCollapsed ? 'justify-center' : 'justify-between space-x-3'
+          }`}
+        >
+          <div className="flex items-center space-x-3 min-w-0">
             <div className="relative shrink-0">
-              <div className="h-8 w-8 rounded-full bg-[#253575] border border-white/20 flex items-center justify-center font-bold text-xs text-white">
-                {user.name ? user.name.slice(0, 2).toUpperCase() : 'ABR'}
-              </div>
-              {/* Bolinha de status online do próprio usuário */}
-              <span
-                className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-[#0c1836]"
-                title="Você está online"
+              <LogoAbr
+                className="h-9 w-9 rounded-lg object-contain shadow-md ring-1 ring-white/15 bg-[#253575]"
+                alt="Grupo ABR — Seu parceiraço!"
               />
             </div>
-            <div className="truncate">
-              <div className="text-xs font-semibold text-white truncate flex items-center gap-1.5">
-                <span>{user.name}</span>
+            {!isCollapsed && (
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center space-x-1.5">
+                  <span className="font-bold text-sm tracking-tight text-white leading-tight">
+                    GRUPO ABR
+                  </span>
+                  <span className="text-[10px] uppercase font-bold text-[#F18800] bg-[#F18800]/15 px-1.5 py-0.2 rounded">
+                    Guerra
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 truncate font-medium mt-0.5">
+                  Sistema de Reativação
+                </p>
               </div>
-              <div className="flex items-center space-x-1 mt-0.5">
-                <Badge
-                  variant="outline"
-                  className={
-                    user.role === 'lider'
-                      ? 'text-[10px] px-1.5 py-0 h-4 border-[#F18800] bg-[#F18800]/20 text-orange-200 font-semibold flex items-center gap-1'
-                      : 'text-[10px] px-1.5 py-0 h-4 border-[#253575] bg-[#142758] text-slate-200 uppercase font-mono'
-                  }
-                >
-                  {user.role === 'lider' ? '🚩 Líder de Rota' : user.role}
-                </Badge>
-                <span className="text-[10px] text-emerald-400 font-medium font-mono">• Online</span>
-              </div>
-            </div>
+            )}
           </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={logout}
-                className="h-8 w-8 text-slate-300 hover:text-white hover:bg-red-500/20"
+
+          {/* Botão de colapsar sidebar no desktop */}
+          {!isMobile && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleSidebar}
+                  className="h-7 w-7 text-slate-300 hover:text-white hover:bg-white/10 shrink-0"
+                >
+                  {isCollapsed ? (
+                    <ChevronRight className="h-4 w-4 text-[#F18800]" />
+                  ) : (
+                    <ChevronLeft className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                {isCollapsed ? 'Expandir barra lateral' : 'Recolher para apenas ícones'}
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+
+        {/* Nav List */}
+        <div className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
+          {!isCollapsed && (
+            <div className="text-[10px] uppercase font-bold text-slate-300/80 px-3 pb-2 tracking-wider">
+              Menu Operacional
+            </div>
+          )}
+          {navItems.map((item) => {
+            const Icon = item.icon
+            const isActive =
+              location.pathname === item.href ||
+              (item.href !== '/dashboard' && location.pathname.startsWith(item.href))
+
+            const navLinkElement = (
+              <NavLink
+                key={item.href}
+                to={item.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className={`group flex items-center rounded-lg text-sm font-medium transition-all relative ${
+                  isCollapsed ? 'justify-center p-2.5' : 'space-x-3 px-3 py-2.5'
+                } ${
+                  isActive
+                    ? 'bg-[#253575] text-white shadow-sm font-semibold'
+                    : 'text-slate-200 hover:text-white hover:bg-white/10'
+                }`}
               >
-                <LogOut className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">Sair do sistema</TooltipContent>
-          </Tooltip>
+                {isActive && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#F18800] rounded-r-full" />
+                )}
+                <Icon
+                  className={`h-4.5 w-4.5 shrink-0 transition-colors ${
+                    isActive ? 'text-[#F18800]' : 'text-slate-300 group-hover:text-white'
+                  }`}
+                />
+                {!isCollapsed && <span className="truncate flex-1">{item.title}</span>}
+                {!isCollapsed && 'badgeText' in item && item.badgeText && (
+                  <span className="text-[10px] uppercase font-bold text-[#F18800] bg-[#F18800]/15 border border-[#F18800]/30 px-1.5 py-0.2 rounded shrink-0">
+                    {item.badgeText}
+                  </span>
+                )}
+              </NavLink>
+            )
+
+            if (isCollapsed) {
+              return (
+                <Tooltip key={item.href}>
+                  <TooltipTrigger asChild>{navLinkElement}</TooltipTrigger>
+                  <TooltipContent side="right" className="font-semibold text-xs">
+                    {item.title}
+                    {'badgeText' in item && item.badgeText && ` (${item.badgeText})`}
+                  </TooltipContent>
+                </Tooltip>
+              )
+            }
+
+            return navLinkElement
+          })}
+        </div>
+
+        {/* Curva ABR decorativa discreta no rodapé */}
+        {!isCollapsed && (
+          <div className="px-4 py-2 text-[10px] text-slate-300/80 flex items-center justify-between border-t border-[#253575]/60 bg-[#0f1d42]">
+            <span className="truncate">Seu parceiraço! 2026–2027</span>
+            <div className="w-6 h-1 rounded-full bg-[#F18800]" />
+          </div>
+        )}
+
+        {/* User Info & Footer */}
+        <div className="p-2.5 border-t border-[#253575] bg-[#0c1836]">
+          <div
+            className={`flex items-center ${
+              isCollapsed ? 'justify-center flex-col gap-2' : 'justify-between'
+            }`}
+          >
+            <div className="flex items-center space-x-2.5 overflow-hidden">
+              <div className="relative shrink-0">
+                <div className="h-8 w-8 rounded-full bg-[#253575] border border-white/20 flex items-center justify-center font-bold text-xs text-white">
+                  {user.name ? user.name.slice(0, 2).toUpperCase() : 'ABR'}
+                </div>
+                {/* Bolinha de status online do próprio usuário */}
+                <span
+                  className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-[#0c1836]"
+                  title="Você está online"
+                />
+              </div>
+              {!isCollapsed && (
+                <div className="truncate">
+                  <div className="text-xs font-semibold text-white truncate flex items-center gap-1.5">
+                    <span>{user.name}</span>
+                  </div>
+                  <div className="flex items-center space-x-1 mt-0.5">
+                    <Badge
+                      variant="outline"
+                      className={
+                        user.role === 'lider'
+                          ? 'text-[10px] px-1.5 py-0 h-4 border-[#F18800] bg-[#F18800]/20 text-orange-200 font-semibold flex items-center gap-1'
+                          : 'text-[10px] px-1.5 py-0 h-4 border-[#253575] bg-[#142758] text-slate-200 uppercase font-mono'
+                      }
+                    >
+                      {user.role === 'lider' ? '🚩 Líder de Rota' : user.role}
+                    </Badge>
+                    <span className="text-[10px] text-emerald-400 font-medium font-mono">
+                      • Online
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={logout}
+                  className="h-8 w-8 text-slate-300 hover:text-white hover:bg-red-500/20 shrink-0"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Sair do sistema</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <div className="flex min-h-screen bg-[#f4f6fa] antialiased font-sans text-slate-800">
-      {/* Desktop Fixed Sidebar */}
-      <aside className="hidden lg:block w-64 border-r border-[#142758]/30 shrink-0 fixed inset-y-0 left-0 z-30 shadow-lg shadow-[#142758]/10">
-        <SidebarContent />
+      {/* Desktop Fixed Sidebar (retrátil com largura 18 no modo colapsado e 64 no expandido) */}
+      <aside
+        className={`hidden lg:block border-r border-[#142758]/30 shrink-0 fixed inset-y-0 left-0 z-30 shadow-lg shadow-[#142758]/10 transition-all duration-300 ${
+          sidebarCollapsed ? 'w-18' : 'w-64'
+        }`}
+      >
+        <SidebarContent isMobile={false} />
       </aside>
 
       {/* Main Container */}
-      <div className="flex-1 flex flex-col lg:pl-64 min-w-0">
+      <div
+        className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${
+          sidebarCollapsed ? 'lg:pl-18' : 'lg:pl-64'
+        }`}
+      >
         {/* Pulso de Atualização do Navegador: Banner discreto e fixo (Padrão ABR) */}
         <UpdateBanner />
 
@@ -373,7 +469,7 @@ export default function Layout() {
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="p-0 w-72 border-r-0">
-                <SidebarContent />
+                <SidebarContent isMobile={true} />
               </SheetContent>
             </Sheet>
 

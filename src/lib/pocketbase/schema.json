@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T16:48:47.819Z",
+  "generatedAt": "2026-10-05T17:05:57.155Z",
   "collections": [
     {
       "name": "users",
@@ -1692,6 +1692,125 @@
       ],
       "indexes": [
         "CREATE INDEX idx_atend_etapas_funil_ordem ON atendimento_funil_etapas (funil, ordem ASC)"
+      ]
+    },
+    {
+      "name": "atendimento_funil_cards",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && @request.auth.role = 'admin'",
+        "view": "@request.auth.id != '' && @request.auth.role = 'admin'",
+        "create": "@request.auth.id != '' && @request.auth.role = 'admin'",
+        "update": "@request.auth.id != '' && @request.auth.role = 'admin'",
+        "delete": "@request.auth.id != '' && @request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "funil",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "atendimento_funis"
+        },
+        {
+          "name": "etapa",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "atendimento_funil_etapas"
+        },
+        {
+          "name": "titulo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "contato_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "telefone",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ordem",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "origem",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "kommo_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cliente_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "notas",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "historico_etapas",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "responsavel",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_atend_cards_funil_etapa ON atendimento_funil_cards (funil, etapa, ordem ASC)",
+        "CREATE INDEX idx_atend_cards_kommo ON atendimento_funil_cards (kommo_id)",
+        "CREATE INDEX idx_atend_cards_cliente ON atendimento_funil_cards (cliente_id)"
       ]
     }
   ]

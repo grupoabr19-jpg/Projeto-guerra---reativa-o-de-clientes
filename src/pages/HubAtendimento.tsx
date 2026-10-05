@@ -7,24 +7,27 @@ import {
   MessageSquare,
   Megaphone,
   Radio,
-  ExternalLink,
   RefreshCw,
   AlertCircle,
-  CheckCircle2,
   ArrowRight,
   Send,
   User as UserIcon,
   Phone,
   Mail,
   ShieldCheck,
-  Sparkles,
   ChevronRight,
-  Filter,
-  Eye,
   Sliders,
   X,
   Search,
   Check,
+  Kanban,
+  ExternalLink,
+  ChevronDown,
+  Clock,
+  History,
+  Tag,
+  DollarSign,
+  MoveRight,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -44,6 +47,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -58,6 +63,11 @@ import {
   createAtendimentoFunilEtapa,
   updateAtendimentoFunilEtapa,
   deleteAtendimentoFunilEtapa,
+  fetchAtendimentoFunilCards,
+  createAtendimentoFunilCard,
+  updateAtendimentoFunilCard,
+  moverCardEtapa,
+  deleteAtendimentoFunilCard,
   fetchKommoRecentActivity,
 } from '@/services/hubAtendimento'
 import {
@@ -75,17 +85,41 @@ import { formatarDataHoraBrasilia } from '@/lib/expediente'
 import type {
   AtendimentoFunil,
   AtendimentoFunilEtapa,
+  AtendimentoFunilCard,
   KommoBridgeResponse,
+  KommoBridgeItem,
   ChatConversa,
   ChatMensagem,
   ChatUnreadCountsResponse,
   User,
 } from '@/types'
 
+// Modelo unificado de Contato/Lead para a Barra Lateral Fixa
+export interface ContatoHubItem {
+  id: string
+  tipo: 'kommo' | 'chat_dm' | 'chat_canal'
+  nome: string
+  subtitulo?: string
+  telefone?: string
+  email?: string
+  canal?: string
+  badge?: string
+  unreadCount?: number
+  isOnline?: boolean
+  initials: string
+  conversaRef?: ChatConversa
+  kommoRef?: KommoBridgeItem
+}
+
 export default function HubAtendimentoPage() {
   const { user } = useAuth()
   const { toast } = useToast()
   const { presenceData } = usePresence({ pollStatus: true })
+
+  // ==========================================
+  // CONTROLE DA ABA ATIVA DO HUB (Conversa vs Funil)
+  // ==========================================
+  const [hubTab, setHubTab] = useState<'conversa' | 'funil'>('conversa')
 
   // ==========================================
   // ESTADOS: FUNIS E ETAPAS
@@ -121,15 +155,39 @@ export default function HubAtendimentoPage() {
   const [corEdicaoEtapa, setCorEdicaoEtapa] = useState('#3b82f6')
 
   // ==========================================
+  // ESTADOS: CARDS DO PIPELINE / KANBAN
+  // ==========================================
+  const [cards, setCards] = useState<AtendimentoFunilCard[]>([])
+  const [loadingCards, setLoadingCards] = useState(false)
+  const [cardDestacadoId, setCardDestacadoId] = useState<string | null>(null)
+
+  // Drag and drop HTML5 nativo simples e robusto
+  const [cardArrastandoId, setCardArrastandoId] = useState<string | null>(null)
+  const [colunaHoverId, setColunaHoverId] = useState<string | null>(null)
+
+  // Modal Criar Card no Funil
+  const [modalNovoCardOpen, setModalNovoCardOpen] = useState(false)
+  const [etapaDestinoNovoCard, setEtapaDestinoNovoCard] = useState<string>('')
+  const [novoCardTitulo, setNovoCardTitulo] = useState('')
+  const [novoCardContatoNome, setNovoCardContatoNome] = useState('')
+  const [novoCardTelefone, setNovoCardTelefone] = useState('')
+  const [novoCardEmail, setNovoCardEmail] = useState('')
+  const [novoCardValor, setNovoCardValor] = useState('')
+  const [novoCardNotas, setNovoCardNotas] = useState('')
+  const [salvandoCard, setSalvandoCard] = useState(false)
+
+  // Modal Ver/Editar Card
+  const [modalDetalhesCardOpen, setModalDetalhesCardOpen] = useState(false)
+  const [cardEmDetalhes, setCardEmDetalhes] = useState<AtendimentoFunilCard | null>(null)
+
+  // ==========================================
   // ESTADOS: BRIDGE KOMMO (SOMENTE LEITURA)
   // ==========================================
   const [kommoData, setKommoData] = useState<KommoBridgeResponse | null>(null)
   const [loadingKommo, setLoadingKommo] = useState(false)
-  const [kommoSearch, setKommoSearch] = useState('')
-  const [kommoFilterPipeline, setKommoFilterPipeline] = useState<string>('todos')
 
   // ==========================================
-  // ESTADOS: CONVERSA INTERNA EMBUTIDA NO HUB
+  // ESTADOS: CONVERSAS / CHAT (ESTILO WHATSAPP)
   // ==========================================
   const [conversas, setConversas] = useState<ChatConversa[]>([])
   const [loadingConversas, setLoadingConversas] = useState(false)
@@ -145,7 +203,13 @@ export default function HubAtendimentoPage() {
   const [colaboradores, setColaboradores] = useState<User[]>([])
   const [modalNovaDmOpen, setModalNovaDmOpen] = useState(false)
   const [buscaColaborador, setBuscaColaborador] = useState('')
-  const [buscaConversaHub, setBuscaConversaHub] = useState('')
+
+  // ==========================================
+  // ESTADOS: BARRA FIXA DE CONTATOS (ESTILO WHATSAPP)
+  // ==========================================
+  const [buscaContatoBarra, setBuscaContatoBarra] = useState('')
+  const [filtroTipoContato, setFiltroTipoContato] = useState<'todos' | 'crm' | 'equipe'>('todos')
+  const [contatoSelecionadoId, setContatoSelecionadoId] = useState<string | null>(null)
 
   // ==========================================
   // ESTADOS: MODAL DE AVISO DO ADMIN PRESERVADO
@@ -158,7 +222,7 @@ export default function HubAtendimentoPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // ==========================================
-  // CARREGAMENTO INICIAL
+  // CARREGAMENTOS INICIAIS
   // ==========================================
   const carregarFunis = async () => {
     setLoadingFunis(true)
@@ -177,6 +241,19 @@ export default function HubAtendimentoPage() {
       })
     } finally {
       setLoadingFunis(false)
+    }
+  }
+
+  const carregarCards = async (funilId: string) => {
+    if (!funilId) return
+    setLoadingCards(true)
+    try {
+      const data = await fetchAtendimentoFunilCards(funilId)
+      setCards(data)
+    } catch (err) {
+      console.warn('Erro ao carregar cards do funil:', err)
+    } finally {
+      setLoadingCards(false)
     }
   }
 
@@ -202,10 +279,11 @@ export default function HubAtendimentoPage() {
       const unread = await fetchUnreadCounts()
       setUnreadCounts(unread)
 
-      // Selecionar canal Geral por padrão se nenhuma conversa estiver ativa
+      // Se não tiver conversa ativa, define a primeira (ex.: Canal Geral)
       if (!activeConversa && list.length > 0) {
         const canalGeral = list.find((c) => c.tipo === 'geral') || list[0]
         setActiveConversa(canalGeral)
+        setContatoSelecionadoId(canalGeral.id)
         await carregarMensagens(canalGeral.id)
       }
     } catch (err) {
@@ -245,18 +323,83 @@ export default function HubAtendimentoPage() {
   }, [user])
 
   useEffect(() => {
+    if (funilAtivoId) {
+      carregarCards(funilAtivoId)
+    }
+  }, [funilAtivoId])
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [mensagens])
 
-  // Polling leve a cada 30s para atualizar contadores e bridge
+  // Polling leve a cada 30s para atualizar contadores e mensagens
   useEffect(() => {
     const timer = setInterval(() => {
       fetchUnreadCounts()
         .then(setUnreadCounts)
         .catch(() => {})
-    }, 30000)
+      if (activeConversa) {
+        fetchMensagensConversa(activeConversa.id, 1, 50)
+          .then((res) => {
+            if (res.items.length !== mensagens.length) {
+              setMensagens(res.items)
+            }
+          })
+          .catch(() => {})
+      }
+    }, 20000)
     return () => clearInterval(timer)
-  }, [])
+  }, [activeConversa, mensagens.length])
+
+  // Se o Kommo carregar e não tiver nenhum card no primeiro funil, sincronizar sementes visíveis automaticamente
+  useEffect(() => {
+    const semearCardsIniciaisKommo = async () => {
+      if (
+        loadingCards ||
+        loadingFunis ||
+        !funilAtivoId ||
+        cards.length > 0 ||
+        !kommoData?.items?.length
+      ) {
+        return
+      }
+
+      const funil = funis.find((f) => f.id === funilAtivoId)
+      if (!funil?.etapas?.length) return
+
+      const primeiraEtapa = funil.etapas[0]
+      const segundaEtapa = funil.etapas[1] || primeiraEtapa
+      const terceiraEtapa = funil.etapas[2] || segundaEtapa
+
+      // Cria cards espelhados dos primeiros leads do Kommo para teste interativo
+      const amostragem = kommoData.items.slice(0, 6)
+      for (let i = 0; i < amostragem.length; i++) {
+        const item = amostragem[i]
+        const etapaAlvo =
+          i === 0 ? primeiraEtapa : i === 1 ? segundaEtapa : i === 2 ? terceiraEtapa : primeiraEtapa
+        try {
+          await createAtendimentoFunilCard({
+            funil: funilAtivoId,
+            etapa: etapaAlvo.id,
+            titulo: item.nome_lead || `Lead #${item.id}`,
+            contato_nome: item.nome_contato,
+            telefone: item.telefone,
+            email: item.email,
+            valor: item.valor,
+            ordem: i + 1,
+            origem: 'kommo_bridge',
+            kommo_id: item.id,
+            notas: `Lead importado do Bridge Kommo CRM (${item.pipeline_nome} · ${item.status_nome}). Modo somente-leitura.`,
+          })
+        } catch {
+          /* ignore */
+        }
+      }
+      await carregarCards(funilAtivoId)
+    }
+
+    semearCardsIniciaisKommo()
+  }, [kommoData, funilAtivoId, cards.length, funis, loadingCards, loadingFunis])
 
   // ==========================================
   // FUNÇÕES DE FUNIS E ETAPAS
@@ -412,10 +555,178 @@ export default function HubAtendimentoPage() {
   }
 
   // ==========================================
-  // FUNÇÕES DE CHAT / CONVERSA INTERNA NO HUB
+  // FUNÇÕES DE CARDS DO PIPELINE / KANBAN
+  // ==========================================
+  const handleMudarEstagioCardDropdown = async (
+    card: AtendimentoFunilCard,
+    novaEtapaId: string,
+  ) => {
+    if (card.etapa === novaEtapaId) return
+    const etapaObj = funilAtual?.etapas?.find((e) => e.id === novaEtapaId)
+    try {
+      // Otimista
+      setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, etapa: novaEtapaId } : c)))
+      await moverCardEtapa(card, novaEtapaId, etapaObj?.nome)
+      toast({
+        title: 'Estágio atualizado!',
+        description: `Card movido para "${etapaObj?.nome || 'nova etapa'}".`,
+      })
+      if (funilAtivoId) {
+        await carregarCards(funilAtivoId)
+      }
+    } catch (err) {
+      toast({
+        title: 'Erro ao mover card',
+        description: String(err),
+        variant: 'destructive',
+      })
+      if (funilAtivoId) carregarCards(funilAtivoId)
+    }
+  }
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, cardId: string) => {
+    setCardArrastandoId(cardId)
+    e.dataTransfer.setData('text/plain', cardId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragOver = (e: React.DragEvent, etapaId: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (colunaHoverId !== etapaId) {
+      setColunaHoverId(etapaId)
+    }
+  }
+
+  const handleDragLeave = (_e: React.DragEvent, etapaId: string) => {
+    if (colunaHoverId === etapaId) {
+      setColunaHoverId(null)
+    }
+  }
+
+  const handleDrop = async (e: React.DragEvent, destinoEtapaId: string) => {
+    e.preventDefault()
+    setColunaHoverId(null)
+    const cardId = e.dataTransfer.getData('text/plain') || cardArrastandoId
+    setCardArrastandoId(null)
+
+    if (!cardId) return
+    const card = cards.find((c) => c.id === cardId)
+    if (!card || card.etapa === destinoEtapaId) return
+
+    await handleMudarEstagioCardDropdown(card, destinoEtapaId)
+  }
+
+  const handleAbrirNovoCardModal = (etapaId?: string) => {
+    const funil = funis.find((f) => f.id === funilAtivoId)
+    const etapaInicial = etapaId || funil?.etapas?.[0]?.id || ''
+    setEtapaDestinoNovoCard(etapaInicial)
+    setNovoCardTitulo('')
+    setNovoCardContatoNome('')
+    setNovoCardTelefone('')
+    setNovoCardEmail('')
+    setNovoCardValor('')
+    setNovoCardNotas('')
+    setModalNovoCardOpen(true)
+  }
+
+  const handleSalvarNovoCard = async () => {
+    if (!novoCardTitulo.trim() || !etapaDestinoNovoCard || !funilAtivoId) {
+      toast({
+        title: 'Título e etapa são obrigatórios',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setSalvandoCard(true)
+    try {
+      await createAtendimentoFunilCard({
+        funil: funilAtivoId,
+        etapa: etapaDestinoNovoCard,
+        titulo: novoCardTitulo.trim(),
+        contato_nome: novoCardContatoNome.trim() || undefined,
+        telefone: novoCardTelefone.trim() || undefined,
+        email: novoCardEmail.trim() || undefined,
+        valor: novoCardValor ? parseFloat(novoCardValor.replace(',', '.')) : undefined,
+        notas: novoCardNotas.trim() || undefined,
+        origem: 'manual',
+      })
+
+      toast({ title: 'Card adicionado ao funil!' })
+      setModalNovoCardOpen(false)
+      await carregarCards(funilAtivoId)
+    } catch (err) {
+      toast({
+        title: 'Erro ao criar card',
+        description: String(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setSalvandoCard(false)
+    }
+  }
+
+  const handleExcluirCard = async (card: AtendimentoFunilCard) => {
+    if (!confirm(`Excluir o card "${card.titulo}"?`)) return
+    try {
+      await deleteAtendimentoFunilCard(card.id)
+      toast({ title: 'Card removido do funil.' })
+      setModalDetalhesCardOpen(false)
+      setCardEmDetalhes(null)
+      if (funilAtivoId) await carregarCards(funilAtivoId)
+    } catch (err) {
+      toast({
+        title: 'Erro ao excluir card',
+        description: String(err),
+        variant: 'destructive',
+      })
+    }
+  }
+
+  // Adicionar contato da barra diretamente ao funil como card
+  const handleAdicionarContatoAoFunil = async (contato: ContatoHubItem) => {
+    if (!funilAtivoId || !funilAtual?.etapas?.length) {
+      toast({ title: 'Nenhum funil ou etapa disponível', variant: 'destructive' })
+      return
+    }
+
+    const primeiraEtapa = funilAtual.etapas[0]
+    try {
+      const cardCriado = await createAtendimentoFunilCard({
+        funil: funilAtivoId,
+        etapa: primeiraEtapa.id,
+        titulo: contato.nome,
+        contato_nome: contato.nome,
+        telefone: contato.telefone,
+        email: contato.email,
+        origem: contato.tipo === 'kommo' ? 'kommo_bridge' : 'chat_interno',
+        kommo_id: contato.kommoRef?.id,
+        notas: `Lead adicionado ao funil a partir do contato da barra (${contato.canal || 'Guerra'}).`,
+      })
+      toast({
+        title: 'Card criado no pipeline!',
+        description: `Adicionado à etapa "${primeiraEtapa.nome}".`,
+      })
+      await carregarCards(funilAtivoId)
+      setCardDestacadoId(cardCriado.id)
+      setHubTab('funil')
+    } catch (err) {
+      toast({
+        title: 'Falha ao vincular contato ao funil',
+        description: String(err),
+        variant: 'destructive',
+      })
+    }
+  }
+
+  // ==========================================
+  // FUNÇÕES DE CHAT / WHATSAPP STYLE
   // ==========================================
   const handleSelecionarConversa = async (c: ChatConversa) => {
     setActiveConversa(c)
+    setContatoSelecionadoId(c.id)
     await carregarMensagens(c.id)
   }
 
@@ -463,7 +774,9 @@ export default function HubAtendimentoPage() {
       const conv = await getOrCreateDm(colab.id)
       await carregarConversas()
       setActiveConversa(conv)
+      setContatoSelecionadoId(conv.id)
       await carregarMensagens(conv.id)
+      setHubTab('conversa')
     } catch (err) {
       toast({
         title: 'Erro ao iniciar conversa 1:1',
@@ -473,7 +786,7 @@ export default function HubAtendimentoPage() {
     }
   }
 
-  // Enviar aviso broadcast oficial
+  // Disparar aviso geral admin
   const handleDispararAviso = async () => {
     if (!avisoTexto.trim() || !user || enviandoAviso) return
     setEnviandoAviso(true)
@@ -504,7 +817,7 @@ export default function HubAtendimentoPage() {
       if (avisoPedirAtualizacao) {
         try {
           await emitirAtualizacaoVersaoAdmin({
-            version: '0.0.' + Math.floor(((Date.now() / 60000) % 1000) + 70),
+            version: '0.0.71',
             mensagem: avisoTexto.trim(),
             dispararChatAviso: false,
           })
@@ -523,6 +836,7 @@ export default function HubAtendimentoPage() {
       setModalAvisoOpen(false)
 
       setActiveConversa(canalGeral)
+      setContatoSelecionadoId(canalGeral.id)
       await carregarMensagens(canalGeral.id)
     } catch (err) {
       toast({
@@ -535,13 +849,12 @@ export default function HubAtendimentoPage() {
     }
   }
 
-  // Informações da DM ativa (exibição de nome e status)
+  // Formatação de DM para exibição estilo WhatsApp
   const getDmDisplay = (conv: ChatConversa) => {
     const parts = conv.titulo?.split('&').map((s) => s.trim()) || []
     const myName = (user?.name || user?.email || '').trim()
     const otherName = parts.find((p) => p !== myName) || parts[0] || 'Colaborador'
 
-    // Encontrar ID do outro participante para ver se está online
     const otherId = (conv.participantes || []).find((id) => id !== user?.id)
     const otherItem =
       otherId && presenceData?.users ? presenceData.users.find((it) => it.id === otherId) : null
@@ -557,42 +870,116 @@ export default function HubAtendimentoPage() {
 
   const funilAtual = funis.find((f) => f.id === funilAtivoId)
 
-  // Filtragem da lista do Kommo
-  const kommoPipelinesDisponiveis = Array.from(
-    new Set((kommoData?.items || []).map((i) => i.pipeline_nome)),
-  ).filter(Boolean)
+  // ==========================================
+  // MONTAGEM DA LISTA UNIFICADA DE CONTATOS (BARRA LATERAL FIXA ESTILO WHATSAPP)
+  // ==========================================
+  const contatosUnificados: ContatoHubItem[] = []
 
-  const kommoFiltrados = (kommoData?.items || []).filter((item) => {
-    const matchesSearch =
-      !kommoSearch.trim() ||
-      item.nome_lead.toLowerCase().includes(kommoSearch.toLowerCase()) ||
-      item.nome_contato.toLowerCase().includes(kommoSearch.toLowerCase()) ||
-      (item.telefone && item.telefone.includes(kommoSearch)) ||
-      (item.email && item.email.toLowerCase().includes(kommoSearch.toLowerCase()))
+  // 1. Canais e DMs do Chat Interno
+  for (const c of conversas) {
+    const isDm = c.tipo === 'dm'
+    const dmInfo = isDm ? getDmDisplay(c) : null
+    const nome = isDm ? dmInfo?.name || 'DM' : c.titulo || 'Canal'
+    const unread = unreadCounts.by_conversation[c.id] || 0
 
-    const matchesPipeline =
-      kommoFilterPipeline === 'todos' || item.pipeline_nome === kommoFilterPipeline
+    contatosUnificados.push({
+      id: c.id,
+      tipo: isDm ? 'chat_dm' : 'chat_canal',
+      nome,
+      subtitulo:
+        c.ultima_mensagem_texto ||
+        (c.tipo === 'geral' ? 'Canal Geral de comunicados' : 'Canal por rota'),
+      canal: isDm ? '1:1 Equipe' : 'Canal Interno',
+      unreadCount: unread,
+      isOnline: isDm ? dmInfo?.isOnline : undefined,
+      initials: isDm ? dmInfo?.initials || 'DM' : '#',
+      conversaRef: c,
+    })
+  }
 
-    return matchesSearch && matchesPipeline
-  })
+  // 2. Leads e Contatos do Bridge Kommo CRM (somente-leitura)
+  if (kommoData?.items) {
+    for (const item of kommoData.items) {
+      contatosUnificados.push({
+        id: `kommo_${item.id}`,
+        tipo: 'kommo',
+        nome: item.nome_contato || item.nome_lead,
+        subtitulo: `${item.nome_lead} • ${item.pipeline_nome} (${item.status_nome})`,
+        telefone: item.telefone,
+        email: item.email,
+        canal: item.canal || 'Kommo CRM',
+        badge: item.status_nome,
+        initials: (item.nome_contato || item.nome_lead || 'KM').slice(0, 2).toUpperCase(),
+        kommoRef: item,
+      })
+    }
+  }
 
-  // Conversas filtradas no Hub
-  const conversasFiltradasHub = conversas.filter((c) => {
-    if (!buscaConversaHub.trim()) return true
-    const term = buscaConversaHub.toLowerCase()
+  // Filtragem da Barra de Contatos
+  const contatosFiltrados = contatosUnificados.filter((item) => {
+    // Filtro por tipo
+    if (filtroTipoContato === 'crm' && item.tipo !== 'kommo') return false
+    if (filtroTipoContato === 'equipe' && item.tipo === 'kommo') return false
+
+    // Busca textual
+    if (!buscaContatoBarra.trim()) return true
+    const term = buscaContatoBarra.toLowerCase()
     return (
-      (c.titulo || '').toLowerCase().includes(term) ||
-      (c.ultimo_autor_nome || '').toLowerCase().includes(term) ||
-      (c.ultima_mensagem_texto || '').toLowerCase().includes(term)
+      item.nome.toLowerCase().includes(term) ||
+      (item.subtitulo && item.subtitulo.toLowerCase().includes(term)) ||
+      (item.telefone && item.telefone.includes(term)) ||
+      (item.email && item.email.toLowerCase().includes(term))
     )
   })
 
+  // Clicar em um contato da barra fixa estilo WhatsApp
+  const handleSelecionarContatoBarra = async (contato: ContatoHubItem) => {
+    setContatoSelecionadoId(contato.id)
+
+    // Se for conversa do chat, abre a tela de conversa com ela ativa
+    if (contato.conversaRef) {
+      await handleSelecionarConversa(contato.conversaRef)
+    }
+
+    // Vinculação Contato ↔ Card no Pipeline
+    // Procura se já existe um card correspondente no Kanban
+    const cardCorrespondente = cards.find(
+      (c) =>
+        (contato.kommoRef && c.kommo_id === contato.kommoRef.id) ||
+        c.contato_nome?.toLowerCase() === contato.nome.toLowerCase() ||
+        c.titulo.toLowerCase().includes(contato.nome.toLowerCase()),
+    )
+
+    if (cardCorrespondente) {
+      setCardDestacadoId(cardCorrespondente.id)
+    } else {
+      setCardDestacadoId(null)
+    }
+  }
+
+  // Clicar em um card do pipeline destaca o contato correspondente na barra esquerda
+  const handleSelecionarCardPipeline = (card: AtendimentoFunilCard) => {
+    setCardDestacadoId(card.id)
+
+    // Achar contato correspondente na barra
+    const contatoCorrespondente = contatosUnificados.find(
+      (c) =>
+        (card.kommo_id && c.kommoRef?.id === card.kommo_id) ||
+        (card.contato_nome && c.nome.toLowerCase() === card.contato_nome.toLowerCase()) ||
+        c.nome.toLowerCase() === card.titulo.toLowerCase(),
+    )
+
+    if (contatoCorrespondente) {
+      setContatoSelecionadoId(contatoCorrespondente.id)
+    }
+  }
+
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-5 pb-12">
       {/* =========================================================================
-       * CABEÇALHO DO HUB DE ATENDIMENTO (EXCLUSIVO ADMIN)
+       * CABEÇALHO DO HUB DE ATENDIMENTO (V0.0.71 ADMIN-ONLY)
        * ========================================================================= */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs relative overflow-hidden">
+      <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs relative overflow-hidden">
         {/* Grafismo proprietário Grupo ABR */}
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#253575] flex">
           <div className="h-full w-40 bg-[#F18800] rounded-r-full" />
@@ -602,7 +989,7 @@ export default function HubAtendimentoPage() {
           <div className="space-y-1">
             <div className="flex items-center space-x-2">
               <Badge className="bg-[#253575] text-white hover:bg-[#253575] text-xs font-semibold px-2.5 py-0.5">
-                Fase 1 · Piloto
+                v0.0.71 · Piloto
               </Badge>
               <Badge
                 variant="outline"
@@ -611,14 +998,21 @@ export default function HubAtendimentoPage() {
                 <ShieldCheck className="h-3 w-3 text-amber-600" />
                 Exclusivo Administrador (Thiago Almeida)
               </Badge>
+              <Badge
+                variant="outline"
+                className="border-blue-200 bg-blue-50 text-blue-800 text-[11px] font-semibold flex items-center gap-1"
+              >
+                <Radio className="h-3 w-3 text-blue-600" />
+                Kommo CRM Somente-Leitura
+              </Badge>
             </div>
             <h1 className="text-2xl font-black text-[#253575] tracking-tight flex items-center gap-2">
-              Hub de Atendimento Conversacional
+              Hub de Atendimento
             </h1>
-            <p className="text-sm text-slate-600 max-w-2xl">
-              Ambiente de teste e validação de conceito para a nova central de atendimento do
-              Projeto Guerra. Configure funis operacionais, teste a troca de mensagens com a equipe
-              e acompanhe a atividade recente do bridge Kommo em tempo real.
+            <p className="text-xs sm:text-sm text-slate-600 max-w-3xl">
+              Central de atendimento conversacional com barra lateral fixa de contatos (estilo
+              WhatsApp), painel de troca de mensagens em tempo real e funil pipeline com Kanban
+              arrastável e vinculação automática com cards.
             </p>
           </div>
 
@@ -626,15 +1020,24 @@ export default function HubAtendimentoPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={carregarFunis}
-              disabled={loadingFunis}
+              onClick={() => {
+                carregarFunis()
+                if (funilAtivoId) carregarCards(funilAtivoId)
+                carregarKommo()
+                carregarConversas()
+              }}
+              disabled={loadingFunis || loadingCards}
               className="text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
             >
-              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loadingFunis ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`h-3.5 w-3.5 mr-1.5 ${
+                  loadingFunis || loadingCards ? 'animate-spin' : ''
+                }`}
+              />
               Recarregar
             </Button>
 
-            {/* Botão de Aviso Admin Replicado no Hub */}
+            {/* Botão de Aviso Admin com pulso de atualização preservado */}
             <Button
               size="sm"
               onClick={() => setModalAvisoOpen(true)}
@@ -645,216 +1048,860 @@ export default function HubAtendimentoPage() {
             </Button>
           </div>
         </div>
+
+        {/* NAVEGAÇÃO ENTRE AS DUAS ÁREAS DO HUB: CONVERSA VS FUNIL */}
+        <div className="mt-5 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <Tabs
+            value={hubTab}
+            onValueChange={(val) => setHubTab(val as 'conversa' | 'funil')}
+            className="w-full sm:w-auto"
+          >
+            <TabsList className="bg-slate-100/90 p-1 border border-slate-200/70 h-10">
+              <TabsTrigger
+                value="conversa"
+                className="flex items-center space-x-2 text-xs font-semibold data-[state=active]:bg-[#253575] data-[state=active]:text-white data-[state=active]:shadow-xs px-4"
+              >
+                <MessageSquare className="h-4 w-4" />
+                <span>Tela de Conversa (Estilo WhatsApp)</span>
+                {unreadCounts.total_unread > 0 && (
+                  <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center">
+                    {unreadCounts.total_unread}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger
+                value="funil"
+                className="flex items-center space-x-2 text-xs font-semibold data-[state=active]:bg-[#253575] data-[state=active]:text-white data-[state=active]:shadow-xs px-4"
+              >
+                <Kanban className="h-4 w-4" />
+                <span>Funil / Pipeline (Kanban)</span>
+                <Badge
+                  variant="secondary"
+                  className="text-[10px] px-1.5 py-0 h-4 bg-white/20 text-inherit font-mono"
+                >
+                  {cards.length}
+                </Badge>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {/* Seletor de Funil Ativo visível em ambas as abas para alternância rápida */}
+          <div className="flex items-center space-x-2">
+            <span className="text-xs font-semibold text-slate-500 whitespace-nowrap hidden md:inline">
+              Funil Ativo:
+            </span>
+            <div className="flex items-center gap-1.5 overflow-x-auto">
+              {funis.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setFunilAtivoId(f.id)}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                    funilAtivoId === f.id
+                      ? 'bg-[#253575] text-white border-[#253575] shadow-2xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: f.cor_hex || '#253575' }}
+                  />
+                  <span>{f.nome}</span>
+                </button>
+              ))}
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setModalNovoFunilOpen(true)}
+                className="h-7 text-xs border-dashed text-slate-600 hover:text-[#253575] hover:bg-slate-50"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Novo
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* =========================================================================
-       * SEÇÃO 1: BARRA DE FUNIS E ETAPAS (HORIZONTAL NO TOPO DO HUB)
+       * CORPO PRINCIPAL COM BARRA DE CONTATOS FIXA À ESQUERDA (ESTILO WHATSAPP)
+       * E ÁREA DINÂMICA À DIREITA (CONVERSA OU FUNIL/KANBAN)
        * ========================================================================= */}
-      <Card className="border-slate-200/90 shadow-sm overflow-hidden">
-        <CardHeader className="bg-slate-50/70 border-b border-slate-200/70 py-3.5 px-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center space-x-2">
-              <div className="h-8 w-8 rounded-lg bg-[#253575] text-white flex items-center justify-center font-bold">
-                <Layers className="h-4 w-4 text-[#F18800]" />
-              </div>
-              <div>
-                <CardTitle className="text-sm font-bold text-[#253575]">
-                  Funis de Atendimento
-                </CardTitle>
-                <CardDescription className="text-xs text-slate-500">
-                  Defina os fluxos conversacionais e as etapas de avanço dos clientes
-                </CardDescription>
-              </div>
-            </div>
-
-            <Button
-              size="sm"
-              onClick={() => {
-                setNomeNovoFunil('')
-                setDescNovoFunil('')
-                setCorNovoFunil('#253575')
-                setModalNovoFunilOpen(true)
-              }}
-              className="bg-[#253575] hover:bg-[#1a2752] text-white text-xs font-semibold h-8"
-            >
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
-              Novo Funil
-            </Button>
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-4 sm:p-5 space-y-4">
-          {/* Barra Horizontal de Funis (Tabs/Pills) */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-100">
-            {loadingFunis ? (
-              <div className="flex items-center space-x-2 py-2 text-xs text-slate-500">
-                <RefreshCw className="h-3.5 w-3.5 animate-spin text-[#253575]" />
-                <span>Carregando funis...</span>
-              </div>
-            ) : funis.length === 0 ? (
-              <div className="py-2 text-xs text-slate-400">
-                Nenhum funil configurado. Clique em &quot;Novo Funil&quot; para começar.
-              </div>
-            ) : (
-              funis.map((funil) => {
-                const isSelected = funil.id === funilAtivoId
-                return (
-                  <div key={funil.id} className="relative group shrink-0">
-                    <button
-                      onClick={() => setFunilAtivoId(funil.id)}
-                      className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all border ${
-                        isSelected
-                          ? 'bg-[#253575] text-white border-[#253575] shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-[#253575]/40 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: funil.cor_hex || '#253575' }}
-                      />
-                      <span>{funil.nome}</span>
-                      <Badge
-                        variant="secondary"
-                        className={`text-[10px] px-1.5 py-0 h-4 font-mono ${
-                          isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {funil.etapas?.length || 0}
-                      </Badge>
-                    </button>
-
-                    {/* Ações rápidas no funil selecionado */}
-                    {isSelected && (
-                      <div className="absolute -top-2 -right-1 flex items-center space-x-0.5 opacity-90 hover:opacity-100">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setFunilEmEdicao(funil)
-                            setNomeEdicaoFunil(funil.nome)
-                            setDescEdicaoFunil(funil.descricao || '')
-                            setCorEdicaoFunil(funil.cor_hex || '#253575')
-                            setModalEditarFunilOpen(true)
-                          }}
-                          className="h-5 w-5 rounded-full bg-slate-700 text-white flex items-center justify-center hover:bg-slate-900 shadow-xs"
-                          title="Renomear / Editar Funil"
-                        >
-                          <Edit2 className="h-2.5 w-2.5" />
-                        </button>
-                        {funis.length > 1 && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleExcluirFunil(funil)
-                            }}
-                            className="h-5 w-5 rounded-full bg-red-600 text-white flex items-center justify-center hover:bg-red-700 shadow-xs"
-                            title="Excluir Funil"
-                          >
-                            <Trash2 className="h-2.5 w-2.5" />
-                          </button>
-                        )}
-                      </div>
-                    )}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* =======================================================================
+         * BARRA LATERAL FIXA DE CONTATOS (ESTILO WHATSAPP WEB) — 4 COLS EM DESKTOP
+         * "a barra que ficará sempre aberta, deve ser a dos contatos"
+         * ======================================================================= */}
+        <div className="lg:col-span-4 xl:col-span-3">
+          <Card className="border-slate-200/90 shadow-sm flex flex-col h-[740px] overflow-hidden bg-white">
+            {/* Header da Barra de Contatos */}
+            <div className="p-3.5 bg-slate-50/90 border-b border-slate-200 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="h-7 w-7 rounded-lg bg-[#253575] text-white flex items-center justify-center font-bold">
+                    <UserIcon className="h-4 w-4 text-[#F18800]" />
                   </div>
-                )
-              })
-            )}
-          </div>
-
-          {/* Painel de Etapas do Funil Selecionado */}
-          {funilAtual && (
-            <div className="bg-slate-50/80 rounded-xl p-4 border border-slate-200/80 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                      Etapas do Funil &quot;{funilAtual.nome}&quot;
-                    </h3>
-                    {funilAtual.descricao && (
-                      <span className="text-xs text-slate-500 hidden md:inline">
-                        — {funilAtual.descricao}
-                      </span>
-                    )}
+                  <div>
+                    <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Contatos & Leads
+                    </h2>
+                    <p className="text-[10px] text-slate-400">Barra fixa estilo WhatsApp</p>
                   </div>
                 </div>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setNomeNovaEtapa('')
-                    setTipoNovaEtapa('normal')
-                    setCorNovaEtapa('#3b82f6')
-                    setModalNovaEtapaOpen(true)
-                  }}
-                  className="h-7 text-xs border-[#253575]/30 text-[#253575] hover:bg-[#253575]/5 font-semibold"
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Nova Etapa
-                </Button>
+                <div className="flex items-center space-x-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleAbrirNovaDm}
+                    className="h-7 px-2 text-xs text-[#253575] hover:bg-slate-200/60 font-semibold"
+                    title="Nova DM com colaborador"
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-0.5" />
+                    DM
+                  </Button>
+                </div>
               </div>
 
-              {/* Lista visual de etapas conectadas */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-1">
-                {(funilAtual.etapas || []).length === 0 ? (
-                  <div className="col-span-full py-4 text-center text-xs text-slate-400 bg-white rounded-lg border border-dashed border-slate-300">
-                    Nenhuma etapa cadastrada neste funil. Clique em &quot;Nova Etapa&quot;.
+              {/* Campo de Busca de Contatos */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                <Input
+                  placeholder="Pesquisar contato, lead ou canal..."
+                  value={buscaContatoBarra}
+                  onChange={(e) => setBuscaContatoBarra(e.target.value)}
+                  className="h-8 pl-8 text-xs bg-white border-slate-200 shadow-2xs"
+                />
+                {buscaContatoBarra && (
+                  <button
+                    onClick={() => setBuscaContatoBarra('')}
+                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Filtro Rápido: Todos, Kommo CRM, Equipe */}
+              <div className="flex items-center gap-1 text-[11px]">
+                <button
+                  onClick={() => setFiltroTipoContato('todos')}
+                  className={`px-2 py-0.5 rounded-md font-medium transition-colors ${
+                    filtroTipoContato === 'todos'
+                      ? 'bg-[#253575] text-white'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Todos ({contatosUnificados.length})
+                </button>
+                <button
+                  onClick={() => setFiltroTipoContato('crm')}
+                  className={`px-2 py-0.5 rounded-md font-medium transition-colors ${
+                    filtroTipoContato === 'crm'
+                      ? 'bg-[#253575] text-white'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Kommo ({kommoData?.items?.length || 0})
+                </button>
+                <button
+                  onClick={() => setFiltroTipoContato('equipe')}
+                  className={`px-2 py-0.5 rounded-md font-medium transition-colors ${
+                    filtroTipoContato === 'equipe'
+                      ? 'bg-[#253575] text-white'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Equipe ({conversas.length})
+                </button>
+              </div>
+            </div>
+
+            {/* Lista com Rolagem dos Contatos / Leads */}
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 p-1.5 space-y-1">
+              {loadingConversas || loadingKommo ? (
+                <div className="flex flex-col items-center justify-center h-48 text-slate-400 space-y-2 text-xs">
+                  <RefreshCw className="h-4 w-4 animate-spin text-[#253575]" />
+                  <span>Carregando contatos...</span>
+                </div>
+              ) : contatosFiltrados.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-400 space-y-1">
+                  <p>Nenhum contato encontrado.</p>
+                  <p className="text-[11px] text-slate-400">Ajuste o filtro ou a busca acima.</p>
+                </div>
+              ) : (
+                contatosFiltrados.map((contato) => {
+                  const isSelected = contatoSelecionadoId === contato.id
+                  const temCardVinculado = cards.some(
+                    (c) =>
+                      (contato.kommoRef && c.kommo_id === contato.kommoRef.id) ||
+                      c.contato_nome?.toLowerCase() === contato.nome.toLowerCase() ||
+                      c.titulo.toLowerCase().includes(contato.nome.toLowerCase()),
+                  )
+
+                  return (
+                    <div
+                      key={contato.id}
+                      onClick={() => handleSelecionarContatoBarra(contato)}
+                      className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer group flex items-start space-x-2.5 border ${
+                        isSelected
+                          ? 'bg-[#253575] text-white border-[#253575] shadow-xs'
+                          : 'bg-white text-slate-800 border-transparent hover:bg-slate-50 hover:border-slate-200'
+                      }`}
+                    >
+                      {/* Avatar / Iniciais estilo WhatsApp */}
+                      <div className="relative shrink-0 mt-0.5">
+                        <div
+                          className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold ${
+                            isSelected
+                              ? 'bg-white/20 text-white'
+                              : contato.tipo === 'kommo'
+                                ? 'bg-blue-100 text-[#253575]'
+                                : 'bg-slate-100 text-[#253575] border border-slate-200'
+                          }`}
+                        >
+                          {contato.initials}
+                        </div>
+                        {contato.isOnline !== undefined && (
+                          <span
+                            className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ${
+                              isSelected ? 'ring-[#253575]' : 'ring-white'
+                            } ${contato.isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                            title={contato.isOnline ? 'Online' : 'Offline'}
+                          />
+                        )}
+                      </div>
+
+                      {/* Dados do Contato */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1">
+                          <span
+                            className={`text-xs font-bold truncate ${
+                              isSelected ? 'text-white' : 'text-slate-900'
+                            }`}
+                          >
+                            {contato.nome}
+                          </span>
+                          {contato.unreadCount && contato.unreadCount > 0 ? (
+                            <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                              {contato.unreadCount}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <p
+                          className={`text-[11px] truncate mt-0.5 ${
+                            isSelected ? 'text-slate-200' : 'text-slate-500'
+                          }`}
+                        >
+                          {contato.subtitulo || contato.telefone || 'Sem mensagens recentes'}
+                        </p>
+
+                        <div className="flex items-center justify-between gap-1 mt-1 text-[10px]">
+                          <span
+                            className={`font-medium ${
+                              isSelected ? 'text-slate-300' : 'text-slate-400'
+                            }`}
+                          >
+                            {contato.canal}
+                          </span>
+
+                          <div className="flex items-center space-x-1 shrink-0">
+                            {temCardVinculado ? (
+                              <Badge
+                                variant="outline"
+                                className={`text-[9px] px-1 py-0 h-3.5 border ${
+                                  isSelected
+                                    ? 'bg-emerald-400/20 text-emerald-200 border-emerald-300/40'
+                                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                }`}
+                              >
+                                Card no Funil ✓
+                              </Badge>
+                            ) : (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleAdicionarContatoAoFunil(contato)
+                                }}
+                                className={`text-[9px] font-semibold px-1 py-0 rounded transition-colors ${
+                                  isSelected
+                                    ? 'bg-white/20 text-white hover:bg-white/30'
+                                    : 'bg-slate-100 text-[#253575] hover:bg-slate-200'
+                                }`}
+                                title="Criar card no pipeline deste contato"
+                              >
+                                + Funil
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+            {/* Rodapé da Barra com Status */}
+            <div className="p-2.5 bg-slate-50 border-t border-slate-200 text-[10px] text-slate-500 flex items-center justify-between shrink-0">
+              <span>{contatosFiltrados.length} contatos visíveis</span>
+              <span className="font-semibold text-slate-700">Barra Fixa</span>
+            </div>
+          </Card>
+        </div>
+
+        {/* =======================================================================
+         * ÁREA DIREITA: TELA DE CONVERSA (WHATSAPP) OU PIPELINE (KANBAN) — 8 COLS
+         * ======================================================================= */}
+        <div className="lg:col-span-8 xl:col-span-9 space-y-4">
+          {hubTab === 'conversa' ? (
+            /* ===================================================================
+             * ABA A: TELA DE CONVERSA ESTILO WHATSAPP WEB
+             * =================================================================== */
+            <Card className="border-slate-200/90 shadow-sm flex flex-col h-[740px] overflow-hidden bg-white">
+              {/* Header da Conversa Ativa */}
+              <CardHeader className="bg-[#142758] text-white py-3.5 px-4 shrink-0 relative">
+                <div className="absolute top-0 left-0 right-0 h-1 bg-[#253575] flex">
+                  <div className="h-full w-24 bg-[#F18800] rounded-r-full" />
+                </div>
+
+                <div className="flex items-center justify-between mt-0.5">
+                  <div className="flex items-center space-x-3 min-w-0">
+                    <div className="h-9 w-9 rounded-full bg-[#253575] text-[#F18800] border border-white/20 flex items-center justify-center font-bold text-xs shrink-0">
+                      {activeConversa?.tipo === 'dm' ? (
+                        getDmDisplay(activeConversa).initials
+                      ) : activeConversa?.tipo === 'geral' ? (
+                        <Megaphone className="h-4 w-4" />
+                      ) : (
+                        '#'
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center space-x-2">
+                        <h2 className="text-sm font-bold text-white truncate">
+                          {activeConversa
+                            ? activeConversa.tipo === 'dm'
+                              ? getDmDisplay(activeConversa).name
+                              : activeConversa.titulo
+                            : 'Selecione uma conversa na barra lateral'}
+                        </h2>
+                        {activeConversa?.tipo === 'dm' && (
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              getDmDisplay(activeConversa).isOnline
+                                ? 'bg-emerald-400'
+                                : 'bg-slate-400'
+                            }`}
+                            title={getDmDisplay(activeConversa).isOnline ? 'Online' : 'Offline'}
+                          />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-300 truncate">
+                        {activeConversa
+                          ? activeConversa.tipo === 'geral'
+                            ? 'Canal Geral de comunicados para toda a equipe'
+                            : activeConversa.tipo === 'canal_rota'
+                              ? `Canal de colaboração da rota ${activeConversa.regiao_nome}`
+                              : 'Conversa direta e privada 1:1'
+                          : 'Escolha um canal ou contato para iniciar o diálogo'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Ações da Conversa */}
+                  <div className="flex items-center space-x-2 shrink-0">
+                    {/* Botão de Ver Card Vinculado no Pipeline */}
+                    {cards.some(
+                      (c) =>
+                        activeConversa &&
+                        c.contato_nome?.toLowerCase() ===
+                          getDmDisplay(activeConversa).name.toLowerCase(),
+                    ) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const card = cards.find(
+                            (c) =>
+                              activeConversa &&
+                              c.contato_nome?.toLowerCase() ===
+                                getDmDisplay(activeConversa).name.toLowerCase(),
+                          )
+                          if (card) {
+                            setCardDestacadoId(card.id)
+                            setHubTab('funil')
+                          }
+                        }}
+                        className="h-7.5 px-2.5 text-xs bg-white/10 hover:bg-white/20 text-white border-white/20 font-medium"
+                      >
+                        <Kanban className="h-3 w-3 mr-1" />
+                        Ver no Funil
+                      </Button>
+                    )}
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setModalAvisoOpen(true)}
+                      className="h-7.5 px-2.5 text-xs bg-[#F18800] hover:bg-[#d97b00] text-white border-none font-bold shadow-xs"
+                    >
+                      <Megaphone className="h-3 w-3 mr-1" />
+                      Aviso
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+
+              {/* Área das Mensagens com Bolhas Estilo WhatsApp */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#e5ddd5]/20 bg-pattern">
+                {loadingMensagens ? (
+                  <div className="flex items-center justify-center h-full text-xs text-slate-400">
+                    <RefreshCw className="h-4 w-4 animate-spin mr-2 text-[#253575]" />
+                    Carregando histórico da conversa...
+                  </div>
+                ) : mensagens.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-2">
+                    <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-300">
+                      <MessageSquare className="h-6 w-6" />
+                    </div>
+                    <p className="text-xs font-semibold text-slate-600">
+                      Nenhuma mensagem enviada nesta conversa.
+                    </p>
+                    <p className="text-[11px] text-slate-400 max-w-sm text-center">
+                      Envie um recado, diretriz operacional ou aviso oficial abaixo.
+                    </p>
                   </div>
                 ) : (
-                  (funilAtual.etapas || []).map((etapa, idx) => {
-                    const isSucesso = etapa.tipo_desfecho === 'sucesso'
-                    const isPerda = etapa.tipo_desfecho === 'perda'
+                  mensagens.map((msg) => {
+                    const isMe = msg.autor === user?.id
+                    const isAviso = msg.tipo === 'aviso'
+
+                    if (isAviso) {
+                      return (
+                        <div
+                          key={msg.id}
+                          className="max-w-2xl mx-auto p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 shadow-2xs space-y-1"
+                        >
+                          <div className="flex items-center space-x-1.5 text-amber-800 text-xs font-bold">
+                            <Megaphone className="h-3.5 w-3.5 text-[#F18800]" />
+                            <span>Aviso Oficial · {msg.autor_nome}</span>
+                            <span className="text-[10px] text-amber-600 font-normal ml-auto font-mono">
+                              {formatarDataHoraBrasilia(msg.created, {
+                                formatoCurto: true,
+                              }).split('às')[1] || ''}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-800 font-medium whitespace-pre-wrap leading-relaxed">
+                            {msg.texto}
+                          </p>
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div
+                        key={msg.id}
+                        className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                      >
+                        <div className="flex items-center space-x-1 mb-0.5 text-[10px] text-slate-400 px-1">
+                          <span className="font-semibold text-slate-600">
+                            {isMe ? 'Você' : msg.autor_nome}
+                          </span>
+                          <span>•</span>
+                          <span className="font-mono">
+                            {formatarDataHoraBrasilia(msg.created, {
+                              formatoCurto: true,
+                            }).split('às')[1] || ''}
+                          </span>
+                        </div>
+
+                        {/* Bolha de mensagem WhatsApp (verde suave para o emissor ou azul ABR / cinza para recebida) */}
+                        <div
+                          className={`max-w-[80%] rounded-2xl px-4 py-2 text-xs leading-relaxed shadow-2xs whitespace-pre-wrap break-words ${
+                            isMe
+                              ? 'bg-[#253575] text-white rounded-tr-xs'
+                              : 'bg-white text-slate-800 rounded-tl-xs border border-slate-200/80'
+                          }`}
+                        >
+                          {msg.texto}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Barra de Envio de Mensagem Estilo WhatsApp */}
+              <form
+                onSubmit={handleEnviarMensagem}
+                className="p-3 border-t border-slate-200 bg-slate-50 flex items-center space-x-2"
+              >
+                <Input
+                  placeholder={
+                    activeConversa
+                      ? `Digite sua mensagem para ${
+                          activeConversa.tipo === 'dm'
+                            ? getDmDisplay(activeConversa).name
+                            : activeConversa.titulo
+                        }...`
+                      : 'Selecione uma conversa para enviar...'
+                  }
+                  value={novoTextoMsg}
+                  onChange={(e) => setNovoTextoMsg(e.target.value)}
+                  disabled={!activeConversa || enviandoMsg}
+                  className="h-10 text-xs bg-white border-slate-300 shadow-2xs rounded-xl focus-visible:ring-[#253575]"
+                />
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!novoTextoMsg.trim() || enviandoMsg || !activeConversa}
+                  className="h-10 px-4 bg-[#253575] hover:bg-[#1a2752] text-white shrink-0 rounded-xl font-bold shadow-xs"
+                >
+                  <Send className="h-4 w-4 mr-1" />
+                  Enviar
+                </Button>
+              </form>
+            </Card>
+          ) : (
+            /* ===================================================================
+             * ABA B: TELA DE FUNIL ESTILO PIPELINE / KANBAN
+             * "estilo pipeline com kanban automático, onde você pode arrastar com a mão
+             * ou mudar o estágio do lead clicando em um menu dropdown"
+             * =================================================================== */
+            <div className="space-y-4">
+              {/* Barra Superior do Kanban com Ações de Funil e Etapas */}
+              <Card className="border-slate-200/90 shadow-sm bg-white">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center space-x-2">
+                        <span
+                          className="h-3 w-3 rounded-full"
+                          style={{ backgroundColor: funilAtual?.cor_hex || '#253575' }}
+                        />
+                        <h2 className="text-base font-bold text-[#253575]">
+                          {funilAtual ? funilAtual.nome : 'Nenhum Funil Selecionado'}
+                        </h2>
+                        {funilAtual && (
+                          <Badge variant="outline" className="text-[10px] font-mono">
+                            {cards.length} cards cadastrados
+                          </Badge>
+                        )}
+                      </div>
+                      {funilAtual?.descricao && (
+                        <p className="text-xs text-slate-500">{funilAtual.descricao}</p>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => handleAbrirNovoCardModal()}
+                        className="bg-[#F18800] hover:bg-[#d97b00] text-white font-bold text-xs h-8 shadow-xs"
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        Adicionar Card
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setNomeNovaEtapa('')
+                          setTipoNovaEtapa('normal')
+                          setCorNovaEtapa('#3b82f6')
+                          setModalNovaEtapaOpen(true)
+                        }}
+                        className="text-xs h-8 border-slate-300 text-slate-700"
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        Nova Etapa
+                      </Button>
+
+                      {funilAtual && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs border-slate-300"
+                            >
+                              <Sliders className="h-3.5 w-3.5 mr-1" />
+                              Opções do Funil
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setFunilEmEdicao(funilAtual)
+                                setNomeEdicaoFunil(funilAtual.nome)
+                                setDescEdicaoFunil(funilAtual.descricao || '')
+                                setCorEdicaoFunil(funilAtual.cor_hex || '#253575')
+                                setModalEditarFunilOpen(true)
+                              }}
+                            >
+                              <Edit2 className="h-3.5 w-3.5 mr-2" />
+                              Renomear / Editar Funil
+                            </DropdownMenuItem>
+                            {funis.length > 1 && (
+                              <DropdownMenuItem
+                                onClick={() => handleExcluirFunil(funilAtual)}
+                                className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 mr-2" />
+                                Excluir Funil
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* PIPELINE KANBAN AUTOMÁTICO (COLUNAS = ETAPAS, CARDS = LEADS) */}
+              <div className="flex gap-4 overflow-x-auto pb-4 items-start min-h-[580px]">
+                {loadingFunis || loadingCards ? (
+                  <div className="flex items-center justify-center w-full py-20 text-slate-400 text-xs">
+                    <RefreshCw className="h-5 w-5 animate-spin mr-2 text-[#253575]" />
+                    Carregando colunas e cards do pipeline...
+                  </div>
+                ) : !funilAtual || (funilAtual.etapas || []).length === 0 ? (
+                  <div className="w-full bg-white rounded-xl border border-dashed border-slate-300 p-12 text-center text-slate-500 space-y-2">
+                    <Kanban className="h-8 w-8 text-slate-300 mx-auto" />
+                    <p className="font-semibold text-sm">Este funil ainda não tem etapas.</p>
+                    <p className="text-xs text-slate-400">
+                      Clique em "Nova Etapa" para adicionar a primeira coluna do seu pipeline.
+                    </p>
+                  </div>
+                ) : (
+                  (funilAtual.etapas || []).map((etapa) => {
+                    const cardsDaEtapa = cards.filter((c) => c.etapa === etapa.id)
+                    const isHovered = colunaHoverId === etapa.id
+
                     return (
                       <div
                         key={etapa.id}
-                        className="bg-white rounded-lg p-3 border border-slate-200 shadow-2xs flex flex-col justify-between space-y-2 relative group hover:border-[#253575]/40 transition-colors"
+                        onDragOver={(e) => handleDragOver(e, etapa.id)}
+                        onDragLeave={(e) => handleDragLeave(e, etapa.id)}
+                        onDrop={(e) => handleDrop(e, etapa.id)}
+                        className={`w-72 sm:w-80 shrink-0 bg-slate-100/90 rounded-2xl border flex flex-col max-h-[660px] transition-all ${
+                          isHovered
+                            ? 'border-[#253575] bg-blue-50/70 shadow-md ring-2 ring-[#253575]/20'
+                            : 'border-slate-200/80 shadow-2xs'
+                        }`}
                       >
-                        <div className="flex items-start justify-between gap-1.5">
-                          <div className="flex items-center space-x-1.5 min-w-0">
+                        {/* Cabeçalho da Coluna / Etapa */}
+                        <div className="p-3 border-b border-slate-200/80 bg-white/70 rounded-t-2xl flex items-center justify-between">
+                          <div className="flex items-center space-x-2 min-w-0">
                             <span
-                              className="h-2 w-2 rounded-full shrink-0"
+                              className="h-2.5 w-2.5 rounded-full shrink-0"
                               style={{ backgroundColor: etapa.cor_hex || '#3b82f6' }}
                             />
-                            <span className="text-xs font-bold text-slate-800 truncate">
-                              {idx + 1}. {etapa.nome}
-                            </span>
+                            <h3
+                              className="text-xs font-bold text-slate-800 truncate"
+                              title={etapa.nome}
+                            >
+                              {etapa.nome}
+                            </h3>
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px] px-1.5 py-0 h-4 bg-slate-200/80 text-slate-700 font-mono"
+                            >
+                              {cardsDaEtapa.length}
+                            </Badge>
                           </div>
 
-                          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1 shrink-0">
+                          <div className="flex items-center space-x-1 shrink-0">
                             <button
-                              onClick={() => {
-                                setEtapaEmEdicao(etapa)
-                                setNomeEdicaoEtapa(etapa.nome)
-                                setCorEdicaoEtapa(etapa.cor_hex || '#3b82f6')
-                                setTipoEdicaoEtapa(etapa.tipo_desfecho || 'normal')
-                                setModalEditarEtapaOpen(true)
-                              }}
-                              className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100"
-                              title="Editar Etapa"
+                              onClick={() => handleAbrirNovoCardModal(etapa.id)}
+                              className="p-1 text-slate-400 hover:text-[#253575] rounded hover:bg-slate-100"
+                              title="Adicionar card nesta etapa"
                             >
-                              <Edit2 className="h-3 w-3" />
+                              <Plus className="h-3.5 w-3.5" />
                             </button>
-                            <button
-                              onClick={() => handleExcluirEtapa(etapa)}
-                              className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50"
-                              title="Excluir Etapa"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100">
+                                  <Sliders className="h-3.5 w-3.5" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setEtapaEmEdicao(etapa)
+                                    setNomeEdicaoEtapa(etapa.nome)
+                                    setCorEdicaoEtapa(etapa.cor_hex || '#3b82f6')
+                                    setTipoEdicaoEtapa(etapa.tipo_desfecho || 'normal')
+                                    setModalEditarEtapaOpen(true)
+                                  }}
+                                >
+                                  <Edit2 className="h-3 w-3 mr-2" />
+                                  Editar Etapa
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleExcluirEtapa(etapa)}
+                                  className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                                >
+                                  <Trash2 className="h-3 w-3 mr-2" />
+                                  Excluir Etapa
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100">
-                          <span className="font-mono">Ordem #{etapa.ordem}</span>
-                          {isSucesso ? (
-                            <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 text-[9px] px-1 py-0 h-4 border-none">
-                              Sucesso
-                            </Badge>
-                          ) : isPerda ? (
-                            <Badge className="bg-red-100 text-red-800 hover:bg-red-100 text-[9px] px-1 py-0 h-4 border-none">
-                              Perda
-                            </Badge>
+                        {/* Lista com rolagem de cards arrastáveis */}
+                        <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5">
+                          {cardsDaEtapa.length === 0 ? (
+                            <div className="py-8 text-center text-xs text-slate-400 border border-dashed border-slate-300 rounded-xl bg-white/40">
+                              Arraste um card aqui
+                            </div>
                           ) : (
-                            <span className="text-slate-400">Em andamento</span>
+                            cardsDaEtapa.map((card) => {
+                              const isDestacado = cardDestacadoId === card.id
+                              const isArrastando = cardArrastandoId === card.id
+
+                              return (
+                                <div
+                                  key={card.id}
+                                  draggable
+                                  onDragStart={(e) => handleDragStart(e, card.id)}
+                                  onClick={() => handleSelecionarCardPipeline(card)}
+                                  className={`p-3 rounded-xl border bg-white shadow-2xs transition-all cursor-grab active:cursor-grabbing space-y-2 relative group hover:border-[#253575]/50 hover:shadow-xs ${
+                                    isDestacado
+                                      ? 'border-[#253575] ring-2 ring-[#253575]/30 bg-blue-50/30'
+                                      : 'border-slate-200'
+                                  } ${isArrastando ? 'opacity-40' : 'opacity-100'}`}
+                                >
+                                  {/* Título e Ações Rápidas do Card */}
+                                  <div className="flex items-start justify-between gap-1.5">
+                                    <div className="min-w-0">
+                                      <h4 className="text-xs font-bold text-slate-900 leading-snug truncate">
+                                        {card.titulo}
+                                      </h4>
+                                      {card.contato_nome && (
+                                        <p className="text-[11px] text-slate-500 truncate flex items-center gap-1 mt-0.5">
+                                          <UserIcon className="h-3 w-3 text-slate-400" />
+                                          <span>{card.contato_nome}</span>
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    {/* MUDANÇA DE ESTÁGIO VIA DROPDOWN NO PRÓPRIO CARD (PEDIDO PELO USUÁRIO) */}
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <button
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="text-slate-400 hover:text-slate-800 p-1 rounded hover:bg-slate-100 shrink-0"
+                                          title="Mover estágio do card"
+                                        >
+                                          <ChevronDown className="h-3.5 w-3.5" />
+                                        </button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end" className="w-56">
+                                        <DropdownMenuLabel className="text-xs font-bold text-[#253575]">
+                                          Mover para Estágio:
+                                        </DropdownMenuLabel>
+                                        <DropdownMenuSeparator />
+                                        {(funilAtual?.etapas || []).map((etp) => (
+                                          <DropdownMenuItem
+                                            key={etp.id}
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleMudarEstagioCardDropdown(card, etp.id)
+                                            }}
+                                            className="text-xs flex items-center justify-between"
+                                          >
+                                            <div className="flex items-center space-x-2">
+                                              <span
+                                                className="h-2 w-2 rounded-full"
+                                                style={{
+                                                  backgroundColor: etp.cor_hex || '#3b82f6',
+                                                }}
+                                              />
+                                              <span>{etp.nome}</span>
+                                            </div>
+                                            {card.etapa === etp.id && (
+                                              <Check className="h-3 w-3 text-emerald-600" />
+                                            )}
+                                          </DropdownMenuItem>
+                                        ))}
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            setCardEmDetalhes(card)
+                                            setModalDetalhesCardOpen(true)
+                                          }}
+                                        >
+                                          <History className="h-3 w-3 mr-2" />
+                                          Ver Histórico & Detalhes
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleExcluirCard(card)
+                                          }}
+                                          className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                                        >
+                                          <Trash2 className="h-3 w-3 mr-2" />
+                                          Excluir Card
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </div>
+
+                                  {/* Metadados: Telefone, Origem, Valor */}
+                                  {(card.telefone || card.valor) && (
+                                    <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100">
+                                      {card.telefone ? (
+                                        <span className="flex items-center gap-1 font-mono text-slate-600 truncate">
+                                          <Phone className="h-2.5 w-2.5 text-slate-400" />
+                                          {card.telefone}
+                                        </span>
+                                      ) : (
+                                        <span />
+                                      )}
+
+                                      {card.valor ? (
+                                        <span className="font-semibold text-emerald-700 font-mono">
+                                          R${' '}
+                                          {card.valor.toLocaleString('pt-BR', {
+                                            minimumFractionDigits: 2,
+                                          })}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  )}
+
+                                  {/* Rodapé do Card: Carimbo de Atualização e Tag */}
+                                  <div className="flex items-center justify-between text-[9px] text-slate-400 pt-0.5">
+                                    <span className="flex items-center gap-1 font-mono">
+                                      <Clock className="h-2.5 w-2.5 text-slate-400" />
+                                      {formatarDataHoraBrasilia(card.updated, {
+                                        formatoCurto: true,
+                                      })}
+                                    </span>
+                                    {card.origem === 'kommo_bridge' ? (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-[8px] px-1 py-0 h-3.5 bg-blue-50 text-blue-800 border-blue-200"
+                                      >
+                                        Kommo
+                                      </Badge>
+                                    ) : (
+                                      <span className="text-slate-400">Manual</span>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })
                           )}
                         </div>
                       </div>
@@ -864,477 +1911,208 @@ export default function HubAtendimentoPage() {
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* =========================================================================
-       * SEÇÃO 2: ÁREA DE DOIS PAINÉIS — CONVERSA INTERNA + BRIDGE KOMMO
-       * ========================================================================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* =====================================================================
-         * PAINEL ESQUERDO/CENTRAL: CONVERSA INTERNA DENTRO DO HUB (Lg: 7 cols)
-         * ===================================================================== */}
-        <div className="lg:col-span-7 space-y-4">
-          <Card className="border-slate-200/90 shadow-sm flex flex-col h-[640px] overflow-hidden">
-            <CardHeader className="bg-[#142758] text-white py-3.5 px-4 shrink-0 relative">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-[#253575] flex">
-                <div className="h-full w-24 bg-[#F18800] rounded-r-full" />
-              </div>
-
-              <div className="flex items-center justify-between mt-0.5">
-                <div className="flex items-center space-x-2.5 min-w-0">
-                  <div className="h-8 w-8 rounded-lg bg-[#253575] text-[#F18800] flex items-center justify-center font-bold">
-                    <MessageSquare className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center space-x-2">
-                      <h2 className="text-sm font-bold text-white truncate">
-                        {activeConversa
-                          ? activeConversa.tipo === 'dm'
-                            ? getDmDisplay(activeConversa).name
-                            : activeConversa.titulo
-                          : 'Conversas do Hub'}
-                      </h2>
-                      {activeConversa?.tipo === 'dm' && (
-                        <span
-                          className={`h-2 w-2 rounded-full ${
-                            getDmDisplay(activeConversa).isOnline
-                              ? 'bg-emerald-400'
-                              : 'bg-slate-400'
-                          }`}
-                          title={
-                            getDmDisplay(activeConversa).isOnline
-                              ? 'Colaborador Online'
-                              : 'Colaborador Offline'
-                          }
-                        />
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-300 truncate">
-                      {activeConversa
-                        ? activeConversa.tipo === 'geral'
-                          ? 'Canal Geral de comunicados e anúncios oficiais'
-                          : activeConversa.tipo === 'canal_rota'
-                            ? `Canal de colaboração da rota ${activeConversa.regiao_nome}`
-                            : 'Mensagem direta 1:1 integrada à presença'
-                        : 'Reutiliza infraestrutura existente sem duplicar coleções'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-1.5 shrink-0">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleAbrirNovaDm}
-                    className="h-7.5 px-2.5 text-xs bg-white/10 hover:bg-white/20 text-white border-white/20 font-medium"
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    Nova DM
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-
-            {/* Layout Interno do Chat: Lista lateral de conversas + Área de mensagens */}
-            <div className="flex-1 flex min-h-0 bg-slate-50/50">
-              {/* Barra lateral interna de conversas (w-56) */}
-              <div className="w-48 sm:w-56 border-r border-slate-200 bg-white flex flex-col shrink-0">
-                <div className="p-2 border-b border-slate-100">
-                  <div className="relative">
-                    <Search className="absolute left-2 top-2 h-3 w-3 text-slate-400" />
-                    <Input
-                      placeholder="Filtrar..."
-                      value={buscaConversaHub}
-                      onChange={(e) => setBuscaConversaHub(e.target.value)}
-                      className="h-7 pl-6.5 text-[11px] bg-slate-50 border-slate-200"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto divide-y divide-slate-100 p-1 space-y-0.5">
-                  {loadingConversas ? (
-                    <div className="p-3 text-center text-xs text-slate-400">Carregando...</div>
-                  ) : conversasFiltradasHub.length === 0 ? (
-                    <div className="p-3 text-center text-xs text-slate-400">Nenhum canal.</div>
-                  ) : (
-                    conversasFiltradasHub.map((c) => {
-                      const isAtiva = activeConversa?.id === c.id
-                      const unread = unreadCounts.by_conversation[c.id] || 0
-                      const isDm = c.tipo === 'dm'
-                      const dmInfo = isDm ? getDmDisplay(c) : null
-
-                      return (
-                        <button
-                          key={c.id}
-                          onClick={() => handleSelecionarConversa(c)}
-                          className={`w-full text-left p-2 rounded-lg transition-colors flex items-center space-x-2 ${
-                            isAtiva
-                              ? 'bg-[#253575] text-white shadow-xs font-semibold'
-                              : 'text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          <div className="relative shrink-0">
-                            <div
-                              className={`h-7 w-7 rounded-md flex items-center justify-center text-xs font-bold ${
-                                isAtiva
-                                  ? 'bg-white/20 text-white'
-                                  : 'bg-slate-100 text-[#253575] border border-slate-200'
-                              }`}
-                            >
-                              {isDm ? (
-                                dmInfo?.initials || 'DM'
-                              ) : c.tipo === 'geral' ? (
-                                <Megaphone className="h-3.5 w-3.5 text-[#F18800]" />
-                              ) : (
-                                '#'
-                              )}
-                            </div>
-                            {isDm && (
-                              <span
-                                className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full ring-1 ring-white ${
-                                  dmInfo?.isOnline ? 'bg-emerald-500' : 'bg-slate-300'
-                                }`}
-                              />
-                            )}
-                          </div>
-
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs truncate">
-                                {isDm ? dmInfo?.name : c.titulo}
-                              </span>
-                              {unread > 0 && (
-                                <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center shrink-0">
-                                  {unread}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      )
-                    })
-                  )}
-                </div>
-              </div>
-
-              {/* Área Principal de Mensagens */}
-              <div className="flex-1 flex flex-col min-w-0 bg-white">
-                {/* Histórico com Scroll */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                  {loadingMensagens ? (
-                    <div className="flex items-center justify-center h-full text-xs text-slate-400">
-                      <RefreshCw className="h-4 w-4 animate-spin mr-2 text-[#253575]" />
-                      Carregando histórico...
-                    </div>
-                  ) : mensagens.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-1">
-                      <MessageSquare className="h-8 w-8 text-slate-300" />
-                      <p className="text-xs">Nenhuma mensagem nesta conversa ainda.</p>
-                      <p className="text-[11px] text-slate-400">
-                        Envie a primeira mensagem abaixo.
-                      </p>
-                    </div>
-                  ) : (
-                    mensagens.map((msg) => {
-                      const isMe = msg.autor === user?.id
-                      const isAviso = msg.tipo === 'aviso'
-
-                      if (isAviso) {
-                        return (
-                          <div
-                            key={msg.id}
-                            className="p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 shadow-2xs space-y-1"
-                          >
-                            <div className="flex items-center space-x-1.5 text-amber-800 text-xs font-bold">
-                              <Megaphone className="h-3.5 w-3.5 text-[#F18800]" />
-                              <span>Aviso Oficial · {msg.autor_nome}</span>
-                              <span className="text-[10px] text-amber-600 font-normal ml-auto font-mono">
-                                {formatarDataHoraBrasilia(msg.created, {
-                                  formatoCurto: true,
-                                }).split('às')[1] || ''}
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-800 font-medium whitespace-pre-wrap">
-                              {msg.texto}
-                            </p>
-                          </div>
-                        )
-                      }
-
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
-                        >
-                          <div className="flex items-center space-x-1 mb-0.5 text-[10px] text-slate-400">
-                            <span className="font-semibold text-slate-600">
-                              {isMe ? 'Você' : msg.autor_nome}
-                            </span>
-                            <span>•</span>
-                            <span className="font-mono">
-                              {formatarDataHoraBrasilia(msg.created, {
-                                formatoCurto: true,
-                              }).split('às')[1] || ''}
-                            </span>
-                          </div>
-
-                          <div
-                            className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-2xs whitespace-pre-wrap break-words ${
-                              isMe
-                                ? 'bg-[#253575] text-white rounded-tr-xs'
-                                : 'bg-slate-100 text-slate-800 rounded-tl-xs border border-slate-200/80'
-                            }`}
-                          >
-                            {msg.texto}
-                          </div>
-                        </div>
-                      )
-                    })
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-
-                {/* Input de Envio de Mensagem */}
-                <form
-                  onSubmit={handleEnviarMensagem}
-                  className="p-2.5 border-t border-slate-200 bg-slate-50/80 flex items-center space-x-2"
-                >
-                  <Input
-                    placeholder={
-                      activeConversa
-                        ? `Mensagem para ${
-                            activeConversa.tipo === 'dm'
-                              ? getDmDisplay(activeConversa).name
-                              : activeConversa.titulo
-                          }...`
-                        : 'Selecione uma conversa...'
-                    }
-                    value={novoTextoMsg}
-                    onChange={(e) => setNovoTextoMsg(e.target.value)}
-                    disabled={!activeConversa || enviandoMsg}
-                    className="h-9 text-xs bg-white border-slate-200"
-                  />
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={!novoTextoMsg.trim() || enviandoMsg || !activeConversa}
-                    className="h-9 px-3 bg-[#253575] hover:bg-[#1a2752] text-white shrink-0"
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                  </Button>
-                </form>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* =====================================================================
-         * PAINEL DIREITO: BRIDGE KOMMO CRM SOMENTE LEITURA (Lg: 5 cols)
-         * ===================================================================== */}
-        <div className="lg:col-span-5 space-y-4">
-          <Card className="border-slate-200/90 shadow-sm flex flex-col h-[640px] overflow-hidden">
-            <CardHeader className="bg-slate-50/80 border-b border-slate-200/70 py-3.5 px-4 shrink-0">
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <div className="h-7 w-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
-                      <Radio className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                        <span>Bridge Kommo CRM</span>
-                      </CardTitle>
-                    </div>
-                  </div>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={carregarKommo}
-                    disabled={loadingKommo}
-                    className="h-7 text-xs border-slate-300"
-                  >
-                    <RefreshCw className={`h-3 w-3 mr-1 ${loadingKommo ? 'animate-spin' : ''}`} />
-                    Consultar
-                  </Button>
-                </div>
-
-                {/* Selo Obrigatório de Somente Leitura Experimental */}
-                <div className="flex items-center justify-between">
-                  <Badge
-                    variant="outline"
-                    className="border-blue-300 bg-blue-50/80 text-blue-900 text-[11px] font-semibold flex items-center gap-1 py-0.5 px-2"
-                  >
-                    <ShieldCheck className="h-3 w-3 text-blue-700" />
-                    Somente leitura · Bridge Kommo (experimental)
-                  </Badge>
-                  {kommoData?.subdomain && (
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      {kommoData.subdomain}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </CardHeader>
-
-            {/* Filtros de busca dos leads do Kommo */}
-            <div className="p-3 bg-white border-b border-slate-100 space-y-2 shrink-0">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                <Input
-                  placeholder="Filtrar por lead, contato ou telefone..."
-                  value={kommoSearch}
-                  onChange={(e) => setKommoSearch(e.target.value)}
-                  className="h-8 pl-8 text-xs bg-slate-50 border-slate-200"
-                />
-              </div>
-
-              {kommoPipelinesDisponiveis.length > 0 && (
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-                  <button
-                    onClick={() => setKommoFilterPipeline('todos')}
-                    className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                      kommoFilterPipeline === 'todos'
-                        ? 'bg-[#253575] text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    Todos ({kommoData?.items.length || 0})
-                  </button>
-                  {kommoPipelinesDisponiveis.map((pName) => {
-                    const count = (kommoData?.items || []).filter(
-                      (i) => i.pipeline_nome === pName,
-                    ).length
-                    return (
-                      <button
-                        key={pName}
-                        onClick={() => setKommoFilterPipeline(pName)}
-                        className={`px-2 py-0.5 rounded text-[11px] font-medium shrink-0 transition-colors ${
-                          kommoFilterPipeline === pName
-                            ? 'bg-[#253575] text-white'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                      >
-                        {pName} ({count})
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Conteúdo / Lista de Atividade Recente */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-slate-50/50">
-              {loadingKommo ? (
-                <div className="flex flex-col items-center justify-center h-full text-xs text-slate-500 space-y-2 py-12">
-                  <RefreshCw className="h-6 w-6 animate-spin text-[#253575]" />
-                  <p>Lendo dados recentes do Kommo CRM...</p>
-                  <p className="text-[10px] text-slate-400">Modo somente leitura ativado</p>
-                </div>
-              ) : !kommoData || !kommoData.ok ? (
-                /* Exibição amigável em caso de erro / ausência de secrets */
-                <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2 text-slate-700">
-                  <div className="flex items-center space-x-2 text-amber-800 font-bold text-xs">
-                    <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
-                    <span>Bridge Kommo Indisponível</span>
-                  </div>
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    {kommoData?.message ||
-                      'Não foi possível estabelecer contato com a API da Kommo. Verifique os secrets KOMMO_SUBDOMAIN e KOMMO_ACCESS_TOKEN no painel do backend.'}
-                  </p>
-                  <div className="text-[11px] bg-white/80 p-2.5 rounded border border-amber-200/70 text-slate-600 space-y-1">
-                    <p className="font-semibold text-slate-800">Status de Segurança:</p>
-                    <p className="text-[10px]">
-                      • Modo Somente Leitura: <strong>Ativo</strong> (nenhum dado é enviado à Kommo)
-                    </p>
-                    <p className="text-[10px]">
-                      • Código de Retorno:{' '}
-                      <code className="text-amber-800 font-mono">
-                        {kommoData?.error_code || 'N/A'}
-                      </code>
-                    </p>
-                  </div>
-                </div>
-              ) : kommoFiltrados.length === 0 ? (
-                <div className="p-8 text-center text-xs text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
-                  Nenhum lead com atividade recente encontrado no filtro selecionado.
-                </div>
-              ) : (
-                kommoFiltrados.map((item) => (
-                  <div
-                    key={item.id}
-                    className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-2xs space-y-2 hover:border-[#253575]/40 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <h4 className="text-xs font-bold text-[#253575] truncate">
-                          {item.nome_contato}
-                        </h4>
-                        <p className="text-[11px] text-slate-600 truncate">{item.nome_lead}</p>
-                      </div>
-
-                      <Badge
-                        variant="secondary"
-                        className="text-[10px] px-1.5 py-0 h-4 font-normal shrink-0 border"
-                        style={{
-                          backgroundColor: `${item.status_cor || '#64748b'}15`,
-                          borderColor: `${item.status_cor || '#64748b'}40`,
-                          color: item.status_cor || '#334155',
-                        }}
-                      >
-                        {item.status_nome}
-                      </Badge>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500 pt-1 border-t border-slate-100">
-                      <div>
-                        <span className="font-semibold text-slate-700">Funil:</span>{' '}
-                        <span className="truncate">{item.pipeline_nome}</span>
-                      </div>
-                      <div>
-                        <span className="font-semibold text-slate-700">Canal:</span>{' '}
-                        <span>{item.canal}</span>
-                      </div>
-                      {item.telefone && (
-                        <div className="col-span-2 flex items-center space-x-1 text-slate-600">
-                          <Phone className="h-2.5 w-2.5 text-slate-400" />
-                          <span className="font-mono">{item.telefone}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-50">
-                      <span>
-                        Última atividade:{' '}
-                        {formatarDataHoraBrasilia(item.ultima_atividade, {
-                          formatoCurto: true,
-                        })}
-                      </span>
-                      {item.valor && item.valor > 0 ? (
-                        <span className="font-semibold text-emerald-700 font-mono">
-                          R$ {item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="p-2.5 bg-slate-100/70 border-t border-slate-200 text-[10px] text-slate-500 flex items-center justify-between shrink-0">
-              <span>Leitura de até 20 leads recentes</span>
-              <span className="font-medium text-slate-600">
-                Total visível: {kommoFiltrados.length}
-              </span>
-            </div>
-          </Card>
         </div>
       </div>
 
       {/* =========================================================================
-       * MODAIS: FUNIL (CRIAR E EDITAR)
+       * MODAIS DO SISTEMA
        * ========================================================================= */}
+
+      {/* Modal Criar Card Manual no Pipeline */}
+      <Dialog open={modalNovoCardOpen} onOpenChange={setModalNovoCardOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-[#253575] flex items-center gap-2">
+              <Plus className="h-5 w-5 text-[#F18800]" />
+              <span>Novo Card no Pipeline</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Adicione um lead ou oportunidade ao funil "{funilAtual?.nome}".
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div>
+              <label className="font-semibold text-slate-700">
+                Título do Card / Oportunidade *
+              </label>
+              <Input
+                placeholder="Ex: Cotação Estrutura Metálica — Lote 12"
+                value={novoCardTitulo}
+                onChange={(e) => setNovoCardTitulo(e.target.value)}
+                className="mt-1 text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="font-semibold text-slate-700">Etapa Inicial *</label>
+              <select
+                value={etapaDestinoNovoCard}
+                onChange={(e) => setEtapaDestinoNovoCard(e.target.value)}
+                className="w-full mt-1 h-9 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-800 shadow-xs focus:outline-hidden"
+              >
+                {(funilAtual?.etapas || []).map((etp) => (
+                  <option key={etp.id} value={etp.id}>
+                    {etp.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="font-semibold text-slate-700">Nome do Contato</label>
+                <Input
+                  placeholder="Ex: Carlos Mendes"
+                  value={novoCardContatoNome}
+                  onChange={(e) => setNovoCardContatoNome(e.target.value)}
+                  className="mt-1 text-xs"
+                />
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700">Telefone / WhatsApp</label>
+                <Input
+                  placeholder="Ex: 35999887766"
+                  value={novoCardTelefone}
+                  onChange={(e) => setNovoCardTelefone(e.target.value)}
+                  className="mt-1 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="font-semibold text-slate-700">E-mail</label>
+                <Input
+                  placeholder="Ex: contato@empresa.com"
+                  value={novoCardEmail}
+                  onChange={(e) => setNovoCardEmail(e.target.value)}
+                  className="mt-1 text-xs"
+                />
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700">Valor Estimado (R$)</label>
+                <Input
+                  placeholder="Ex: 15000"
+                  value={novoCardValor}
+                  onChange={(e) => setNovoCardValor(e.target.value)}
+                  className="mt-1 text-xs"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="font-semibold text-slate-700">Notas / Observações</label>
+              <Textarea
+                placeholder="Detalhes da negociação ou histórico..."
+                value={novoCardNotas}
+                onChange={(e) => setNovoCardNotas(e.target.value)}
+                rows={2}
+                className="mt-1 text-xs resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setModalNovoCardOpen(false)}
+              className="text-xs"
+            >
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              disabled={!novoCardTitulo.trim() || salvandoCard}
+              onClick={handleSalvarNovoCard}
+              className="bg-[#253575] hover:bg-[#1a2752] text-white text-xs font-semibold"
+            >
+              {salvandoCard ? 'Salvando...' : 'Criar Card'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Histórico e Detalhes do Card */}
+      <Dialog open={modalDetalhesCardOpen} onOpenChange={setModalDetalhesCardOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-[#253575] flex items-center gap-2">
+              <History className="h-5 w-5 text-[#F18800]" />
+              <span>Detalhes & Histórico do Card</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Registro de movimentações e dados de contato.
+            </DialogDescription>
+          </DialogHeader>
+
+          {cardEmDetalhes && (
+            <div className="space-y-4 py-2 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                <h3 className="font-bold text-sm text-slate-900">{cardEmDetalhes.titulo}</h3>
+                {cardEmDetalhes.contato_nome && (
+                  <p className="text-slate-600">
+                    <strong>Contato:</strong> {cardEmDetalhes.contato_nome}
+                  </p>
+                )}
+                {cardEmDetalhes.telefone && (
+                  <p className="text-slate-600 font-mono">
+                    <strong>Telefone:</strong> {cardEmDetalhes.telefone}
+                  </p>
+                )}
+                {cardEmDetalhes.notas && (
+                  <p className="text-slate-500 italic mt-1 pt-1 border-t border-slate-200">
+                    "{cardEmDetalhes.notas}"
+                  </p>
+                )}
+              </div>
+
+              {/* Linha do tempo de movimentação de estágios */}
+              <div className="space-y-2">
+                <h4 className="font-bold text-slate-800 uppercase text-[10px] tracking-wider">
+                  Carimbo de Data/Hora & Histórico de Estágios:
+                </h4>
+                <div className="max-h-48 overflow-y-auto space-y-1.5 divide-y divide-slate-100 border border-slate-200 rounded-lg p-2.5 bg-white">
+                  {!cardEmDetalhes.historico_etapas ||
+                  cardEmDetalhes.historico_etapas.length === 0 ? (
+                    <p className="text-slate-400 text-[11px]">Nenhuma movimentação registrada.</p>
+                  ) : (
+                    cardEmDetalhes.historico_etapas.map((h, i) => (
+                      <div
+                        key={i}
+                        className="pt-1.5 first:pt-0 flex items-center justify-between text-[11px]"
+                      >
+                        <div className="flex items-center space-x-1.5">
+                          <MoveRight className="h-3 w-3 text-[#F18800]" />
+                          <span className="font-semibold text-slate-800">
+                            {h.para_etapa_nome || 'Estágio inicial'}
+                          </span>
+                        </div>
+                        <div className="text-slate-400 font-mono text-[10px]">
+                          {formatarDataHoraBrasilia(h.data, { formatoCurto: true })}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setModalDetalhesCardOpen(false)}
+              className="text-xs"
+            >
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal Criar Funil */}
       <Dialog open={modalNovoFunilOpen} onOpenChange={setModalNovoFunilOpen}>
         <DialogContent className="sm:max-w-md">
@@ -1478,9 +2256,6 @@ export default function HubAtendimentoPage() {
         </DialogContent>
       </Dialog>
 
-      {/* =========================================================================
-       * MODAIS: ETAPAS (CRIAR E EDITAR)
-       * ========================================================================= */}
       {/* Modal Criar Etapa */}
       <Dialog open={modalNovaEtapaOpen} onOpenChange={setModalNovaEtapaOpen}>
         <DialogContent className="sm:max-w-md">
@@ -1621,9 +2396,7 @@ export default function HubAtendimentoPage() {
         </DialogContent>
       </Dialog>
 
-      {/* =========================================================================
-       * MODAL NOVA DM (COLABORADORES)
-       * ========================================================================= */}
+      {/* Modal Nova DM (Colaboradores) */}
       <Dialog open={modalNovaDmOpen} onOpenChange={setModalNovaDmOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -1709,9 +2482,7 @@ export default function HubAtendimentoPage() {
         </DialogContent>
       </Dialog>
 
-      {/* =========================================================================
-       * MODAL AVISO GERAL (ADMIN BROADCAST PRESERVADO)
-       * ========================================================================= */}
+      {/* Modal Aviso Geral Preservado */}
       <Dialog open={modalAvisoOpen} onOpenChange={setModalAvisoOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

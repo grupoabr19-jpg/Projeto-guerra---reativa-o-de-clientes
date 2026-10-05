@@ -391,7 +391,7 @@ export default function ClientesPage() {
                         </Button>
                         <Button
                           size="sm"
-                          onClick={() => navigate(`/atendimento/${item.id}`)}
+                          onClick={() => navigate(`/base-inativos/${item.id}`)}
                           className="h-7 text-xs bg-slate-900 hover:bg-slate-800 text-white"
                         >
                           Atender
@@ -630,7 +630,7 @@ export default function ClientesPage() {
               <div className="pt-4 border-t border-slate-100 flex justify-end">
                 <Button
                   onClick={() => {
-                    navigate(`/atendimento/${selectedClient.id}`)
+                    navigate(`/base-inativos/${selectedClient.id}`)
                     setSelectedClient(null)
                   }}
                   className="w-full bg-[#F18800] hover:bg-[#d97b00] text-white text-xs font-semibold shadow-sm shadow-[#F18800]/25"

@@ -698,6 +698,34 @@ export interface AtendimentoFunilEtapa {
   updated: string
 }
 
+export interface AtendimentoFunilCardHistorico {
+  de_etapa_id?: string
+  para_etapa_id: string
+  para_etapa_nome?: string
+  data: string
+  usuario_nome?: string
+}
+
+export interface AtendimentoFunilCard {
+  id: string
+  funil: string
+  etapa: string
+  titulo: string
+  contato_nome?: string
+  telefone?: string
+  email?: string
+  valor?: number
+  ordem?: number
+  origem?: string
+  kommo_id?: string
+  cliente_id?: string
+  notas?: string
+  historico_etapas?: AtendimentoFunilCardHistorico[]
+  responsavel?: string
+  created: string
+  updated: string
+}
+
 export interface AtendimentoFunil {
   id: string
   nome: string

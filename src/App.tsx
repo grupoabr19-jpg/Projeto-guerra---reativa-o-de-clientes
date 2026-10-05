@@ -40,7 +40,7 @@ const App = () => (
               <Route path="/verify-email" element={<VerifyEmail />} />
 
               {/* Rotas Operacionais Autorizadas */}
-              {/* Operador e Líder: veem /meu-painel, /atendimento e /ranking */}
+              {/* Operador e Líder: veem /meu-painel, /base-inativos e /ranking */}
               <Route
                 path="/meu-painel"
                 element={
@@ -49,14 +49,25 @@ const App = () => (
                   </RoleRoute>
                 }
               />
+              {/* Nova rota oficial 'Base de Inativos' */}
               <Route
-                path="/atendimento"
+                path="/base-inativos"
                 element={
                   <RoleRoute allowedRoles={['operador', 'lider', 'supervisor', 'admin']}>
                     <AtendimentoPage />
                   </RoleRoute>
                 }
               />
+              <Route
+                path="/base-inativos/:clientId"
+                element={
+                  <RoleRoute allowedRoles={['operador', 'lider', 'supervisor', 'admin']}>
+                    <AtendimentoPage />
+                  </RoleRoute>
+                }
+              />
+              {/* Redirecionamentos de compatibilidade para a rota /atendimento antiga */}
+              <Route path="/atendimento" element={<Navigate to="/base-inativos" replace />} />
               <Route
                 path="/atendimento/:clientId"
                 element={

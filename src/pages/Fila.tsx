@@ -90,7 +90,7 @@ export default function FilaPage() {
           title: 'Contato reservado',
           description: res.message || 'Cliente bloqueado para atendimento.',
         })
-        navigate(`/atendimento/${res.cliente.id}`)
+        navigate(`/base-inativos/${res.cliente.id}`)
       } else {
         toast({
           variant: res.carteira_esgotada ? 'destructive' : 'default',
@@ -402,7 +402,7 @@ export default function FilaPage() {
 
                         <Button
                           size="sm"
-                          onClick={() => navigate(`/atendimento/${item.id}`)}
+                          onClick={() => navigate(`/base-inativos/${item.id}`)}
                           className="h-7 text-xs bg-[#253575] hover:bg-[#1e2b5e] text-white font-medium shadow-xs"
                         >
                           Iniciar

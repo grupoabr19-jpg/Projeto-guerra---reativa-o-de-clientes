@@ -19,6 +19,7 @@ import {
   Award,
   Target,
   Filter,
+  Headphones,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -306,16 +307,15 @@ export function MeuPainelPage() {
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             </Button>
-
-            <Link to="/atendimento">
+            <Link to="/base-inativos">
               <Button
                 size="sm"
-                className="h-8 bg-[#F18800] hover:bg-[#d97b00] text-white text-xs font-semibold shadow-sm shadow-[#F18800]/25"
+                className="bg-[#F18800] hover:bg-[#d97b00] text-white font-semibold text-xs shadow-sm shadow-[#F18800]/25 h-8"
               >
-                <PhoneCall className="h-3.5 w-3.5 mr-1.5" />
-                Ir para Atendimento
+                <Headphones className="h-3.5 w-3.5 mr-1.5" />
+                Acessar Base de Inativos
               </Button>
-            </Link>
+            </Link>{' '}
           </div>
         </div>
       </div>
@@ -739,7 +739,7 @@ export function MeuPainelPage() {
                   </CardDescription>
                 </div>
               </div>
-              <Link to="/atendimento">
+              <Link to="/base-inativos">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -793,16 +793,15 @@ export function MeuPainelPage() {
                         ) : null}
                       </div>
                     </div>
-
-                    <Link to="/atendimento">
+                    <Link to="/base-inativos">
                       <Button
                         size="sm"
-                        className="h-7 text-xs bg-rose-600 hover:bg-rose-700 text-white shrink-0"
+                        className="bg-[#253575] hover:bg-[#1d2b5e] text-white text-xs h-8"
                       >
-                        <PhoneCall className="h-3 w-3 mr-1" />
-                        Ligar Agora
+                        <Headphones className="h-3.5 w-3.5 mr-1.5" />
+                        Atender Próximo
                       </Button>
-                    </Link>
+                    </Link>{' '}
                   </div>
                 ))}
               </div>

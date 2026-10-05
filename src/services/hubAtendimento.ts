@@ -1,5 +1,10 @@
 import pb from '@/lib/pocketbase/client'
-import type { AtendimentoFunil, AtendimentoFunilEtapa, KommoBridgeResponse } from '@/types'
+import type {
+  AtendimentoFunil,
+  AtendimentoFunilEtapa,
+  AtendimentoFunilCard,
+  KommoBridgeResponse,
+} from '@/types'
 
 /**
  * Service para a aba "Atendimento" (Hub de Atendimento Conversacional — Fase 1 Admin).
@@ -120,6 +125,86 @@ export async function updateAtendimentoFunilEtapa(
 // 7. Excluir etapa
 export async function deleteAtendimentoFunilEtapa(etapaId: string): Promise<boolean> {
   await pb.collection('atendimento_funil_etapas').delete(etapaId)
+  return true
+}
+
+// ==========================================
+// CARDS DO PIPELINE / KANBAN
+// ==========================================
+
+export async function fetchAtendimentoFunilCards(funilId: string): Promise<AtendimentoFunilCard[]> {
+  try {
+    return await pb.collection('atendimento_funil_cards').getFullList<AtendimentoFunilCard>({
+      filter: `funil = "${funilId}"`,
+      sort: 'ordem,created',
+    })
+  } catch (err) {
+    console.warn('Erro ao buscar cards do funil:', err)
+    return []
+  }
+}
+
+export async function createAtendimentoFunilCard(dados: {
+  funil: string
+  etapa: string
+  titulo: string
+  contato_nome?: string
+  telefone?: string
+  email?: string
+  valor?: number
+  ordem?: number
+  origem?: string
+  kommo_id?: string
+  cliente_id?: string
+  notas?: string
+  responsavel?: string
+}): Promise<AtendimentoFunilCard> {
+  const adminId = pb.authStore.record?.id || ''
+  return pb.collection('atendimento_funil_cards').create<AtendimentoFunilCard>({
+    ...dados,
+    responsavel: dados.responsavel || adminId || undefined,
+    historico_etapas: [
+      {
+        para_etapa_id: dados.etapa,
+        data: new Date().toISOString(),
+        usuario_nome: pb.authStore.record?.name || 'Administrador',
+      },
+    ],
+  })
+}
+
+export async function updateAtendimentoFunilCard(
+  cardId: string,
+  dados: Partial<AtendimentoFunilCard>,
+): Promise<AtendimentoFunilCard> {
+  return pb.collection('atendimento_funil_cards').update<AtendimentoFunilCard>(cardId, dados)
+}
+
+export async function moverCardEtapa(
+  card: AtendimentoFunilCard,
+  novaEtapaId: string,
+  novaEtapaNome?: string,
+): Promise<AtendimentoFunilCard> {
+  const historicoAtual = card.historico_etapas || []
+  const novoHistorico = [
+    ...historicoAtual,
+    {
+      de_etapa_id: card.etapa,
+      para_etapa_id: novaEtapaId,
+      para_etapa_nome: novaEtapaNome,
+      data: new Date().toISOString(),
+      usuario_nome: pb.authStore.record?.name || 'Administrador',
+    },
+  ]
+
+  return pb.collection('atendimento_funil_cards').update<AtendimentoFunilCard>(card.id, {
+    etapa: novaEtapaId,
+    historico_etapas: novoHistorico,
+  })
+}
+
+export async function deleteAtendimentoFunilCard(cardId: string): Promise<boolean> {
+  await pb.collection('atendimento_funil_cards').delete(cardId)
   return true
 }
 
