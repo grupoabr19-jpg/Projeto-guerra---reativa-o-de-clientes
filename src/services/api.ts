@@ -595,8 +595,25 @@ export async function testKommoConnection() {
  * Nunca grava no CRM.
  */
 export async function fetchKommoUsers(): Promise<import('@/types').KommoUserItem[]> {
+  // 1. Tentar rota dedicada /backend/v1/kommo/users
   try {
-    // 1. Tentar obter via kommo_bridge recent-activity
+    const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/kommo/users`, {
+      headers: {
+        Authorization: pb.authStore.token,
+      },
+    })
+    if (res.ok) {
+      const data = await res.json()
+      if (Array.isArray(data.users) && data.users.length > 0) {
+        return data.users
+      }
+    }
+  } catch {
+    /* fallback */
+  }
+
+  // 2. Tentar obter via kommo_bridge recent-activity
+  try {
     const res = await fetch(
       `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/kommo/recent-activity`,
       {
@@ -615,7 +632,7 @@ export async function fetchKommoUsers(): Promise<import('@/types').KommoUserItem
     /* fallback to config */
   }
 
-  // 2. Fallback: ler do registro 'kommo_config' em configuracoes (inspecao.users)
+  // 3. Fallback: ler do registro 'kommo_config' em configuracoes (inspecao.users)
   try {
     const cfg = await pb
       .collection('configuracoes')
@@ -635,6 +652,30 @@ export async function fetchKommoUsers(): Promise<import('@/types').KommoUserItem
   }
 
   return []
+}
+
+/**
+ * Vincula ou desvincula a conta de um usuário do sistema local com uma identidade do Kommo CRM.
+ * Exclusivo admin. Nunca grava no Kommo (somente-leitura) — salva kommo_user_id e kommo_user_nome no banco local.
+ */
+export async function linkKommoUser(params: {
+  userId: string
+  kommoUserId?: string
+  kommoUserNome?: string
+}): Promise<{ ok: boolean; message: string; user?: Partial<User> }> {
+  const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/kommo/link-user`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: pb.authStore.token,
+    },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Falha ao vincular usuário com Kommo')
+  }
+  return res.json()
 }
 
 export async function syncKommoLead(data: {

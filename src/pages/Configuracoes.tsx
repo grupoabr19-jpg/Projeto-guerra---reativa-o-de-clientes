@@ -83,7 +83,12 @@ import {
   Gift,
   Clock,
   CheckCircle,
+  Link2,
+  Unlink,
+  Search,
 } from 'lucide-react'
+import { fetchKommoUsers, linkKommoUser } from '@/services/api'
+import type { KommoUserItem } from '@/types'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -178,6 +183,13 @@ export default function ConfiguracoesPage() {
   const [editingRegiao, setEditingRegiao] = useState<Regiao | null>(null)
   const [savingRegiao, setSavingRegiao] = useState(false)
 
+  // Vínculo Kommo CRM (Admin)
+  const [kommoUsersList, setKommoUsersList] = useState<KommoUserItem[]>([])
+  const [loadingKommoUsers, setLoadingKommoUsers] = useState(false)
+  const [vinculoBusca, setVinculoBusca] = useState('')
+  const [vinculandoUserId, setVinculandoUserId] = useState<string | null>(null)
+  const [selectedKommoUserIdMap, setSelectedKommoUserIdMap] = useState<Record<string, string>>({})
+
   // Concursos Sazonais (Admin)
   const [concursosList, setConcursosList] = useState<ConcursoSazonal[]>([])
   const [loadingConcursos, setLoadingConcursos] = useState(false)
@@ -256,6 +268,7 @@ export default function ConfiguracoesPage() {
       loadRegioesData()
       if (user.role === 'admin') {
         loadConcursosData()
+        loadKommoUsersData()
       }
     }
   }, [user])
@@ -333,6 +346,86 @@ export default function ConfiguracoesPage() {
       console.error('Erro ao carregar regiões:', err)
     } finally {
       setLoadingRegioes(false)
+    }
+  }
+
+  const loadKommoUsersData = async () => {
+    setLoadingKommoUsers(true)
+    try {
+      const kUsers = await fetchKommoUsers()
+      setKommoUsersList(kUsers)
+    } catch (err) {
+      console.error('Erro ao buscar usuários do Kommo:', err)
+    } finally {
+      setLoadingKommoUsers(false)
+    }
+  }
+
+  const handleLinkKommo = async (targetUser: User, kommoIdToLink?: string) => {
+    const kId = kommoIdToLink !== undefined ? kommoIdToLink : selectedKommoUserIdMap[targetUser.id]
+    if (!kId) {
+      toast({
+        variant: 'destructive',
+        title: 'Selecione um usuário Kommo',
+        description: 'Escolha o operador correspondente na Kommo para vincular.',
+      })
+      return
+    }
+
+    const kommoObj = kommoUsersList.find((k) => String(k.id) === String(kId))
+    const kommoNome = kommoObj?.name || ''
+
+    setVinculandoUserId(targetUser.id)
+    try {
+      await linkKommoUser({
+        userId: targetUser.id,
+        kommoUserId: String(kId),
+        kommoUserNome: kommoNome,
+      })
+      toast({
+        title: 'Vínculo salvo',
+        description: `${targetUser.name} vinculado a "${kommoNome || kId}" no Kommo.`,
+      })
+      await loadUsers()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao vincular usuário'
+      toast({
+        variant: 'destructive',
+        title: 'Erro no vínculo',
+        description: msg,
+      })
+    } finally {
+      setVinculandoUserId(null)
+    }
+  }
+
+  const handleUnlinkKommo = async (targetUser: User) => {
+    setVinculandoUserId(targetUser.id)
+    try {
+      await linkKommoUser({
+        userId: targetUser.id,
+        kommoUserId: '',
+        kommoUserNome: '',
+      })
+      setSelectedKommoUserIdMap((prev) => {
+        const next = { ...prev }
+        delete next[targetUser.id]
+        return next
+      })
+      toast({
+        title: 'Vínculo removido',
+        description: `Vínculo Kommo de ${targetUser.name} desfeito com sucesso.`,
+      })
+      await loadUsers()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao desvincular usuário'
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao desvincular',
+        description: msg,
+      })
+    } finally {
+      setVinculandoUserId(null)
     }
   }
 
@@ -904,6 +997,21 @@ export default function ConfiguracoesPage() {
             <Users className="h-3.5 w-3.5" />
             <span>Usuários & Atribuição de Regiões</span>
           </TabsTrigger>
+          {user?.role === 'admin' && (
+            <TabsTrigger
+              value="vinculo-kommo"
+              className="text-xs font-medium flex items-center gap-1.5 data-[state=active]:bg-[#253575] data-[state=active]:text-white"
+            >
+              <Link2 className="h-3.5 w-3.5 text-[#F18800]" />
+              <span>Vínculo Kommo</span>
+              <Badge
+                variant="secondary"
+                className="text-[9px] px-1.5 py-0 bg-blue-100 text-[#253575] font-bold"
+              >
+                Admin
+              </Badge>
+            </TabsTrigger>
+          )}
           <TabsTrigger value="kommo" className="text-xs font-medium flex items-center gap-1.5">
             <Key className="h-3.5 w-3.5" />
             <span>Integração Kommo CRM</span>
@@ -2873,6 +2981,248 @@ export default function ConfiguracoesPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* TAB VÍNCULO KOMMO CRM (ADMIN) */}
+        {user?.role === 'admin' && (
+          <TabsContent value="vinculo-kommo" className="space-y-4">
+            <Card className="border-slate-200 shadow-sm">
+              <CardHeader>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-sm font-semibold text-[#253575] flex items-center space-x-2">
+                      <Link2 className="h-4 w-4 text-[#F18800]" />
+                      <span>Vínculo de Identidade Kommo CRM ↔ Usuários do Sistema</span>
+                    </CardTitle>
+                    <CardDescription className="text-xs text-slate-500">
+                      Associe cada usuário do sistema ao seu respectivo operador no Kommo CRM
+                      (somente-leitura). O identificador é salvo unicamente em nossa base local.
+                    </CardDescription>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="border-blue-400 text-blue-700 bg-blue-50 text-[11px] font-mono"
+                  >
+                    {kommoUsersList.length} Usuários na Kommo
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Banner explicativo */}
+                <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900 flex items-start gap-2.5">
+                  <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed">
+                    <strong>Integração Segura & Somente-Leitura: </strong>
+                    Nenhuma credencial ou token é exposto no navegador. Nenhuma alteração é gravada
+                    na Kommo CRM. O vínculo associa o ID do operador para cruzamento de dados e
+                    auditoria de conversas externas no Hub de Atendimento.
+                  </div>
+                </div>
+
+                {/* Filtros e Busca */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                    <Input
+                      placeholder="Buscar usuário por nome ou e-mail..."
+                      value={vinculoBusca}
+                      onChange={(e) => setVinculoBusca(e.target.value)}
+                      className="h-8 text-xs pl-8"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        loadUsers()
+                        loadKommoUsersData()
+                      }}
+                      disabled={loadingKommoUsers || loadingUsers}
+                      className="h-8 text-xs text-slate-600 hover:text-[#253575]"
+                    >
+                      <RefreshCw
+                        className={`h-3 w-3 mr-1 ${loadingKommoUsers || loadingUsers ? 'animate-spin text-blue-600' : ''}`}
+                      />
+                      Atualizar Lista Kommo
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Tabela de Vínculos */}
+                <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
+                      <tr>
+                        <th className="py-2.5 px-3">Usuário do Sistema</th>
+                        <th className="py-2.5 px-3">Papel & Região</th>
+                        <th className="py-2.5 px-3">Status do Vínculo</th>
+                        <th className="py-2.5 px-3">Operador na Kommo CRM</th>
+                        <th className="py-2.5 px-3 text-right">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {usersList
+                        .filter((u) => {
+                          if (!vinculoBusca.trim()) return true
+                          const term = vinculoBusca.toLowerCase()
+                          return (
+                            u.name?.toLowerCase().includes(term) ||
+                            u.email?.toLowerCase().includes(term) ||
+                            u.kommo_user_nome?.toLowerCase().includes(term) ||
+                            u.kommo_user_id?.toLowerCase().includes(term)
+                          )
+                        })
+                        .map((u) => {
+                          const isVinculado = Boolean(u.kommo_user_id)
+                          const isSavingThis = vinculandoUserId === u.id
+                          const selectedValue =
+                            selectedKommoUserIdMap[u.id] || u.kommo_user_id || ''
+
+                          return (
+                            <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-2.5 px-3">
+                                <div className="font-semibold text-slate-900">{u.name}</div>
+                                <div className="text-[11px] text-slate-500 font-mono">
+                                  {u.email || '—'}
+                                </div>
+                              </td>
+
+                              <td className="py-2.5 px-3">
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[10px] mr-1 ${
+                                    u.role === 'admin'
+                                      ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                      : u.role === 'supervisor'
+                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                        : u.role === 'lider'
+                                          ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                          : 'bg-slate-50 text-slate-700 border-slate-200'
+                                  }`}
+                                >
+                                  {u.role}
+                                </Badge>
+                                <span className="text-[11px] text-slate-500">
+                                  {u.regioes && u.regioes.length > 0
+                                    ? u.regioes.join(', ')
+                                    : 'Geral'}
+                                </span>
+                              </td>
+
+                              <td className="py-2.5 px-3">
+                                {isVinculado ? (
+                                  <Badge className="bg-emerald-50 text-emerald-800 border-emerald-300 text-[10px] font-semibold flex items-center gap-1 w-fit">
+                                    <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                                    <span>Vinculado</span>
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-amber-50 text-amber-800 border-amber-300 text-[10px] font-medium flex items-center gap-1 w-fit"
+                                  >
+                                    <AlertCircle className="h-3 w-3 text-amber-600" />
+                                    <span>Não Vinculado</span>
+                                  </Badge>
+                                )}
+                              </td>
+
+                              <td className="py-2.5 px-3">
+                                <div className="flex flex-col gap-1 max-w-xs">
+                                  {kommoUsersList.length > 0 ? (
+                                    <Select
+                                      value={selectedValue}
+                                      onValueChange={(val) => {
+                                        setSelectedKommoUserIdMap((prev) => ({
+                                          ...prev,
+                                          [u.id]: val,
+                                        }))
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-8 text-xs font-medium">
+                                        <SelectValue placeholder="Selecione um operador Kommo..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {kommoUsersList.map((k) => (
+                                          <SelectItem key={k.id} value={k.id} className="text-xs">
+                                            {k.name} {k.email ? `(${k.email})` : ''} — ID: {k.id}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  ) : (
+                                    <div className="flex items-center gap-1">
+                                      <Input
+                                        placeholder="ID do Operador Kommo (ex: 1234567)"
+                                        value={selectedValue}
+                                        onChange={(e) => {
+                                          const val = e.target.value
+                                          setSelectedKommoUserIdMap((prev) => ({
+                                            ...prev,
+                                            [u.id]: val,
+                                          }))
+                                        }}
+                                        className="h-8 text-xs font-mono"
+                                      />
+                                    </div>
+                                  )}
+                                  {u.kommo_user_id && (
+                                    <div className="text-[10px] text-slate-500 font-mono">
+                                      ID Atual: {u.kommo_user_id}{' '}
+                                      {u.kommo_user_nome ? `• ${u.kommo_user_nome}` : ''}
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="py-2.5 px-3 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    disabled={
+                                      isSavingThis ||
+                                      !selectedValue ||
+                                      (isVinculado && selectedValue === u.kommo_user_id)
+                                    }
+                                    onClick={() => handleLinkKommo(u, selectedValue)}
+                                    className="h-7 text-xs bg-[#253575] hover:bg-[#1a2754] text-white font-medium"
+                                  >
+                                    <Link2 className="h-3 w-3 mr-1" />
+                                    {isSavingThis
+                                      ? 'Salvando...'
+                                      : isVinculado
+                                        ? 'Atualizar Vínculo'
+                                        : 'Vincular'}
+                                  </Button>
+
+                                  {isVinculado && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      disabled={isSavingThis}
+                                      onClick={() => handleUnlinkKommo(u)}
+                                      className="h-7 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                                      title="Desvincular do Kommo"
+                                    >
+                                      <Unlink className="h-3 w-3 mr-1" />
+                                      Desvincular
+                                    </Button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* MODAL / DIALOG DE EDIÇÃO DE REGIÃO */}

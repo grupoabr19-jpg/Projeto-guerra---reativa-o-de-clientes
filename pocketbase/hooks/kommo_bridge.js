@@ -260,3 +260,170 @@ routerAdd(
   },
   $apis.requireAuth(),
 )
+
+/**
+ * GET /backend/v1/kommo/users
+ * Retorna os usuários cadastrados na Kommo (somente leitura).
+ * Exclusivo para administradores.
+ */
+routerAdd(
+  'GET',
+  '/backend/v1/kommo/users',
+  (e) => {
+    try {
+      const authRecord = e.auth
+      if (!authRecord || !authRecord.id) {
+        return e.json(401, { error: 'Autenticação necessária.' })
+      }
+
+      const userRole = authRecord.getString('role')
+      if (userRole !== 'admin') {
+        return e.json(403, { error: 'Acesso restrito a administradores.' })
+      }
+
+      const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
+      const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
+      const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
+
+      if (!subdomain || !accessToken) {
+        return e.json(200, {
+          ok: false,
+          configured: false,
+          users: [],
+          message: 'Credenciais do Kommo não configuradas.',
+        })
+      }
+
+      const baseUrl = apiBaseUrlSecret
+        ? apiBaseUrlSecret.endsWith('/')
+          ? apiBaseUrlSecret.slice(0, -1)
+          : apiBaseUrlSecret
+        : `https://${subdomain}.kommo.com`
+
+      const headers = {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      }
+
+      const uRes = $http.send({
+        url: `${baseUrl}/api/v4/users?limit=250`,
+        method: 'GET',
+        headers: headers,
+        timeout: 6,
+      })
+
+      if (!uRes || uRes.statusCode < 200 || uRes.statusCode >= 300) {
+        return e.json(200, {
+          ok: false,
+          configured: true,
+          users: [],
+          message: `Falha ao obter usuários da Kommo (HTTP ${uRes ? uRes.statusCode : 0}).`,
+        })
+      }
+
+      const rawUsers = uRes.json?._embedded?.users || []
+      const kommoUsers = rawUsers.map((u) => ({
+        id: String(u.id),
+        name: u.name || '',
+        email: u.email || '',
+      }))
+
+      return e.json(200, {
+        ok: true,
+        configured: true,
+        users: kommoUsers,
+        total: kommoUsers.length,
+      })
+    } catch (err) {
+      console.log('[kommo_bridge] Erro ao listar usuarios: ' + err.message)
+      return e.json(200, {
+        ok: false,
+        configured: false,
+        users: [],
+        message: 'Erro interno ao consultar Kommo: ' + err.message,
+      })
+    }
+  },
+  $apis.requireAuth(),
+)
+
+/**
+ * POST /backend/v1/kommo/link-user
+ * Vincula ou desvincula um usuário do sistema local com um usuário do Kommo.
+ * Body: { userId: string, kommoUserId?: string, kommoUserNome?: string }
+ * Exclusivo para administradores. Salva apenas no banco do Projeto Guerra (Kommo é somente-leitura).
+ */
+routerAdd(
+  'POST',
+  '/backend/v1/kommo/link-user',
+  (e) => {
+    try {
+      const authRecord = e.auth
+      if (!authRecord || !authRecord.id) {
+        return e.json(401, { error: 'Autenticação necessária.' })
+      }
+
+      const userRole = authRecord.getString('role')
+      if (userRole !== 'admin') {
+        return e.json(403, { error: 'Apenas administradores podem vincular identidades Kommo.' })
+      }
+
+      const body = e.requestInfo().body || {}
+      const userId = (body.userId || '').toString().trim()
+      const kommoUserId = (body.kommoUserId !== undefined ? body.kommoUserId : '').toString().trim()
+      const kommoUserNome = (body.kommoUserNome !== undefined ? body.kommoUserNome : '')
+        .toString()
+        .trim()
+
+      if (!userId) {
+        return e.json(400, { error: 'userId é obrigatório.' })
+      }
+
+      let targetUser = null
+      try {
+        targetUser = $app.findRecordById('users', userId)
+      } catch (_) {
+        return e.json(404, { error: 'Usuário não encontrado.' })
+      }
+
+      targetUser.set('kommo_user_id', kommoUserId)
+      targetUser.set('kommo_user_nome', kommoUserNome)
+      $app.save(targetUser)
+
+      // Registrar auditoria em eventos_log
+      try {
+        const colEv = $app.findCollectionByNameOrId('eventos_log')
+        const ev = new Record(colEv)
+        ev.set('usuario', authRecord.id)
+        ev.set('acao', kommoUserId ? 'kommo_usuario_vinculado' : 'kommo_usuario_desvinculado')
+        ev.set('detalhes', {
+          target_user_id: userId,
+          target_user_name: targetUser.getString('name'),
+          kommo_user_id: kommoUserId,
+          kommo_user_nome: kommoUserNome,
+          executado_por: authRecord.getString('name') || authRecord.id,
+          executado_em: new Date().toISOString(),
+        })
+        $app.save(ev)
+      } catch (_) {}
+
+      return e.json(200, {
+        ok: true,
+        message: kommoUserId
+          ? 'Vínculo Kommo salvo com sucesso.'
+          : 'Vínculo Kommo removido com sucesso.',
+        user: {
+          id: targetUser.id,
+          name: targetUser.getString('name'),
+          email: targetUser.getString('email'),
+          kommo_user_id: targetUser.getString('kommo_user_id'),
+          kommo_user_nome: targetUser.getString('kommo_user_nome'),
+        },
+      })
+    } catch (err) {
+      console.log('[kommo_bridge] Erro ao vincular usuario: ' + err.message)
+      return e.json(500, { error: 'Falha ao salvar vínculo: ' + err.message })
+    }
+  },
+  $apis.requireAuth(),
+)
