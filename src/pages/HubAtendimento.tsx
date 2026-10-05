@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import pb from '@/lib/pocketbase/client'
 import {
   Layers,
   Plus,
@@ -280,37 +281,7 @@ export default function HubAtendimentoPage() {
     }
   }
 
-  const carregarConversas = async () => {
-    if (!user) return
-    setLoadingConversas(true)
-    try {
-      const [list, usuariosList] = await Promise.all([
-        fetchConversasUsuario(user.role || 'admin', user.regioes || [], user.id),
-        fetchUsers().catch(() => [] as User[]),
-      ])
-      setConversas(list)
-      if (usuariosList && usuariosList.length > 0) {
-        setTodosUsuarios(usuariosList)
-      }
-
-      const unread = await fetchUnreadCounts()
-      setUnreadCounts(unread)
-
-      // Se não tiver conversa ativa, define a primeira (ex.: Canal Geral)
-      if (!activeConversa && list.length > 0) {
-        const canalGeral = list.find((c) => c.tipo === 'geral') || list[0]
-        setActiveConversa(canalGeral)
-        setContatoSelecionadoId(canalGeral.id)
-        await carregarMensagens(canalGeral.id)
-      }
-    } catch (err) {
-      console.warn('Erro ao carregar conversas do chat:', err)
-    } finally {
-      setLoadingConversas(false)
-    }
-  }
-
-  const carregarMensagens = async (conversaId: string) => {
+  const carregarMensagens = useCallback(async (conversaId: string) => {
     setLoadingMensagens(true)
     try {
       const res = await fetchMensagensConversa(conversaId, 1, 50)
@@ -331,16 +302,58 @@ export default function HubAtendimentoPage() {
     } finally {
       setLoadingMensagens(false)
     }
-  }
+  }, [])
+
+  // Ref da conversa ativa para uso dentro de callbacks e realtime sem invalidar hooks
+  const activeConversaRef = useRef<ChatConversa | null>(null)
+  activeConversaRef.current = activeConversa
+
+  const carregarConversas = useCallback(
+    async (selecionarPrimeiraSeNula = false) => {
+      if (!user) return
+      setLoadingConversas(true)
+      try {
+        const [list, usuariosList] = await Promise.all([
+          fetchConversasUsuario(user.role || 'admin', user.regioes || [], user.id),
+          fetchUsers().catch(() => [] as User[]),
+        ])
+        setConversas(list)
+        if (usuariosList && usuariosList.length > 0) {
+          setTodosUsuarios(usuariosList)
+        }
+
+        const unread = await fetchUnreadCounts()
+        setUnreadCounts(unread)
+
+        // Se solicitado ou não tiver conversa ativa, define a primeira (ex.: Canal Geral)
+        if ((selecionarPrimeiraSeNula || !activeConversaRef.current) && list.length > 0) {
+          const canalGeral = list.find((c) => c.tipo === 'geral') || list[0]
+          setActiveConversa(canalGeral)
+          setContatoSelecionadoId(canalGeral.id)
+          await carregarMensagens(canalGeral.id)
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar conversas do chat:', err)
+      } finally {
+        setLoadingConversas(false)
+      }
+    },
+    // Chave de dependências estáveis para o usuário (evita recriação a cada render)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user?.id, user?.role, JSON.stringify(user?.regioes || []), carregarMensagens],
+  )
 
   useEffect(() => {
     carregarFunis()
     carregarKommo()
   }, [user])
 
+  // Carregamento inicial de conversas ao montar ou mudar o usuário autenticado
   useEffect(() => {
-    carregarConversas()
-  }, [carregarConversas])
+    if (user?.id) {
+      carregarConversas(true)
+    }
+  }, [user?.id, carregarConversas])
 
   useEffect(() => {
     if (funilAtivoId) {
@@ -352,24 +365,84 @@ export default function HubAtendimentoPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [mensagens])
 
-  // Polling leve a cada 30s para atualizar contadores e mensagens
+  // Assinatura Realtime (PocketBase) para mensagens e conversas — elimina necessidade de polling agressivo
   useEffect(() => {
+    if (!user) return
+
+    // 1. Assinar novas mensagens (chat_mensagens)
+    const unsubMsgsPromise = pb.collection('chat_mensagens').subscribe('*', (e) => {
+      if (e.action === 'create') {
+        const novaMsg = e.record as unknown as ChatMensagem
+        const atual = activeConversaRef.current
+        if (atual && novaMsg.conversa === atual.id) {
+          setMensagens((prev) => {
+            if (prev.some((m) => m.id === novaMsg.id)) return prev
+            return [...prev, novaMsg]
+          })
+          marcarConversaLida(atual.id).catch(() => {})
+        } else {
+          // Mensagem em outra conversa: atualiza contadores de não lidas
+          fetchUnreadCounts()
+            .then(setUnreadCounts)
+            .catch(() => {})
+        }
+      }
+    })
+
+    // 2. Assinar atualizações de conversas (chat_conversas)
+    const unsubConversasPromise = pb.collection('chat_conversas').subscribe('*', (e) => {
+      if (e.action === 'update' || e.action === 'create') {
+        const convAtualizada = e.record as unknown as ChatConversa
+        // Atualiza a lista lateral com a última mensagem sem refetch completo
+        setConversas((prev) => {
+          const index = prev.findIndex((c) => c.id === convAtualizada.id)
+          if (index >= 0) {
+            const copy = [...prev]
+            copy[index] = { ...copy[index], ...convAtualizada }
+            return copy
+          }
+          return [convAtualizada, ...prev]
+        })
+        fetchUnreadCounts()
+          .then(setUnreadCounts)
+          .catch(() => {})
+      }
+    })
+
+    return () => {
+      unsubMsgsPromise.then((unsub) => unsub()).catch(() => {})
+      unsubConversasPromise.then((unsub) => unsub()).catch(() => {})
+    }
+  }, [user])
+
+  // Polling leve e estável de fallback (a cada 30 segundos) com dependência exclusiva do ID da conversa ativa
+  const activeConversaId = activeConversa?.id
+  useEffect(() => {
+    if (!user) return
     const timer = setInterval(() => {
       fetchUnreadCounts()
         .then(setUnreadCounts)
         .catch(() => {})
-      if (activeConversa) {
-        fetchMensagensConversa(activeConversa.id, 1, 50)
+      if (activeConversaId) {
+        fetchMensagensConversa(activeConversaId, 1, 50)
           .then((res) => {
-            if (res.items.length !== mensagens.length) {
-              setMensagens(res.items)
-            }
+            setMensagens((prev) => {
+              if (
+                res.items.length !== prev.length ||
+                (res.items.length > 0 &&
+                  prev.length > 0 &&
+                  res.items[res.items.length - 1].id !== prev[prev.length - 1].id)
+              ) {
+                return res.items
+              }
+              return prev
+            })
           })
           .catch(() => {})
       }
-    }, 20000)
+    }, 30000)
     return () => clearInterval(timer)
-  }, [activeConversa, mensagens.length])
+  }, [user, activeConversaId])
 
   // Se o Kommo carregar e não tiver nenhum card no primeiro funil, sincronizar sementes visíveis automaticamente
   useEffect(() => {
