@@ -439,8 +439,11 @@ routerAdd(
               }
             }
 
-            // Reconciliação: APENAS clientes com faturamento recente (<60 dias) saem da fila (estado = 'reativado').
-            // Clientes com última compra há 60 dias ou mais permanecem elegíveis para a esteira de reativação ('na_base').
+            // Reconciliação com suporte à janela de standby de 60 dias:
+            // 1. Se faturamento recente (<60 dias): é compra confirmada -> mantém/marca 'reativado', fora da fila.
+            // 2. Se faturamento >= 60 dias e estado='reativado': verificar se está em janela de standby de 60 dias.
+            //    Se standby_ate for no futuro, NÃO religar para 'na_base' — mantém 'reativado' em standby.
+            //    Só restaura para 'na_base' quando standby venceu E não há compra confirmada.
             const estadoAtual = targetRec.getString('estado')
             const isRecente = diasCalculados < 60
             if (isRecente) {
@@ -451,13 +454,43 @@ routerAdd(
                 countReconciliadosFaturaram++
                 mudou = true
               }
-            } else {
-              // Se tem 60+ dias, e estava marcado indevidamente como 'reativado', restaura para 'na_base'
-              if (estadoAtual === 'reativado') {
-                targetRec.set('estado', 'na_base')
-                targetRec.set('operador', '')
-                targetRec.set('lock_timestamp', null)
+              if (!targetRec.getString('reativado_em')) {
+                targetRec.set('reativado_em', now.toISOString())
                 mudou = true
+              }
+              if (!targetRec.getString('standby_ate')) {
+                const standbyDate = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000)
+                targetRec.set('standby_ate', standbyDate.toISOString())
+                mudou = true
+              }
+            } else if (estadoAtual === 'reativado') {
+              const standbyAteStr = targetRec.getString('standby_ate')
+              let emStandby = false
+              if (standbyAteStr) {
+                const parsedStandby = new Date(standbyAteStr)
+                if (!isNaN(parsedStandby.getTime()) && parsedStandby.getTime() > now.getTime()) {
+                  emStandby = true
+                }
+              }
+
+              if (emStandby) {
+                // Em standby válido: mantém 'reativado', sem operador nem lock
+                if (targetRec.getString('operador') || targetRec.getString('lock_timestamp')) {
+                  targetRec.set('operador', '')
+                  targetRec.set('lock_timestamp', null)
+                  mudou = true
+                }
+              } else {
+                // Standby venceu (ou não configurado) e não faturou recentemente:
+                const pedidoConfirmado = targetRec.getBool('pedido_confirmado')
+                if (!pedidoConfirmado) {
+                  targetRec.set('estado', 'na_base')
+                  targetRec.set('operador', '')
+                  targetRec.set('lock_timestamp', null)
+                  targetRec.set('standby_ate', null)
+                  targetRec.set('reativado_em', null)
+                  mudou = true
+                }
               }
             }
 
@@ -1392,12 +1425,51 @@ routerAdd(
             }
 
             const currentEstado = rec.getString('estado')
-            if (faixa === 'recente' && currentEstado !== 'reativado') {
-              rec.set('estado', 'reativado')
-              rec.set('operador', '')
-              rec.set('lock_timestamp', null)
-              countReconciliadosFaturaram++
-              mudou = true
+            if (faixa === 'recente') {
+              if (currentEstado !== 'reativado') {
+                rec.set('estado', 'reativado')
+                rec.set('operador', '')
+                rec.set('lock_timestamp', null)
+                countReconciliadosFaturaram++
+                mudou = true
+              }
+              if (!rec.getString('reativado_em')) {
+                rec.set('reativado_em', now.toISOString())
+                mudou = true
+              }
+              if (!rec.getString('standby_ate')) {
+                const standbyDate = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000)
+                rec.set('standby_ate', standbyDate.toISOString())
+                mudou = true
+              }
+            } else if (currentEstado === 'reativado') {
+              // Na Base Mestre para cliente existente que já era 'reativado' e a planilha trouxe faixa 60_89 ou 90_plus:
+              // Preservar se estiver na janela de standby de 60 dias
+              const standbyAteStr = rec.getString('standby_ate')
+              let emStandby = false
+              if (standbyAteStr) {
+                const parsedStandby = new Date(standbyAteStr)
+                if (!isNaN(parsedStandby.getTime()) && parsedStandby.getTime() > now.getTime()) {
+                  emStandby = true
+                }
+              }
+              if (emStandby) {
+                if (rec.getString('operador') || rec.getString('lock_timestamp')) {
+                  rec.set('operador', '')
+                  rec.set('lock_timestamp', null)
+                  mudou = true
+                }
+              } else {
+                const pedidoConfirmado = rec.getBool('pedido_confirmado')
+                if (!pedidoConfirmado) {
+                  rec.set('estado', 'na_base')
+                  rec.set('operador', '')
+                  rec.set('lock_timestamp', null)
+                  rec.set('standby_ate', null)
+                  rec.set('reativado_em', null)
+                  mudou = true
+                }
+              }
             }
 
             const pedidoSalvo = rec.getString('pedido_reativacao')

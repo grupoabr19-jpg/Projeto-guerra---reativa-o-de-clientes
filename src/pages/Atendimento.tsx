@@ -591,8 +591,14 @@ export default function AtendimentoPage() {
 
       // Regras específicas da Máquina de Estados:
       if (desfechoFinal === 'reativado') {
+        const agora = new Date()
+        const standbyDate = new Date(agora.getTime() + 60 * 24 * 60 * 60 * 1000)
         updatePayload.pedido_reativacao = numeroPedido
         updatePayload.pedido_confirmado = false // aguarda confirmação na próxima importação
+        updatePayload.reativado_em = agora.toISOString()
+        updatePayload.standby_ate = standbyDate.toISOString()
+        updatePayload.operador = undefined
+        updatePayload.lock_timestamp = undefined
         updatePayload.quarentena_ate = undefined
       } else if (desfechoFinal === 'reagendado') {
         const rawDate = new Date(reagendarData)

@@ -371,6 +371,25 @@ routerAdd(
         })
       }
 
+      // Blindagem de Standby: se o cliente está reativado e em período de standby de 60 dias
+      const estadoCli = cliente.getString('estado')
+      const standbyAteStr = cliente.getString('standby_ate')
+      if (estadoCli === 'reativado') {
+        let emStandby = false
+        if (standbyAteStr) {
+          const parsedStandby = new Date(standbyAteStr)
+          if (!isNaN(parsedStandby.getTime()) && parsedStandby.getTime() > new Date().getTime()) {
+            emStandby = true
+          }
+        }
+        if (emStandby) {
+          return e.json(400, {
+            error:
+              'Este cliente foi reativado recentemente e está no período de standby de 60 dias fora da fila.',
+          })
+        }
+      }
+
       // Checa lock de 30 min
       const now = new Date()
       const cutoffTime = new Date(now.getTime() - 30 * 60 * 1000).toISOString()

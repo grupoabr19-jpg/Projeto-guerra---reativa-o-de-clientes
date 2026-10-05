@@ -113,6 +113,8 @@ export interface Cliente {
   frequencia_compras_12m?: number
   tipo_vendedor?: string
   gatilhos_fechamento?: Record<string, unknown>
+  reativado_em?: string
+  standby_ate?: string
   created: string
   updated: string
 }

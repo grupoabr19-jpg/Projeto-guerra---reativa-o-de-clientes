@@ -352,6 +352,17 @@ export default function ClientesPage() {
                         >
                           {item.estado.replace('_', ' ')}
                         </Badge>
+                        {item.estado === 'reativado' &&
+                          item.standby_ate &&
+                          new Date(item.standby_ate).getTime() > Date.now() && (
+                            <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-[9px] block w-fit font-mono font-medium">
+                              Standby até{' '}
+                              {new Date(item.standby_ate).toLocaleDateString('pt-BR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                              })}
+                            </Badge>
+                          )}
                         {item.base_categoria === 'cliente_final' && (
                           <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[9px] block w-fit">
                             Cliente Final
@@ -467,6 +478,17 @@ export default function ClientesPage() {
                   <Badge className="text-xs uppercase">
                     {selectedClient.estado.replace('_', ' ')}
                   </Badge>
+                  {selectedClient.estado === 'reativado' &&
+                    selectedClient.standby_ate &&
+                    new Date(selectedClient.standby_ate).getTime() > Date.now() && (
+                      <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-xs font-mono font-medium">
+                        Em standby até{' '}
+                        {new Date(selectedClient.standby_ate).toLocaleDateString('pt-BR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                        })}
+                      </Badge>
+                    )}
                 </div>
                 <SheetTitle className="text-lg font-bold text-slate-900">
                   {selectedClient.nome}
@@ -508,6 +530,22 @@ export default function ClientesPage() {
                       : '—'}
                   </span>
                 </div>
+                {selectedClient.reativado_em && (
+                  <div className="flex justify-between py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Reativado em:</span>
+                    <span className="font-medium">
+                      {new Date(selectedClient.reativado_em).toLocaleDateString('pt-BR')}
+                    </span>
+                  </div>
+                )}
+                {selectedClient.standby_ate && (
+                  <div className="flex justify-between py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Standby de 60 dias até:</span>
+                    <span className="font-mono font-medium text-amber-700">
+                      {new Date(selectedClient.standby_ate).toLocaleDateString('pt-BR')}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between py-1 border-b border-slate-200/60">
                   <span className="text-slate-500">Valor Histórico / Toneladas:</span>
                   <span className="font-medium">

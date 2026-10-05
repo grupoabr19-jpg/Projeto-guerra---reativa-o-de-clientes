@@ -63,7 +63,9 @@ cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
 // 2. Cron diário (1x por dia, às 03:00 UTC / 00:00 BRT):
 // - Recalcula dias sem faturar, faixa (60-89 / 90+) e score de todos os clientes
 // - Faz reconciliação: apenas quem faturou recentemente (<60 dias comprovados) sai da fila (estado = 'reativado')
-// - Clientes com 60+ dias ou sem venda que foram marcados indevidamente como reativados são restabelecidos para 'na_base'
+// - Respeita o STANDBY DE NO MÍNIMO 60 DIAS após reativação: se standby_ate estiver no futuro, mantém 'reativado' fora da fila
+// - Quando o standby vence: se houve compra confirmada recente (faixa 'recente' ou pedido_confirmado=true), mantém 'reativado';
+//   se não houve compra confirmada, restabelece estado = 'na_base' e limpa standby_ate/reativado_em
 // - Libera reservas expiradas (timeout de atendimento abandonado)
 // - Grava registro da execução em eventos_log
 cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
@@ -220,7 +222,7 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
           mudou = true
         }
 
-        // Reconciliação com faturamento recente:
+        // Reconciliação com faturamento recente e regra de standby de 60 dias:
         const estadoAtual = c.getString('estado')
         if (faixa === 'recente' && ultimaDataStr) {
           if (estadoAtual !== 'reativado') {
@@ -230,11 +232,59 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
             totalReconciliados++
             mudou = true
           }
-        } else if ((faixa === '60_89' || faixa === '90_plus') && estadoAtual === 'reativado') {
-          c.set('estado', 'na_base')
-          c.set('operador', '')
-          c.set('lock_timestamp', null)
-          mudou = true
+          // Garante que reativado_em e standby_ate fiquem preenchidos caso estejam vazios
+          if (!c.getString('reativado_em')) {
+            c.set('reativado_em', now.toISOString())
+            mudou = true
+          }
+          if (!c.getString('standby_ate')) {
+            const standbyDate = new Date(nowMs + 60 * 24 * 60 * 60 * 1000)
+            c.set('standby_ate', standbyDate.toISOString())
+            mudou = true
+          }
+        } else if (estadoAtual === 'reativado') {
+          // Cliente marcado como reativado com faixa 60_89 ou 90_plus:
+          const standbyAteStr = c.getString('standby_ate')
+          let emStandby = false
+          if (standbyAteStr) {
+            const parsedStandby = new Date(standbyAteStr)
+            if (!isNaN(parsedStandby.getTime()) && parsedStandby.getTime() > nowMs) {
+              emStandby = true
+            }
+          }
+
+          if (emStandby) {
+            // Cliente ainda está dentro da janela de standby de 60 dias: NÃO religar na fila!
+            // Garante operador limpo e lock liberado
+            if (c.getString('operador') || c.getString('lock_timestamp')) {
+              c.set('operador', '')
+              c.set('lock_timestamp', null)
+              mudou = true
+            }
+          } else {
+            // Janela de standby expirou (ou não existia / legado vencido):
+            // Verificar faturamento / compra confirmada
+            const pedidoConfirmado = c.getBool('pedido_confirmado')
+            const comprouDeFato =
+              pedidoConfirmado || (faixa === 'recente' && Boolean(ultimaDataStr))
+
+            if (comprouDeFato) {
+              // Compra confirmada: mantém como sucesso ('reativado')
+              if (c.getString('operador') || c.getString('lock_timestamp')) {
+                c.set('operador', '')
+                c.set('lock_timestamp', null)
+                mudou = true
+              }
+            } else {
+              // Sem compra confirmada após os 60 dias de standby: volta para a fila ('na_base')
+              c.set('estado', 'na_base')
+              c.set('operador', '')
+              c.set('lock_timestamp', null)
+              c.set('standby_ate', null)
+              c.set('reativado_em', null)
+              mudou = true
+            }
+          }
         }
 
         // DDD e Regra ATACADO fora do mapa
