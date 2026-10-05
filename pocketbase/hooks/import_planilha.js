@@ -866,11 +866,23 @@ routerAdd(
               rec.set('base_categoria', 'normal')
             }
 
-            // Marcação de órfão se vendedor não estiver na equipe
+            // Resolução de dono por conjunto de pistas (Item A e D):
+            // 1. Extração do vendedor sem prefixo de canal
             const vendUp = vendedorRow
               .normalize('NFD')
               .replace(/[\u0300-\u036f]/g, '')
               .toUpperCase()
+              .trim()
+            let vNomeLimpo = vendUp
+            const pfxList = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ']
+            for (let px = 0; px < pfxList.length; px++) {
+              if (vNomeLimpo.startsWith(pfxList[px])) {
+                vNomeLimpo = vNomeLimpo.slice(pfxList[px].length).trim()
+                break
+              }
+            }
+
+            // Cruzamento com lista de membros ativos (nomes completos e primeiros nomes)
             const equipeNomesAtivos = [
               'ALESSANDRO',
               'LEIZ',
@@ -901,8 +913,51 @@ routerAdd(
               'LARISSA',
               'WILSON',
               'PRISCILA',
+              'RAFAELA',
+              'ANDERSON',
             ]
-            const temDonoNaEquipe = !vendUp || equipeNomesAtivos.some((n) => vendUp.includes(n))
+            let temDonoNaEquipe = false
+            let regraCasou = ''
+            if (!vendUp) {
+              temDonoNaEquipe = true
+              regraCasou = 'vendedor_vazio'
+            } else if (
+              vNomeLimpo === 'RAFAELA RESENDE' ||
+              vNomeLimpo === 'RAFAELA' ||
+              vNomeLimpo.includes('RAFAELA')
+            ) {
+              temDonoNaEquipe = true
+              regraCasou = 'regra_1_ou_2_rafaela'
+            } else if (
+              equipeNomesAtivos.some((n) => vendUp.includes(n) || vNomeLimpo.includes(n))
+            ) {
+              temDonoNaEquipe = true
+              regraCasou = 'regra_1_ou_2_equipe'
+            } else if (parsedReg && regioesMap[parsedReg]) {
+              const regObj = regioesMap[parsedReg]
+              const tVend = String(row.tipo_vendedor || '').toUpperCase()
+              const ve = (regObj.getString('vendedor_externo') || '').toUpperCase()
+              const esp = (regObj.getString('especialista') || '').toUpperCase()
+              const corp = (regObj.getString('corporativo') || '').toUpperCase()
+              if (
+                tVend === 'ESPECIALISTA' &&
+                esp &&
+                equipeNomesAtivos.some((n) => esp.includes(n))
+              ) {
+                temDonoNaEquipe = true
+                regraCasou = 'regra_3_papel_especialista'
+              } else if (tVend === 'VARE' && ve && equipeNomesAtivos.some((n) => ve.includes(n))) {
+                temDonoNaEquipe = true
+                regraCasou = 'regra_3_papel_vendedor_externo'
+              } else if (
+                tVend === 'VCORP' &&
+                corp &&
+                equipeNomesAtivos.some((n) => corp.includes(n))
+              ) {
+                temDonoNaEquipe = true
+                regraCasou = 'regra_3_papel_corporativo'
+              }
+            }
             rec.set('sem_dono_equipe', !temDonoNaEquipe)
 
             if (faixa === 'recente') {
@@ -1042,11 +1097,21 @@ routerAdd(
               mudou = true
             }
 
-            // Atualização de sem_dono_equipe
+            // Atualização de sem_dono_equipe por conjunto de pistas (Item A e D)
             const vendUpExist = (vendedorRow || rec.getString('vendedor') || '')
               .normalize('NFD')
               .replace(/[\u0300-\u036f]/g, '')
               .toUpperCase()
+              .trim()
+            let vNomeLimpoExist = vendUpExist
+            const pfxListExist = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ']
+            for (let px = 0; px < pfxListExist.length; px++) {
+              if (vNomeLimpoExist.startsWith(pfxListExist[px])) {
+                vNomeLimpoExist = vNomeLimpoExist.slice(pfxListExist[px].length).trim()
+                break
+              }
+            }
+
             const equipeNomesAtivosExist = [
               'ALESSANDRO',
               'LEIZ',
@@ -1077,9 +1142,52 @@ routerAdd(
               'LARISSA',
               'WILSON',
               'PRISCILA',
+              'RAFAELA',
+              'ANDERSON',
             ]
-            const temDonoExist =
-              !vendUpExist || equipeNomesAtivosExist.some((n) => vendUpExist.includes(n))
+            let temDonoExist = false
+            if (!vendUpExist) {
+              temDonoExist = true
+            } else if (
+              vNomeLimpoExist === 'RAFAELA RESENDE' ||
+              vNomeLimpoExist === 'RAFAELA' ||
+              vNomeLimpoExist.includes('RAFAELA')
+            ) {
+              temDonoExist = true
+            } else if (
+              equipeNomesAtivosExist.some(
+                (n) => vendUpExist.includes(n) || vNomeLimpoExist.includes(n),
+              )
+            ) {
+              temDonoExist = true
+            } else if (parsedReg && regioesMap[parsedReg]) {
+              const regObj = regioesMap[parsedReg]
+              const tVend = String(
+                row.tipo_vendedor || rec.getString('tipo_vendedor') || '',
+              ).toUpperCase()
+              const ve = (regObj.getString('vendedor_externo') || '').toUpperCase()
+              const esp = (regObj.getString('especialista') || '').toUpperCase()
+              const corp = (regObj.getString('corporativo') || '').toUpperCase()
+              if (
+                tVend === 'ESPECIALISTA' &&
+                esp &&
+                equipeNomesAtivosExist.some((n) => esp.includes(n))
+              ) {
+                temDonoExist = true
+              } else if (
+                tVend === 'VARE' &&
+                ve &&
+                equipeNomesAtivosExist.some((n) => ve.includes(n))
+              ) {
+                temDonoExist = true
+              } else if (
+                tVend === 'VCORP' &&
+                corp &&
+                equipeNomesAtivosExist.some((n) => corp.includes(n))
+              ) {
+                temDonoExist = true
+              }
+            }
             if (rec.getBool('sem_dono_equipe') !== !temDonoExist) {
               rec.set('sem_dono_equipe', !temDonoExist)
               mudou = true

@@ -152,6 +152,8 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
       'LARISSA',
       'WILSON',
       'PRISCILA',
+      'RAFAELA',
+      'ANDERSON',
     ]
 
     // 3. Recálculo em Lotes Otimizados com detecção cirúrgica de mutações
@@ -296,12 +298,42 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
           mudou = true
         }
 
-        // Sem Dono na Equipe
+        // Sem Dono na Equipe (Item A: Resolução por conjunto de pistas)
         const vendUp = (c.getString('vendedor') || '')
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
           .toUpperCase()
-        const temDonoNaEquipe = !vendUp || equipeNomesAtivos.some((n) => vendUp.includes(n))
+          .trim()
+        let vNomeLimpo = vendUp
+        const pfxList = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ']
+        for (let px = 0; px < pfxList.length; px++) {
+          if (vNomeLimpo.startsWith(pfxList[px])) {
+            vNomeLimpo = vNomeLimpo.slice(pfxList[px].length).trim()
+            break
+          }
+        }
+
+        let temDonoNaEquipe = false
+        if (!vendUp) {
+          temDonoNaEquipe = true
+        } else if (
+          vNomeLimpo === 'RAFAELA RESENDE' ||
+          vNomeLimpo === 'RAFAELA' ||
+          vNomeLimpo.includes('RAFAELA')
+        ) {
+          temDonoNaEquipe = true
+        } else if (equipeNomesAtivos.some((n) => vendUp.includes(n) || vNomeLimpo.includes(n))) {
+          temDonoNaEquipe = true
+        } else {
+          const tVend = (c.getString('tipo_vendedor') || '').toUpperCase()
+          const rNome = (c.getString('regiao') || '').toUpperCase()
+          if (
+            rNome === 'POUSO ALEGRE' &&
+            (tVend === 'ESPECIALISTA' || vNomeLimpo.includes('RAFAELA'))
+          ) {
+            temDonoNaEquipe = true
+          }
+        }
         const semDonoBool = !temDonoNaEquipe
         if (c.getBool('sem_dono_equipe') !== semDonoBool) {
           c.set('sem_dono_equipe', semDonoBool)

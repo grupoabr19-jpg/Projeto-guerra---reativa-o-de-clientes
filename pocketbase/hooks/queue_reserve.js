@@ -243,19 +243,49 @@ routerAdd(
       }
 
       // Helper para checar se o vendedor do cliente corresponde ao operador (Matching Carteira Varejo)
+      // Suporta matching pelo primeiro nome do operador ou pelo nome completo normalizado
+      const userFullNameNorm = (userName || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .trim()
+
       const matchesCarteiraVendedor = (clienteRec) => {
-        if (!userFirstName) return true
-        const v = (clienteRec.getString('vendedor') || '')
+        if (!userFirstName && !userFullNameNorm) return true
+        const vRaw = clienteRec.getString('vendedor') || ''
+        const v = vRaw
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
           .toUpperCase()
+          .trim()
         if (!v) return false
-        // Ex: "VARE - BRUNA PEREIRA" -> matches "BRUNA"
-        // Ex: "VAREXT - PETERSON SEIXAS (VARGINHA)" -> matches "PETERSON"
-        // Ex: "VCORP - THAIS OLIVEIRA" -> matches "THAIS"
-        // Ex: "ARIANE" -> matches "ARIANE"
-        // Ex: "JOSÉ FELIPE" / "JOSE FELIPE" -> matches "JOSE"
-        return v.includes(userFirstName)
+
+        // Extrai o nome após prefixo de canal se houver (ex: "VARE - RAFAELA RESENDE" -> "RAFAELA RESENDE")
+        let vSemCanal = v
+        const prefixos = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ']
+        for (let p = 0; p < prefixos.length; p++) {
+          if (vSemCanal.startsWith(prefixos[p])) {
+            vSemCanal = vSemCanal.slice(prefixos[p].length).trim()
+            break
+          }
+        }
+
+        // 1. Match por nome completo
+        if (
+          userFullNameNorm &&
+          (vSemCanal === userFullNameNorm ||
+            v.includes(userFullNameNorm) ||
+            userFullNameNorm.includes(vSemCanal))
+        ) {
+          return true
+        }
+
+        // 2. Match por primeiro nome
+        if (userFirstName && (v.includes(userFirstName) || vSemCanal.startsWith(userFirstName))) {
+          return true
+        }
+
+        return false
       }
 
       let cand = null
