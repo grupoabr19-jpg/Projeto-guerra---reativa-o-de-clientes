@@ -22,6 +22,10 @@ import {
   RotateCcw,
   Sparkles,
   Users,
+  Search,
+  Loader2,
+  X,
+  AlertCircle,
 } from 'lucide-react'
 import {
   Card,
@@ -53,8 +57,11 @@ import {
   releaseQueueLock,
   syncKommoLead,
   reserveNextQueueClient,
+  searchClientesCarteira,
+  reserveSpecificQueueClient,
   transferClienteOperador,
   fetchUsers,
+  type ClienteBuscaCarteiraItem,
 } from '@/services/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { toast } from '@/hooks/use-toast'
@@ -90,6 +97,15 @@ export default function AtendimentoPage() {
   const [filtroOrdenacao, setFiltroOrdenacao] = useState<'score' | 'antigos' | 'novos'>('score')
   const [reservandoNovo, setReservandoNovo] = useState(false)
   const [showQuestionarioModal, setShowQuestionarioModal] = useState(false)
+
+  // Busca por nome na carteira do operador
+  const [termoBuscaCarteira, setTermoBuscaCarteira] = useState('')
+  const [resultadosBuscaCarteira, setResultadosBuscaCarteira] = useState<
+    ClienteBuscaCarteiraItem[]
+  >([])
+  const [buscandoCarteira, setBuscandoCarteira] = useState(false)
+  const [buscaAberta, setBuscaAberta] = useState(false)
+  const [selecionandoClienteBusca, setSelecionandoClienteBusca] = useState<string | null>(null)
 
   // Questionário de Perguntas — Etapas visíveis: Q3 (3), Q5..Q13 (5..13), Q14..Q17 (14..17).
   // Q1, Q2 e Q4 são pré-preenchidas e puladas na navegação para não duplicar o card de gatilhos.
@@ -133,6 +149,60 @@ export default function AtendimentoPage() {
       checkExistingLockOrIdle()
     }
   }, [clientId])
+
+  // Debounce para busca de clientes por nome na carteira do operador
+  useEffect(() => {
+    const termo = termoBuscaCarteira.trim()
+    if (termo.length < 3) {
+      setResultadosBuscaCarteira([])
+      setBuscandoCarteira(false)
+      return
+    }
+
+    setBuscandoCarteira(true)
+    const timer = setTimeout(async () => {
+      try {
+        const res = await searchClientesCarteira(termo)
+        setResultadosBuscaCarteira(res.items || [])
+        setBuscaAberta(true)
+      } catch (err: unknown) {
+        console.error('Erro na busca de clientes da carteira:', err)
+        setResultadosBuscaCarteira([])
+      } finally {
+        setBuscandoCarteira(false)
+      }
+    }, 350)
+
+    return () => clearTimeout(timer)
+  }, [termoBuscaCarteira])
+
+  // Selecionar um cliente encontrado na busca e abrir ficha com lock de 30 min
+  const handleSelecionarClienteBusca = async (item: ClienteBuscaCarteiraItem) => {
+    setSelecionandoClienteBusca(item.id)
+    try {
+      const res = await reserveSpecificQueueClient(item.id)
+      if (res.cliente) {
+        setTermoBuscaCarteira('')
+        setResultadosBuscaCarteira([])
+        setBuscaAberta(false)
+        await loadCliente(res.cliente.id)
+        navigate(`/atendimento/${res.cliente.id}`, { replace: true })
+        toast({
+          title: 'Cliente aberto da carteira',
+          description: `${item.nome} (${item.codigo}) aberto com lock ativo para atendimento.`,
+        })
+      }
+    } catch (err: unknown) {
+      const rawMsg = err instanceof Error ? err.message : String(err)
+      toast({
+        variant: 'destructive',
+        title: 'Não foi possível abrir o cliente',
+        description: rawMsg || 'Falha ao reservar o cliente para atendimento.',
+      })
+    } finally {
+      setSelecionandoClienteBusca(null)
+    }
+  }
 
   const checkExistingLockOrIdle = async () => {
     setLoading(true)
@@ -625,70 +695,225 @@ export default function AtendimentoPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Topo do Atendimento: Barra de Filtros e Botão Novo Atendimento (Exigência do Pedido 3c) */}
+      {/* Topo do Atendimento: Barra de Filtros, Busca por Nome na Carteira e Botão Novo Atendimento */}
       <Card className="border-slate-200 shadow-sm bg-gradient-to-r from-slate-50 via-white to-blue-50/30">
-        <CardContent className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Dropdown de Segmentos reais */}
-            <div className="space-y-1">
-              <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider block">
-                Filtrar por Segmento
-              </span>
-              <Select value={filtroSegmento} onValueChange={(val) => setFiltroSegmento(val)}>
-                <SelectTrigger className="h-8 text-xs w-48 bg-white border-slate-300">
-                  <SelectValue placeholder="Todos os Segmentos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos" className="text-xs">
-                    Todos os Segmentos ({SEGMENTOS_OFICIAIS.length})
-                  </SelectItem>
-                  {SEGMENTOS_OFICIAIS.map((seg) => (
-                    <SelectItem key={seg} value={seg} className="text-xs">
-                      {seg}
+        <CardContent className="p-4 space-y-3">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Dropdown de Segmentos reais */}
+              <div className="space-y-1">
+                <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider block">
+                  Filtrar por Segmento
+                </span>
+                <Select value={filtroSegmento} onValueChange={(val) => setFiltroSegmento(val)}>
+                  <SelectTrigger className="h-8 text-xs w-44 bg-white border-slate-300">
+                    <SelectValue placeholder="Todos os Segmentos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos" className="text-xs">
+                      Todos os Segmentos ({SEGMENTOS_OFICIAIS.length})
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                    {SEGMENTOS_OFICIAIS.map((seg) => (
+                      <SelectItem key={seg} value={seg} className="text-xs">
+                        {seg}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Ordenação: Score, Mais Antigos, Mais Novos */}
+              <div className="space-y-1">
+                <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider block">
+                  Critério de Ordenação
+                </span>
+                <Select
+                  value={filtroOrdenacao}
+                  onValueChange={(val: 'score' | 'antigos' | 'novos') => setFiltroOrdenacao(val)}
+                >
+                  <SelectTrigger className="h-8 text-xs w-44 bg-white border-slate-300">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="score" className="text-xs">
+                      ⭐ Padrão (60–89d / Score)
+                    </SelectItem>
+                    <SelectItem value="antigos" className="text-xs">
+                      ⏳ Mais Antigos (90+ dias)
+                    </SelectItem>
+                    <SelectItem value="novos" className="text-xs">
+                      ✨ Mais Novos (menos dias)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            {/* Ordenação: Score, Mais Antigos, Mais Novos */}
-            <div className="space-y-1">
-              <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider block">
-                Critério de Ordenação / Fila
-              </span>
-              <Select
-                value={filtroOrdenacao}
-                onValueChange={(val: 'score' | 'antigos' | 'novos') => setFiltroOrdenacao(val)}
+            {/* Campo de Busca por Nome na Carteira do Operador + Botão Novo Atendimento */}
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3 flex-1 lg:max-w-2xl justify-end">
+              <div className="relative flex-1 min-w-[260px] space-y-1">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="busca-carteira-input"
+                    className="text-[11px] font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                  >
+                    <Search className="h-3 w-3 text-[#253575]" />
+                    <span>Buscar na Minha Carteira</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-medium">(mín. 3 letras)</span>
+                </div>
+                <div className="relative">
+                  <Input
+                    id="busca-carteira-input"
+                    type="text"
+                    placeholder="Buscar cliente por nome ou código..."
+                    value={termoBuscaCarteira}
+                    onChange={(e) => {
+                      setTermoBuscaCarteira(e.target.value)
+                      if (!buscaAberta) setBuscaAberta(true)
+                    }}
+                    onFocus={() => {
+                      if (termoBuscaCarteira.trim().length >= 3) setBuscaAberta(true)
+                    }}
+                    className="h-9 text-xs pl-8 pr-8 bg-white border-slate-300 focus-visible:ring-[#253575] focus-visible:border-[#253575]"
+                  />
+                  <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-3 pointer-events-none" />
+                  {buscandoCarteira ? (
+                    <Loader2 className="h-3.5 w-3.5 text-slate-400 animate-spin absolute right-2.5 top-3" />
+                  ) : termoBuscaCarteira ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTermoBuscaCarteira('')
+                        setResultadosBuscaCarteira([])
+                        setBuscaAberta(false)
+                      }}
+                      className="text-slate-400 hover:text-slate-600 absolute right-2.5 top-2.5"
+                      aria-label="Limpar busca"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
+                </div>
+
+                {/* Dropdown com os Resultados da Busca Server-Side */}
+                {buscaAberta && termoBuscaCarteira.trim().length >= 3 && (
+                  <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white rounded-lg border border-slate-200 shadow-xl overflow-hidden animate-in fade-in-50 zoom-in-95">
+                    <div className="bg-[#253575] text-white px-3 py-1.5 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1.5 font-medium">
+                        <Users className="h-3.5 w-3.5 text-[#F18800]" />
+                        <span>Clientes na sua Carteira ({resultadosBuscaCarteira.length})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBuscaAberta(false)}
+                        className="text-white/70 hover:text-white"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                      {buscandoCarteira ? (
+                        <div className="p-6 text-center text-xs text-slate-500 space-y-2">
+                          <Loader2 className="h-5 w-5 animate-spin mx-auto text-[#253575]" />
+                          <p>Buscando na sua carteira...</p>
+                        </div>
+                      ) : resultadosBuscaCarteira.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-slate-500 space-y-1">
+                          <AlertCircle className="h-5 w-5 text-amber-500 mx-auto" />
+                          <p className="font-semibold text-slate-700">
+                            Nenhum cliente encontrado na sua carteira
+                          </p>
+                          <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
+                            Verifique se o nome está correto ou se o cliente pertence à sua rota/DDD
+                            de atendimento.
+                          </p>
+                        </div>
+                      ) : (
+                        resultadosBuscaCarteira.map((item) => (
+                          <div
+                            key={item.id}
+                            className="p-3 hover:bg-blue-50/60 transition-colors flex items-center justify-between gap-3 text-left group"
+                          >
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Badge
+                                  variant="outline"
+                                  className="font-mono text-[10px] font-bold text-[#253575] bg-[#253575]/10 border-[#253575]/20 px-1.5 py-0"
+                                >
+                                  {item.codigo}
+                                </Badge>
+                                <span className="font-bold text-xs text-slate-900 truncate">
+                                  {item.nome}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                                <span>
+                                  <strong>Região:</strong> {item.regiao}
+                                </span>
+                                <span>•</span>
+                                <span
+                                  className={
+                                    item.faixa === '90_plus'
+                                      ? 'text-rose-600 font-semibold'
+                                      : 'text-amber-700 font-semibold'
+                                  }
+                                >
+                                  {item.dias_sem_faturar
+                                    ? `${item.dias_sem_faturar} dias sem faturar`
+                                    : 'Inativo'}
+                                </span>
+                                <span>•</span>
+                                <span>
+                                  <strong>Último contato/compra:</strong> {item.ultimo_contato}
+                                </span>
+                              </div>
+                            </div>
+                            <Button
+                              size="sm"
+                              onClick={() => handleSelecionarClienteBusca(item)}
+                              disabled={selecionandoClienteBusca === item.id}
+                              className="bg-[#253575] hover:bg-[#1d2b5e] text-white text-xs font-semibold h-8 px-3 shrink-0 shadow-xs"
+                            >
+                              {selecionandoClienteBusca === item.id ? (
+                                <>
+                                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                                  Abrindo...
+                                </>
+                              ) : (
+                                <>
+                                  <PhoneCall className="h-3.5 w-3.5 mr-1" />
+                                  Atender
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="bg-slate-50 px-3 py-1.5 border-t border-slate-100 text-[10px] text-slate-500 flex items-center justify-between">
+                      <span>
+                        💡 Encontrou um cliente que já atende semanalmente? Abra-o e feche com{' '}
+                        <strong>"Cliente Ativo — Fora da Base"</strong>.
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Botão Novo Atendimento (Puxar próximo da fila) */}
+              <Button
+                size="sm"
+                onClick={handlePuxarNovoAtendimento}
+                disabled={reservandoNovo}
+                className="bg-[#F18800] hover:bg-[#d97b00] text-white font-semibold text-xs h-9 px-4 shadow-sm shadow-[#F18800]/25 shrink-0"
               >
-                <SelectTrigger className="h-8 text-xs w-48 bg-white border-slate-300">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="score" className="text-xs">
-                    ⭐ Padrão (60–89d / Score)
-                  </SelectItem>
-                  <SelectItem value="antigos" className="text-xs">
-                    ⏳ Mais Antigos (90+ dias / Antigos)
-                  </SelectItem>
-                  <SelectItem value="novos" className="text-xs">
-                    ✨ Mais Novos (menos dias)
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                <PhoneCall className={`h-4 w-4 mr-1.5 ${reservandoNovo ? 'animate-bounce' : ''}`} />
+                {reservandoNovo ? 'Reservando...' : 'Próximo da Fila'}
+              </Button>
             </div>
-          </div>
-
-          {/* Botão Novo Atendimento */}
-          <div className="flex items-center space-x-2 pt-2 md:pt-0">
-            <Button
-              size="sm"
-              onClick={handlePuxarNovoAtendimento}
-              disabled={reservandoNovo}
-              className="bg-[#F18800] hover:bg-[#d97b00] text-white font-semibold text-xs h-9 px-4 shadow-sm shadow-[#F18800]/25"
-            >
-              <PhoneCall className={`h-4 w-4 mr-2 ${reservandoNovo ? 'animate-bounce' : ''}`} />
-              {reservandoNovo ? 'Reservando Contato...' : 'Novo Atendimento'}
-            </Button>
           </div>
         </CardContent>
       </Card>
@@ -703,19 +928,21 @@ export default function AtendimentoPage() {
             <h3 className="text-base font-bold text-slate-800">Pronto para Iniciar Contatos</h3>
             <p className="text-xs text-slate-500 max-w-md">
               {user?.regioes?.includes('REPESCAGEM')
-                ? 'Operador da fila transversal Repescagem: o sistema buscará clientes com 90+ dias sem faturar de qualquer região, exceto os contatados pelo vendedor original da rota.'
-                : 'Selecione o segmento desejado e a ordenação acima e clique no botão "Novo Atendimento". O sistema reservará atomicamente o melhor cliente da sua rota já com o cadastro pré-preenchido.'}
+                ? 'Operador da fila transversal Repescagem: o sistema buscará clientes com 90+ dias sem faturar de qualquer região, exceto os contatados pelo vendedor original da rota. Ou busque um cliente pelo nome acima.'
+                : 'Puxe o próximo cliente da sua fila pelo botão laranja ou use a barra de busca acima para localizar um cliente específico da sua carteira (ex.: clientes que você já atende semanalmente) para abrir a ficha e eliminá-los da base via "Cliente Ativo — Fora da Base".'}
             </p>
-            <Button
-              onClick={handlePuxarNovoAtendimento}
-              disabled={reservandoNovo}
-              className="bg-[#F18800] hover:bg-[#d97b00] text-white text-xs font-semibold mt-2 shadow-sm shadow-[#F18800]/25"
-            >
-              <PhoneCall className="h-3.5 w-3.5 mr-1.5" />
-              {user?.regioes?.includes('REPESCAGEM')
-                ? 'Puxar Próximo Cliente Repescagem (90+ dias)'
-                : 'Puxar Próximo Cliente da Minha Rota'}
-            </Button>
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+              <Button
+                onClick={handlePuxarNovoAtendimento}
+                disabled={reservandoNovo}
+                className="bg-[#F18800] hover:bg-[#d97b00] text-white text-xs font-semibold shadow-sm shadow-[#F18800]/25"
+              >
+                <PhoneCall className="h-3.5 w-3.5 mr-1.5" />
+                {user?.regioes?.includes('REPESCAGEM')
+                  ? 'Puxar Próximo Repescagem (90+ dias)'
+                  : 'Puxar Próximo da Minha Rota'}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : (

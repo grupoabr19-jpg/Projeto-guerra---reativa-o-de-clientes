@@ -310,6 +310,79 @@ export async function reserveNextQueueClient(options?: {
   }>
 }
 
+export interface ClienteBuscaCarteiraItem {
+  id: string
+  codigo: string
+  nome: string
+  regiao: string
+  vendedor: string
+  segmento: string
+  dias_sem_faturar: number
+  faixa: string
+  score: number
+  estado: string
+  operador?: string
+  lock_timestamp?: string
+  ultimo_faturamento_data?: string
+  ultimo_contato: string
+  telefone?: string
+  whatsapp?: string
+}
+
+/**
+ * Busca clientes por nome/código estritamente dentro da carteira do operador logado.
+ * Retorna no máximo 20 registros e valida no servidor o vendedor da rota ou DDDs do atacado.
+ */
+export async function searchClientesCarteira(termo: string): Promise<{
+  items: ClienteBuscaCarteiraItem[]
+  total: number
+  termo: string
+}> {
+  const res = await fetch(
+    `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/queue/search-carteira`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: pb.authStore.token,
+      },
+      body: JSON.stringify({ termo }),
+    },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || err.message || 'Falha ao buscar clientes na carteira')
+  }
+  return res.json()
+}
+
+/**
+ * Reserva um cliente específico da carteira do operador logado com lock de 30 min.
+ * Permite que o operador abra a ficha de um cliente encontrado na busca para atendê-lo
+ * ou eliminá-lo da base como "Cliente Ativo — Fora da Base".
+ */
+export async function reserveSpecificQueueClient(clienteId: string): Promise<{
+  cliente: Cliente
+  message: string
+}> {
+  const res = await fetch(
+    `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/queue/reserve-specific`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: pb.authStore.token,
+      },
+      body: JSON.stringify({ cliente_id: clienteId }),
+    },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || err.message || 'Falha ao reservar cliente')
+  }
+  return res.json()
+}
+
 export async function fetchInteracoesByOperador(operadorId: string) {
   return pb.collection('interacoes').getFullList<Interacao>({
     filter: `operador = '${operadorId}'`,
