@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T18:29:47.053Z",
+  "generatedAt": "2026-10-05T19:04:15.442Z",
   "collections": [
     {
       "name": "users",
@@ -1362,7 +1362,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["geral", "canal_rota", "dm"]
+          "selectValues": ["geral", "canal_rota", "dm", "kommo_whatsapp"]
         },
         {
           "name": "titulo",
@@ -1439,13 +1439,57 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "kommo_chat_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "kommo_contact_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "kommo_lead_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "kommo_phone",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "kommo_phone_clean",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cliente_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "responsavel_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
         "CREATE INDEX idx_chat_conversas_tipo ON chat_conversas (tipo)",
         "CREATE INDEX idx_chat_conversas_chave_dm ON chat_conversas (chave_dm)",
         "CREATE INDEX idx_chat_conversas_regiao ON chat_conversas (regiao_nome)",
-        "CREATE INDEX idx_chat_conversas_updated ON chat_conversas (updated DESC)"
+        "CREATE INDEX idx_chat_conversas_updated ON chat_conversas (updated DESC)",
+        "CREATE INDEX idx_chat_conv_kommo_phone ON chat_conversas (kommo_phone_clean)",
+        "CREATE INDEX idx_chat_conv_kommo_chat ON chat_conversas (kommo_chat_id)"
       ]
     },
     {
@@ -1511,12 +1555,37 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "kommo_message_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "kommo_status",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "kommo_error",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "direcao",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
         "CREATE INDEX idx_chat_msg_conversa_created ON chat_mensagens (conversa, created ASC)",
         "CREATE INDEX idx_chat_msg_tipo ON chat_mensagens (tipo)",
-        "CREATE INDEX idx_chat_msg_created ON chat_mensagens (created DESC)"
+        "CREATE INDEX idx_chat_msg_created ON chat_mensagens (created DESC)",
+        "CREATE INDEX idx_chat_msg_kommo_id ON chat_mensagens (kommo_message_id)"
       ]
     },
     {

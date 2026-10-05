@@ -70,6 +70,9 @@ import {
   moverCardEtapa,
   deleteAtendimentoFunilCard,
   fetchKommoRecentActivity,
+  sendKommoChatMessage,
+  triggerKommoSdrSync,
+  fetchKommoStatus,
 } from '@/services/hubAtendimento'
 import { fetchUsers } from '@/services/api'
 import {
@@ -94,6 +97,7 @@ import type {
   ChatMensagem,
   ChatUnreadCountsResponse,
   User,
+  KommoStatusResponse,
 } from '@/types'
 
 // Modelo unificado de Contato/Lead para a Barra Lateral Fixa
@@ -184,10 +188,12 @@ export default function HubAtendimentoPage() {
   const [cardEmDetalhes, setCardEmDetalhes] = useState<AtendimentoFunilCard | null>(null)
 
   // ==========================================
-  // ESTADOS: BRIDGE KOMMO (SOMENTE LEITURA)
+  // ESTADOS: BRIDGE KOMMO & WHATSAPP SDR (ESCRITA HABILITADA)
   // ==========================================
   const [kommoData, setKommoData] = useState<KommoBridgeResponse | null>(null)
+  const [kommoStatus, setKommoStatus] = useState<KommoStatusResponse | null>(null)
   const [loadingKommo, setLoadingKommo] = useState(false)
+  const [sincronizandoSdr, setSincronizandoSdr] = useState(false)
 
   // ==========================================
   // ESTADOS: CONVERSAS / CHAT (ESTILO WHATSAPP)
@@ -272,12 +278,44 @@ export default function HubAtendimentoPage() {
   const carregarKommo = async () => {
     setLoadingKommo(true)
     try {
-      const res = await fetchKommoRecentActivity()
-      setKommoData(res)
+      const [resActivity, resStatus] = await Promise.all([
+        fetchKommoRecentActivity(),
+        fetchKommoStatus(),
+      ])
+      setKommoData(resActivity)
+      if (resStatus) setKommoStatus(resStatus)
     } catch (err) {
       console.error('Erro ao consultar bridge Kommo:', err)
     } finally {
       setLoadingKommo(false)
+    }
+  }
+
+  const handleSincronizarSdrManual = async () => {
+    setSincronizandoSdr(true)
+    try {
+      const res = await triggerKommoSdrSync()
+      if (res.ok) {
+        toast({
+          title: 'Sincronização SDR Concluída',
+          description: res.message || 'Novas conversas da linha 35 99770-9232 foram carregadas.',
+        })
+        await Promise.all([carregarConversas(), carregarKommo()])
+      } else {
+        toast({
+          title: 'Aviso na Sincronização',
+          description: res.message,
+          variant: 'destructive',
+        })
+      }
+    } catch (err) {
+      toast({
+        title: 'Falha na Sincronização SDR',
+        description: String(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setSincronizandoSdr(false)
     }
   }
 
@@ -827,18 +865,47 @@ export default function HubAtendimentoPage() {
     if (e) e.preventDefault()
     if (!novoTextoMsg.trim() || !activeConversa || !user || enviandoMsg) return
 
+    const textoParaEnviar = novoTextoMsg.trim()
     setEnviandoMsg(true)
     try {
-      const msg = await enviarMensagemChat({
-        conversaId: activeConversa.id,
-        texto: novoTextoMsg,
-        autorId: user.id,
-        autorNome: user.name || 'Administrador',
-        autorRole: user.role || 'admin',
-        tipo: 'normal',
-      })
-      setNovoTextoMsg('')
-      setMensagens((prev) => [...prev, msg])
+      // Se for conversa do Kommo WhatsApp da linha SDR (modo escrita liberado)
+      if (activeConversa.tipo === 'kommo_whatsapp') {
+        const resKommo = await sendKommoChatMessage(activeConversa.id, textoParaEnviar)
+        if (!resKommo.ok) {
+          toast({
+            title: 'Falha no envio via Kommo WhatsApp',
+            description:
+              resKommo.error ||
+              resKommo.message ||
+              'Verifique as credenciais ou a conexão com o Kommo.',
+            variant: 'destructive',
+          })
+          return
+        }
+
+        toast({
+          title: 'Mensagem enviada via Kommo!',
+          description: `Disparada pelo endpoint ${resKommo.endpoint_utilizado || 'Kommo API'}.`,
+        })
+
+        setNovoTextoMsg('')
+        if (resKommo.mensagem) {
+          setMensagens((prev) => [...prev, resKommo.mensagem!])
+        }
+        await carregarMensagens(activeConversa.id)
+      } else {
+        // Conversa do chat interno da equipe
+        const msg = await enviarMensagemChat({
+          conversaId: activeConversa.id,
+          texto: textoParaEnviar,
+          autorId: user.id,
+          autorNome: user.name || 'Administrador',
+          autorRole: user.role || 'admin',
+          tipo: 'normal',
+        })
+        setNovoTextoMsg('')
+        setMensagens((prev) => [...prev, msg])
+      }
     } catch (err) {
       toast({
         title: 'Falha ao enviar mensagem',
@@ -993,9 +1060,36 @@ export default function HubAtendimentoPage() {
   const contatosExternos: ContatoHubItem[] = []
   const contatosInternos: ContatoHubItem[] = []
 
-  // 1. Contatos Externos (Kommo CRM — clientes e leads, badge azul #253575)
+  // 1. Contatos Externos (Kommo CRM e Conversas WhatsApp da Linha SDR 35 99770-9232)
+  // 1.1 Conversas ativas de WhatsApp SDR no banco PocketBase
+  const conversasKommoSdr = conversas.filter((c) => c.tipo === 'kommo_whatsapp')
+  for (const c of conversasKommoSdr) {
+    const unread = unreadCounts.by_conversation[c.id] || 0
+    contatosExternos.push({
+      id: c.id,
+      tipo: 'kommo',
+      nome: c.titulo || 'Cliente WhatsApp SDR',
+      subtitulo: c.ultima_mensagem_texto || `Linha SDR (${c.kommo_phone || '35 99770-9232'})`,
+      telefone: c.kommo_phone || '35 99770-9232',
+      canal: 'WhatsApp SDR (35 99770-9232)',
+      badge: 'WhatsApp SDR',
+      unreadCount: unread,
+      initials: (c.titulo || 'WS').slice(0, 2).toUpperCase(),
+      conversaRef: c,
+    })
+  }
+
+  // 1.2 Leads recentes do Kommo CRM
   if (kommoData?.items) {
     for (const item of kommoData.items) {
+      // Evitar duplicar se já houver conversa ativa com o mesmo telefone ou lead
+      const jaExisteConversa = conversasKommoSdr.some(
+        (c) =>
+          (c.kommo_lead_id && c.kommo_lead_id === item.id) ||
+          (item.telefone && c.kommo_phone && c.kommo_phone.includes(item.telefone.slice(-8))),
+      )
+      if (jaExisteConversa) continue
+
       contatosExternos.push({
         id: `kommo_${item.id}`,
         tipo: 'kommo',
@@ -1003,8 +1097,8 @@ export default function HubAtendimentoPage() {
         subtitulo: `${item.nome_lead} • ${item.pipeline_nome} (${item.status_nome})`,
         telefone: item.telefone,
         email: item.email,
-        canal: item.canal || 'Kommo CRM',
-        badge: item.status_nome || 'Kommo',
+        canal: item.canal || (item.is_sdr_line ? 'WhatsApp SDR (35 99770-9232)' : 'Kommo CRM'),
+        badge: item.is_sdr_line ? 'SDR Line' : item.status_nome || 'Kommo',
         initials: (item.nome_contato || item.nome_lead || 'KM').slice(0, 2).toUpperCase(),
         kommoRef: item,
       })
@@ -1012,11 +1106,12 @@ export default function HubAtendimentoPage() {
   }
 
   // 2. Contatos Internos (Equipe do sistema + canais de rota/Geral, badge esmeralda)
-  // 2.1 Canais e DMs já existentes
+  // 2.1 Canais e DMs já existentes (excluindo tipo kommo_whatsapp que já está nos externos)
   const userIdsComDm = new Set<string>()
 
   // Se o admin selecionou um vendedor para supervisão, filtramos as conversas pelo vendedor selecionado
   const conversasFiltradasPorSupervisao = conversas.filter((c) => {
+    if (c.tipo === 'kommo_whatsapp') return false // Já tratado em contatos externos
     if (!vendedorSupervisionadoId) return true
     // Canais gerais/rota continuam acessíveis ou são filtrados se rota coincidir
     if (c.tipo === 'geral' || c.tipo === 'canal_rota') return true

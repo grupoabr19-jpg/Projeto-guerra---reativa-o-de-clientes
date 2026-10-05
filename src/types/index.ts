@@ -633,8 +633,8 @@ export interface ReportsAnalyticsResponse {
   }
 }
 
-// Chat Interno
-export type ChatConversaTipo = 'geral' | 'canal_rota' | 'dm'
+// Chat Interno e Bridge Kommo WhatsApp
+export type ChatConversaTipo = 'geral' | 'canal_rota' | 'dm' | 'kommo_whatsapp'
 export type ChatMensagemTipo = 'normal' | 'aviso'
 
 export interface ChatConversa {
@@ -650,6 +650,14 @@ export interface ChatConversa {
   ultima_mensagem_tipo?: string
   ultima_mensagem_data?: string
   total_mensagens?: number
+  // Campos da integração Kommo WhatsApp
+  kommo_chat_id?: string
+  kommo_contact_id?: string
+  kommo_lead_id?: string
+  kommo_phone?: string
+  kommo_phone_clean?: string
+  cliente_id?: string
+  responsavel_id?: string
   created: string
   updated: string
   // Campos expandidos opcionais
@@ -667,6 +675,10 @@ export interface ChatMensagem {
   autor_role: string
   texto: string
   tipo: ChatMensagemTipo
+  direcao?: 'entrada' | 'saida'
+  kommo_status?: 'recebida' | 'enviada' | 'erro' | 'pendente'
+  kommo_message_id?: string
+  kommo_error?: string
   created: string
   updated: string
   expand?: {
@@ -753,6 +765,7 @@ export interface KommoBridgeItem {
   nome_contato: string
   canal: string
   telefone?: string
+  is_sdr_line?: boolean
   email?: string
   valor?: number
   pipeline_id: string
@@ -768,10 +781,37 @@ export interface KommoBridgeResponse {
   ok: boolean
   configured: boolean
   somente_leitura: boolean
+  escrita_habilitada?: boolean
   subdomain?: string
+  sdr_phone?: string
   items: KommoBridgeItem[]
   total: number
   consultado_em?: string
   error_code?: string
   message?: string
+}
+
+export interface KommoStatusResponse {
+  ok: boolean
+  configured: boolean
+  somente_leitura: boolean
+  escrita_habilitada: boolean
+  subdomain?: string
+  sdr_phone: string
+  sdr_phone_formatted: string
+  webhook_endpoint: string
+  ping_ok: boolean
+  ping_latency_ms: number
+  ping_error?: string
+  total_conversas_sdr: number
+  checado_em: string
+}
+
+export interface KommoSendMessageResponse {
+  ok: boolean
+  message: string
+  endpoint_utilizado?: string
+  mensagem?: ChatMensagem
+  error?: string
+  detalhe?: string
 }

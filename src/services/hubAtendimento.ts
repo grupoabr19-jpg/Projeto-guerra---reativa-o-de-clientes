@@ -208,7 +208,7 @@ export async function deleteAtendimentoFunilCard(cardId: string): Promise<boolea
   return true
 }
 
-// 8. Consultar leads e contatos recentes do Bridge Kommo (somente leitura)
+// 8. Consultar leads e contatos recentes do Bridge Kommo (com escrita liberada)
 export async function fetchKommoRecentActivity(): Promise<KommoBridgeResponse> {
   try {
     const res = await pb.send<KommoBridgeResponse>('/backend/v1/kommo/recent-activity', {
@@ -220,11 +220,66 @@ export async function fetchKommoRecentActivity(): Promise<KommoBridgeResponse> {
     return {
       ok: false,
       configured: false,
-      somente_leitura: true,
+      somente_leitura: false,
       error_code: 'FETCH_ERROR',
       message: `Não foi possível carregar os dados recentes do Kommo: ${msg}`,
       items: [],
       total: 0,
+    }
+  }
+}
+
+// 9. Obter status do Kommo CRM (conexão, permissões de escrita, SDR)
+export async function fetchKommoStatus(): Promise<KommoStatusResponse | null> {
+  try {
+    return await pb.send<KommoStatusResponse>('/backend/v1/kommo/status', {
+      method: 'GET',
+    })
+  } catch (err) {
+    console.warn('Erro ao consultar status Kommo:', err)
+    return null
+  }
+}
+
+// 10. Disparar sincronização manual de atividades SDR
+export async function triggerKommoSdrSync(): Promise<{
+  ok: boolean
+  message: string
+  processadas?: number
+}> {
+  try {
+    return await pb.send('/backend/v1/kommo/sync-sdr', {
+      method: 'POST',
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { ok: false, message: `Falha na sincronização SDR: ${msg}` }
+  }
+}
+
+// 11. Enviar mensagem de resposta do Hub via Kommo WhatsApp
+export async function sendKommoChatMessage(
+  conversaId: string,
+  texto: string,
+): Promise<KommoSendMessageResponse> {
+  try {
+    const res = await pb.send<KommoSendMessageResponse>('/backend/v1/kommo/send-message', {
+      method: 'POST',
+      body: {
+        conversaId,
+        texto,
+      },
+    })
+    return res
+  } catch (err: unknown) {
+    const errObj = err as { response?: { error?: string; detalhe?: string }; message?: string }
+    const backendMsg = errObj?.response?.error || errObj?.message || String(err)
+    const detalhe = errObj?.response?.detalhe || ''
+    return {
+      ok: false,
+      message: backendMsg,
+      error: backendMsg,
+      detalhe,
     }
   }
 }

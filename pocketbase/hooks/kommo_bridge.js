@@ -1,17 +1,22 @@
 /// <reference path="../pb_data/types.d.ts" />
 
 /**
- * Hook do Bridge Kommo CRM — Somente Leitura (Experimental).
+ * kommo_bridge.js
  *
- * Escopo exclusivo para o Administrador do sistema avaliar a integração conversacional e leads recentes.
- *
- * Regras estritas:
- * 1. SOMENTE-LEITURA: nenhuma requisição de POST, PATCH, PUT ou DELETE é enviada ao Kommo.
- * 2. Segurança: Apenas usuários autenticados com role 'admin' têm permissão de acesso.
- * 3. Tolerância a falhas: Se os secrets não estiverem configurados ou a API do Kommo responder com erro/timeout,
- *    o endpoint retorna status estruturado sem lançar 500 para permitir que a interface mostre um painel informativo amigável.
- * 4. Cache/performance: Timeout curto de 6s para chamadas externas.
+ * Expõe endpoints para o Hub de Atendimento:
+ * 1. GET /backend/v1/kommo/recent-activity: Retorna leads e contatos recentes (com status de read-only desativado).
+ * 2. GET /backend/v1/kommo/users: Retorna operadores Kommo para vínculo de identidade.
+ * 3. POST /backend/v1/kommo/link-user: Salva vínculo do usuário do sistema ao Kommo.
+ * 4. GET /backend/v1/kommo/status: Status detalhado da conexão, modo de escrita e telefone SDR monitorado.
  */
+
+const {
+  getKommoConfig,
+  getKommoHeaders,
+  isSdrPhone,
+  KOMMO_SDR_PHONE_TARGET,
+  auditKommoAction,
+} = require(`${__hooks}/kommo_client.js`)
 
 routerAdd(
   'GET',
@@ -27,18 +32,18 @@ routerAdd(
       if (userRole !== 'admin') {
         return e.json(403, {
           error:
-            'Acesso negado. A aba e o bridge Kommo são exclusivos para o perfil Administrador nesta Fase 1.',
+            'Acesso negado. A aba e o bridge Kommo são exclusivos para o perfil Administrador.',
         })
       }
 
-      const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
-      const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
-      const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
+      const cfg = getKommoConfig()
 
-      if (!subdomain || !accessToken) {
+      if (!cfg.isConfigured) {
         return e.json(200, {
           ok: false,
           configured: false,
+          somente_leitura: cfg.isReadonly,
+          sdr_phone: KOMMO_SDR_PHONE_TARGET,
           error_code: 'MISSING_CREDENTIALS',
           message:
             'Credenciais do Kommo CRM (KOMMO_SUBDOMAIN ou KOMMO_ACCESS_TOKEN) não configuradas no backend.',
@@ -47,26 +52,17 @@ routerAdd(
         })
       }
 
-      const baseUrl = apiBaseUrlSecret
-        ? apiBaseUrlSecret.endsWith('/')
-          ? apiBaseUrlSecret.slice(0, -1)
-          : apiBaseUrlSecret
-        : `https://${subdomain}.kommo.com`
-
-      const headers = {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      }
+      const headers = getKommoHeaders(cfg.accessToken)
 
       // 1. Obter mapa de pipelines/funis para traduzir pipeline_id e status_id para nomes legíveis
       const pipelineMap = {}
       const statusMap = {}
       try {
         const pipRes = $http.send({
-          url: `${baseUrl}/api/v4/leads/pipelines`,
+          url: `${cfg.baseUrl}/api/v4/leads/pipelines`,
           method: 'GET',
           headers: headers,
-          timeout: 5,
+          timeout: 6,
         })
         if (pipRes && pipRes.statusCode >= 200 && pipRes.statusCode < 300) {
           const rawPips = pipRes.json?._embedded?.pipelines || []
@@ -87,14 +83,14 @@ routerAdd(
         console.log('[kommo_bridge] Aviso ao carregar pipelines: ' + pipErr.message)
       }
 
-      // 2. Buscar últimos leads com atividade recente (ordenados por updated_at desc, limite 20)
+      // 2. Buscar últimos leads com atividade recente
       let leads = []
       try {
         const leadsRes = $http.send({
-          url: `${baseUrl}/api/v4/leads?order[updated_at]=desc&limit=20&with=contacts`,
+          url: `${cfg.baseUrl}/api/v4/leads?order[updated_at]=desc&limit=30&with=contacts`,
           method: 'GET',
           headers: headers,
-          timeout: 6,
+          timeout: 7,
         })
 
         if (!leadsRes || leadsRes.statusCode < 200 || leadsRes.statusCode >= 300) {
@@ -102,6 +98,8 @@ routerAdd(
           return e.json(200, {
             ok: false,
             configured: true,
+            somente_leitura: cfg.isReadonly,
+            sdr_phone: KOMMO_SDR_PHONE_TARGET,
             error_code: `HTTP_${code}`,
             message: `Falha ao consultar leads recentes no Kommo CRM (HTTP ${code}). Verifique se o token de acesso continua válido.`,
             items: [],
@@ -114,6 +112,8 @@ routerAdd(
         return e.json(200, {
           ok: false,
           configured: true,
+          somente_leitura: cfg.isReadonly,
+          sdr_phone: KOMMO_SDR_PHONE_TARGET,
           error_code: 'TIMEOUT_OR_NETWORK',
           message: `Tempo limite ou erro de conexão com a API do Kommo CRM: ${httpErr.message}`,
           items: [],
@@ -121,7 +121,7 @@ routerAdd(
         })
       }
 
-      // 3. Para os contatos vinculados, coletar IDs para obter dados de contato se necessário
+      // 3. Coletar contatos vinculados
       const contactIds = []
       for (let i = 0; i < leads.length; i++) {
         const l = leads[i]
@@ -134,13 +134,12 @@ routerAdd(
       const contactsMap = {}
       if (contactIds.length > 0) {
         try {
-          // Busca em lote de contatos (máx 20 ids)
           const filterQuery = contactIds.map((id) => `filter[id][]=${id}`).join('&')
           const contactsRes = $http.send({
-            url: `${baseUrl}/api/v4/contacts?${filterQuery}&limit=50`,
+            url: `${cfg.baseUrl}/api/v4/contacts?${filterQuery}&limit=50`,
             method: 'GET',
             headers: headers,
-            timeout: 5,
+            timeout: 6,
           })
           if (contactsRes && contactsRes.statusCode >= 200 && contactsRes.statusCode < 300) {
             const rawContacts = contactsRes.json?._embedded?.contacts || []
@@ -154,28 +153,7 @@ routerAdd(
         }
       }
 
-      // 3.1 Carregar lista de usuários do Kommo para cache e cruzamento de responsáveis (somente leitura)
-      let kommoUsersList = []
-      try {
-        const uRes = $http.send({
-          url: `${baseUrl}/api/v4/users?limit=100`,
-          method: 'GET',
-          headers: headers,
-          timeout: 5,
-        })
-        if (uRes && uRes.statusCode >= 200 && uRes.statusCode < 300) {
-          const rawUsers = uRes.json?._embedded?.users || []
-          kommoUsersList = rawUsers.map((u) => ({
-            id: String(u.id),
-            name: u.name || '',
-            email: u.email || '',
-          }))
-        }
-      } catch (uErr) {
-        console.log('[kommo_bridge] Aviso ao carregar usuários: ' + uErr.message)
-      }
-
-      // 4. Formatar lista normalizada para a interface
+      // 4. Formatar lista normalizada
       const items = leads.map((l) => {
         const lId = String(l.id)
         const pId = String(l.pipeline_id || '')
@@ -206,10 +184,9 @@ routerAdd(
           }
         }
 
-        // Determinar canal aparente
         let canal = 'Kommo CRM'
         if (contactPhone) {
-          canal = 'WhatsApp / Telefone'
+          canal = isSdrPhone(contactPhone) ? 'WhatsApp SDR (35 99770-9232)' : 'WhatsApp / Telefone'
         } else if (contactEmail) {
           canal = 'E-mail'
         }
@@ -224,6 +201,7 @@ routerAdd(
           nome_contato: contactName || l.name || 'Contato não identificado',
           canal: canal,
           telefone: contactPhone,
+          is_sdr_line: isSdrPhone(contactPhone),
           email: contactEmail,
           valor: l.price || 0,
           pipeline_id: pId,
@@ -239,11 +217,12 @@ routerAdd(
       return e.json(200, {
         ok: true,
         configured: true,
-        somente_leitura: true,
-        subdomain: `${subdomain}.kommo.com`,
+        somente_leitura: cfg.isReadonly,
+        escrita_habilitada: !cfg.isReadonly,
+        subdomain: `${cfg.subdomain}.kommo.com`,
+        sdr_phone: KOMMO_SDR_PHONE_TARGET,
         items: items,
         total: items.length,
-        kommo_users: kommoUsersList,
         consultado_em: new Date().toISOString(),
       })
     } catch (err) {
@@ -251,6 +230,7 @@ routerAdd(
       return e.json(200, {
         ok: false,
         configured: false,
+        somente_leitura: false,
         error_code: 'INTERNAL_ERROR',
         message: `Erro interno no bridge Kommo: ${err.message}`,
         items: [],
@@ -263,8 +243,6 @@ routerAdd(
 
 /**
  * GET /backend/v1/kommo/users
- * Retorna os usuários cadastrados na Kommo (somente leitura).
- * Exclusivo para administradores.
  */
 routerAdd(
   'GET',
@@ -281,11 +259,8 @@ routerAdd(
         return e.json(403, { error: 'Acesso restrito a administradores.' })
       }
 
-      const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
-      const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
-      const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
-
-      if (!subdomain || !accessToken) {
+      const cfg = getKommoConfig()
+      if (!cfg.isConfigured) {
         return e.json(200, {
           ok: false,
           configured: false,
@@ -294,19 +269,9 @@ routerAdd(
         })
       }
 
-      const baseUrl = apiBaseUrlSecret
-        ? apiBaseUrlSecret.endsWith('/')
-          ? apiBaseUrlSecret.slice(0, -1)
-          : apiBaseUrlSecret
-        : `https://${subdomain}.kommo.com`
-
-      const headers = {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      }
-
+      const headers = getKommoHeaders(cfg.accessToken)
       const uRes = $http.send({
-        url: `${baseUrl}/api/v4/users?limit=250`,
+        url: `${cfg.baseUrl}/api/v4/users?limit=250`,
         method: 'GET',
         headers: headers,
         timeout: 6,
@@ -349,9 +314,6 @@ routerAdd(
 
 /**
  * POST /backend/v1/kommo/link-user
- * Vincula ou desvincula um usuário do sistema local com um usuário do Kommo.
- * Body: { userId: string, kommoUserId?: string, kommoUserNome?: string }
- * Exclusivo para administradores. Salva apenas no banco do Projeto Guerra (Kommo é somente-leitura).
  */
 routerAdd(
   'POST',
@@ -390,22 +352,17 @@ routerAdd(
       targetUser.set('kommo_user_nome', kommoUserNome)
       $app.save(targetUser)
 
-      // Registrar auditoria em eventos_log
-      try {
-        const colEv = $app.findCollectionByNameOrId('eventos_log')
-        const ev = new Record(colEv)
-        ev.set('usuario', authRecord.id)
-        ev.set('acao', kommoUserId ? 'kommo_usuario_vinculado' : 'kommo_usuario_desvinculado')
-        ev.set('detalhes', {
+      auditKommoAction(
+        kommoUserId ? 'usuario_vinculado' : 'usuario_desvinculado',
+        {
           target_user_id: userId,
           target_user_name: targetUser.getString('name'),
           kommo_user_id: kommoUserId,
           kommo_user_nome: kommoUserNome,
           executado_por: authRecord.getString('name') || authRecord.id,
-          executado_em: new Date().toISOString(),
-        })
-        $app.save(ev)
-      } catch (_) {}
+        },
+        authRecord.id,
+      )
 
       return e.json(200, {
         ok: true,

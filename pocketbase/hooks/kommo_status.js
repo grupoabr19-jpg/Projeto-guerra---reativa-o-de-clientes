@@ -1,71 +1,87 @@
-routerAdd('GET', '/backend/v1/kommo/status', (e) => {
-  try {
-    const sub = $os.getenv('KOMMO_SUBDOMAIN') || ''
-    const tok = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
-    const clientId = $os.getenv('KOMMO_CLIENT_ID') || ''
-    const clientSecret = $os.getenv('KOMMO_CLIENT_SECRET') || ''
-    const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
-    const fieldOrigin = $os.getenv('KOMMO_FIELD_ORIGIN') || ''
-    const fieldSegment = $os.getenv('KOMMO_FIELD_SEGMENT') || ''
-    const fieldTemperature = $os.getenv('KOMMO_FIELD_TEMPERATURE') || ''
+/// <reference path="../pb_data/types.d.ts" />
 
-    let currentVal = {}
+/**
+ * kommo_status.js
+ *
+ * Diagnóstico de conexão e status do Kommo CRM:
+ * GET /backend/v1/kommo/status
+ *
+ * Exclusivo para administradores.
+ * Informa:
+ * - Credenciais configuradas (sim/não)
+ * - Modo somente-leitura (desativado / ativado)
+ * - Telefone monitorado da linha SDR ((35) 99770-9232)
+ * - Teste de ping contra a API do Kommo
+ * - URL do Webhook a ser colada no Kommo
+ */
+
+const { getKommoConfig, getKommoHeaders, KOMMO_SDR_PHONE_TARGET } = require(
+  `${__hooks}/kommo_client.js`,
+)
+
+routerAdd(
+  'GET',
+  '/backend/v1/kommo/status',
+  (e) => {
     try {
-      const currentCfg = $app.findFirstRecordByData('configuracoes', 'chave', 'kommo_config')
-      if (currentCfg) {
-        const raw = currentCfg.get('valor')
-        if (raw && typeof raw === 'object') {
-          currentVal = raw
-        } else if (typeof raw === 'string') {
-          try {
-            currentVal = JSON.parse(raw)
-          } catch (_) {
-            currentVal = {}
+      const authRecord = e.auth
+      if (!authRecord || !authRecord.id) {
+        return e.json(401, { error: 'Autenticação necessária.' })
+      }
+      if (authRecord.getString('role') !== 'admin') {
+        return e.json(403, { error: 'Acesso restrito ao administrador.' })
+      }
+
+      const cfg = getKommoConfig()
+      let pingOk = false
+      let pingLatencyMs = 0
+      let pingError = ''
+
+      if (cfg.isConfigured) {
+        const start = Date.now()
+        try {
+          const res = $http.send({
+            url: `${cfg.baseUrl}/api/v4/account`,
+            method: 'GET',
+            headers: getKommoHeaders(cfg.accessToken),
+            timeout: 5,
+          })
+          pingLatencyMs = Date.now() - start
+          if (res && res.statusCode >= 200 && res.statusCode < 300) {
+            pingOk = true
+          } else {
+            pingError = `HTTP ${res ? res.statusCode : 0}`
           }
+        } catch (httpErr) {
+          pingError = httpErr.message
         }
       }
-    } catch (_) {}
 
-    const isConfigured = Boolean(sub && (tok || (clientId && clientSecret)))
+      // Descobrir total de conversas WhatsApp SDR locais
+      let totalConversasSdr = 0
+      try {
+        const total = $app.countRecords('chat_conversas', "tipo = 'kommo_whatsapp'")
+        totalConversasSdr = total
+      } catch (_) {}
 
-    const inspecao = currentVal.inspecao || null
-    const ultimoTesteOk = Boolean(currentVal.ultimo_teste_ok)
-    const ultimoSync = currentVal.ultimo_sync || null
-
-    return e.json(200, {
-      configured: isConfigured,
-      connected: ultimoTesteOk || Boolean(tok && sub),
-      mode: 'readonly',
-      mode_label: 'Somente Leitura (Cruzamento com Planilhas)',
-      somente_leitura: true,
-      subdomain: sub ? `${sub}.kommo.com` : 'Não configurado',
-      hasAccessToken: Boolean(tok),
-      hasOAuth: Boolean(clientId && clientSecret),
-      hasCustomFieldSecrets: Boolean(fieldOrigin || fieldSegment || fieldTemperature),
-      status:
-        ultimoTesteOk || (tok && sub)
-          ? 'connected'
-          : isConfigured
-            ? 'configured'
-            : 'missing_secrets',
-      message:
-        ultimoTesteOk || (tok && sub)
-          ? 'Modo Somente Leitura ativo: dados do Kommo disponíveis para consulta e cruzamento com planilhas. Nenhuma alteração é gravada no CRM.'
-          : isConfigured
-            ? 'Secrets do Kommo detectados no backend. Clique em Testar Conexão para validar.'
-            : 'Nenhum secret do Kommo configurado ainda (KOMMO_SUBDOMAIN, KOMMO_ACCESS_TOKEN).',
-      inspecao: inspecao,
-      ultimoSync: ultimoSync,
-    })
-  } catch (err) {
-    return e.json(200, {
-      configured: false,
-      connected: false,
-      mode: 'readonly',
-      somente_leitura: true,
-      subdomain: 'Não configurado',
-      status: 'error',
-      message: `Falha ao verificar status: ${err.message}`,
-    })
-  }
-})
+      return e.json(200, {
+        ok: true,
+        configured: cfg.isConfigured,
+        somente_leitura: cfg.isReadonly,
+        escrita_habilitada: !cfg.isReadonly,
+        subdomain: cfg.subdomain,
+        sdr_phone: KOMMO_SDR_PHONE_TARGET,
+        sdr_phone_formatted: '(35) 99770-9232',
+        webhook_endpoint: '/backend/v1/kommo/webhook',
+        ping_ok: pingOk,
+        ping_latency_ms: pingLatencyMs,
+        ping_error: pingError,
+        total_conversas_sdr: totalConversasSdr,
+        checado_em: new Date().toISOString(),
+      })
+    } catch (err) {
+      return e.json(500, { error: err.message })
+    }
+  },
+  $apis.requireAuth(),
+)

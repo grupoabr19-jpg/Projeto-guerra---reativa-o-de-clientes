@@ -473,3 +473,110 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
     console.error('Erro no cron crons_atualizacao_diaria_base:', err)
   }
 })
+
+/**
+ * Cron para sincronização periódica de fallback da linha SDR do Kommo CRM
+ * Executa a cada 15 minutos e respeita estritamente o horário de expediente da equipe (7h às 17h no horário de Brasília)
+ */
+cronAdd('kommo_sdr_polling_fallback', '*/15 * * * *', () => {
+  try {
+    const now = new Date()
+    const utcHours = now.getUTCHours()
+    // Horário de Brasília é UTC-3: 7h às 17h BRT corresponde a 10h às 20h UTC
+    const brasiliaHours = (utcHours - 3 + 24) % 24
+    if (brasiliaHours < 7 || brasiliaHours >= 17) {
+      return
+    }
+
+    const {
+      cleanPhoneNumber,
+      isSdrPhone,
+      KOMMO_SDR_PHONE_TARGET,
+      getKommoConfig,
+      getKommoHeaders,
+      getAdminUser,
+    } = require(`${__hooks}/kommo_client.js`)
+
+    const cfg = getKommoConfig()
+    if (!cfg.isConfigured) return
+
+    const admin = getAdminUser()
+    const adminId = admin ? admin.id : ''
+
+    const headers = getKommoHeaders(cfg.accessToken)
+    const leadsRes = $http.send({
+      url: `${cfg.baseUrl}/api/v4/leads?order[updated_at]=desc&limit=20&with=contacts`,
+      method: 'GET',
+      headers: headers,
+      timeout: 7,
+    })
+
+    if (!leadsRes || leadsRes.statusCode < 200 || leadsRes.statusCode >= 300) return
+    const leads = leadsRes.json?._embedded?.leads || []
+    const convCol = $app.findCollectionByNameOrId('chat_conversas')
+    const msgCol = $app.findCollectionByNameOrId('chat_mensagens')
+
+    for (let i = 0; i < leads.length; i++) {
+      const lead = leads[i]
+      const contacts = lead._embedded?.contacts || []
+      if (contacts.length === 0) continue
+
+      let contactPhone = ''
+      let contactName = ''
+      try {
+        const cRes = $http.send({
+          url: `${cfg.baseUrl}/api/v4/contacts/${contacts[0].id}`,
+          method: 'GET',
+          headers: headers,
+          timeout: 4,
+        })
+        if (cRes && cRes.statusCode === 200 && cRes.json) {
+          contactName = cRes.json.name || ''
+          const flds = cRes.json.custom_fields_values || []
+          for (let f = 0; f < flds.length; f++) {
+            if (flds[f].field_code === 'PHONE' && flds[f].values && flds[f].values[0]) {
+              contactPhone = flds[f].values[0].value || ''
+              break
+            }
+          }
+        }
+      } catch (_) {}
+
+      const cleanPhone = cleanPhoneNumber(contactPhone)
+      if (cleanPhone || isSdrPhone(contactPhone)) {
+        let conv = null
+        if (cleanPhone) {
+          try {
+            const existing = $app.findRecordsByFilter(
+              'chat_conversas',
+              `kommo_phone_clean = '${cleanPhone}' && tipo = 'kommo_whatsapp'`,
+              '-updated',
+              1,
+            )
+            if (existing && existing.length > 0) conv = existing[0]
+          } catch (_) {}
+        }
+        if (!conv) {
+          conv = new Record(convCol)
+          conv.set('tipo', 'kommo_whatsapp')
+          conv.set(
+            'titulo',
+            contactName
+              ? `${contactName} (WhatsApp SDR)`
+              : `WhatsApp SDR (${cleanPhone || KOMMO_SDR_PHONE_TARGET})`,
+          )
+          conv.set('participantes', adminId ? [adminId] : [])
+          conv.set('kommo_phone', contactPhone || KOMMO_SDR_PHONE_TARGET)
+          conv.set('kommo_phone_clean', cleanPhone || KOMMO_SDR_PHONE_TARGET)
+          conv.set('kommo_contact_id', String(contacts[0].id))
+          conv.set('kommo_lead_id', String(lead.id))
+          conv.set('responsavel_id', adminId || '')
+          conv.set('total_mensagens', 0)
+          $app.save(conv)
+        }
+      }
+    }
+  } catch (err) {
+    console.log('[cron_kommo_sdr] Aviso no polling agendado Kommo SDR: ' + err.message)
+  }
+})
