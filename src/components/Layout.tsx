@@ -24,6 +24,7 @@ import { checkKommoStatus, testKommoConnection } from '@/services/api'
 import { ExpedienteStatusBadge } from '@/components/ExpedienteStatusBadge'
 import { LogoAbr } from '@/components/LogoAbr'
 import { usePresence } from '@/hooks/usePresence'
+import { ChatWidget } from '@/components/ChatWidget'
 
 export default function Layout() {
   const { user, logout, hasRole } = useAuth()
@@ -447,6 +448,9 @@ export default function Layout() {
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1400px] w-full mx-auto">
           <Outlet />
         </main>
+
+        {/* Chat Interno: Botão flutuante (FAB) e mini-painel popover/drawer para todos os usuários autenticados */}
+        <ChatWidget />
       </div>
     </div>
   )

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T12:07:02.211Z",
+  "generatedAt": "2026-10-05T12:35:32.903Z",
   "collections": [
     {
       "name": "users",
@@ -1319,6 +1319,230 @@
       "indexes": [
         "CREATE INDEX idx_concursos_status ON concursos_sazonais (status)",
         "CREATE INDEX idx_concursos_periodo ON concursos_sazonais (data_inicio, data_fim)"
+      ]
+    },
+    {
+      "name": "chat_conversas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "tipo",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["geral", "canal_rota", "dm"]
+        },
+        {
+          "name": "titulo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "regiao_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "regiao",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "regioes"
+        },
+        {
+          "name": "participantes",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "chave_dm",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ultimo_autor_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ultima_mensagem_texto",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ultima_mensagem_tipo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ultima_mensagem_data",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total_mensagens",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_chat_conversas_tipo ON chat_conversas (tipo)",
+        "CREATE INDEX idx_chat_conversas_chave_dm ON chat_conversas (chave_dm)",
+        "CREATE INDEX idx_chat_conversas_regiao ON chat_conversas (regiao_nome)",
+        "CREATE INDEX idx_chat_conversas_updated ON chat_conversas (updated DESC)"
+      ]
+    },
+    {
+      "name": "chat_mensagens",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != '' && autor = @request.auth.id",
+        "update": null,
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "conversa",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "chat_conversas"
+        },
+        {
+          "name": "autor",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "autor_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "autor_role",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "texto",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "tipo",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["normal", "aviso"]
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_chat_msg_conversa_created ON chat_mensagens (conversa, created ASC)",
+        "CREATE INDEX idx_chat_msg_tipo ON chat_mensagens (tipo)",
+        "CREATE INDEX idx_chat_msg_created ON chat_mensagens (created DESC)"
+      ]
+    },
+    {
+      "name": "chat_leituras",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && usuario = @request.auth.id",
+        "view": "@request.auth.id != '' && usuario = @request.auth.id",
+        "create": "@request.auth.id != '' && usuario = @request.auth.id",
+        "update": "@request.auth.id != '' && usuario = @request.auth.id",
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "conversa",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "chat_conversas"
+        },
+        {
+          "name": "usuario",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "last_read",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_chat_leituras_conv_user ON chat_leituras (conversa, usuario)",
+        "CREATE INDEX idx_chat_leituras_user ON chat_leituras (usuario)"
       ]
     }
   ]

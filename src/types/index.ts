@@ -622,3 +622,58 @@ export interface ReportsAnalyticsResponse {
     vendedores: string[]
   }
 }
+
+// Chat Interno
+export type ChatConversaTipo = 'geral' | 'canal_rota' | 'dm'
+export type ChatMensagemTipo = 'normal' | 'aviso'
+
+export interface ChatConversa {
+  id: string
+  tipo: ChatConversaTipo
+  titulo?: string
+  regiao_nome?: string
+  regiao?: string
+  participantes?: string[]
+  chave_dm?: string
+  ultimo_autor_nome?: string
+  ultima_mensagem_texto?: string
+  ultima_mensagem_tipo?: string
+  ultima_mensagem_data?: string
+  total_mensagens?: number
+  created: string
+  updated: string
+  // Campos expandidos opcionais
+  expand?: {
+    participantes?: User[]
+    regiao?: Regiao
+  }
+}
+
+export interface ChatMensagem {
+  id: string
+  conversa: string
+  autor: string
+  autor_nome: string
+  autor_role: string
+  texto: string
+  tipo: ChatMensagemTipo
+  created: string
+  updated: string
+  expand?: {
+    autor?: User
+  }
+}
+
+export interface ChatLeitura {
+  id: string
+  conversa: string
+  usuario: string
+  last_read: string
+  created: string
+  updated: string
+}
+
+export interface ChatUnreadCountsResponse {
+  total_unread: number
+  by_conversation: Record<string, number>
+}

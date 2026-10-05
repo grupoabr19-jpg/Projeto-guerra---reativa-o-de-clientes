@@ -380,6 +380,27 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
       }
     }
 
+    // 4. Limpeza e Retenção do Chat Interno (mensagens com mais de 90 dias)
+    let totalChatMsgsLimpas = 0
+    try {
+      const noventaDiasAtrasMs = nowMs - 90 * 24 * 60 * 60 * 1000
+      const cutoffChat = new Date(noventaDiasAtrasMs).toISOString()
+      const resChatClean = $app
+        .db()
+        .newQuery('DELETE FROM chat_mensagens WHERE created < {:cutoff}')
+        .bind({ cutoff: cutoffChat })
+        .execute()
+      totalChatMsgsLimpas =
+        resChatClean && resChatClean.rowsAffected ? resChatClean.rowsAffected() : 0
+      if (totalChatMsgsLimpas > 0) {
+        console.log(
+          `[cron_3h] Chat: ${totalChatMsgsLimpas} mensagens com mais de 90 dias foram removidas.`,
+        )
+      }
+    } catch (chatErr) {
+      console.log('[cron_3h] Aviso na limpeza de 90 dias do chat: ' + chatErr.message)
+    }
+
     // Grava registro da execução em eventos_log
     try {
       const colEv = $app.findCollectionByNameOrId('eventos_log')
@@ -390,6 +411,7 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
         total_processados: totalProcessados,
         total_reconciliados_faturaram: totalReconciliados,
         total_locks_liberados: totalLocksLiberados,
+        total_chat_msgs_limpas: totalChatMsgsLimpas,
       })
       $app.save(ev)
     } catch (_) {}

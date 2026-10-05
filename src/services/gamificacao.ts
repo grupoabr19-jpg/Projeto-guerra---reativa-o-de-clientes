@@ -60,12 +60,12 @@ export async function registrarConquistaTitulo(
 
 // 4. Concursos Sazonais
 export async function fetchConcursosSazonais(): Promise<ConcursoSazonal[]> {
-  return pb.collection('concursos_sazonais').getFullList<ConcursoSazonal>({
+  const lista = await pb.collection('concursos_sazonais').getFullList<ConcursoSazonal>({
     sort: '-created',
     expand: 'vencedor,criado_por',
   })
+  return lista
 }
-
 export async function createConcursoSazonal(
   data: Partial<ConcursoSazonal>,
 ): Promise<ConcursoSazonal> {
@@ -138,9 +138,14 @@ export async function calculateRankingData(options?: {
   const regiaoFiltro = options?.regiao && options.regiao !== 'todas' ? options.regiao : null
   const currentUserId = options?.currentUserId
 
-  // Buscar em paralelo: usuários, catálogo de títulos, interações, clientes reativados, concursos e pesos
+  // Regra inviolável do Projeto Guerra: somente operador e lider de rota participam do ranking de atendimento.
+  // Administradores e supervisores são terminantemente excluídos do ranking (posição, pontuação, títulos, pódio).
+  // Buscar em paralelo: usuários elegíveis (operador e lider), catálogo de títulos, interações, clientes reativados, concursos e pesos
   const [users, catalogo, interacoes, clientesReativados, concursos, pesos] = await Promise.all([
-    pb.collection('users').getFullList<User>({ sort: 'name' }),
+    pb.collection('users').getFullList<User>({
+      filter: "role = 'operador' || role = 'lider'",
+      sort: 'name',
+    }),
     fetchTitulosCatalogo(),
     pb.collection('interacoes').getFullList<Interacao>({
       sort: '-created',
@@ -152,15 +157,17 @@ export async function calculateRankingData(options?: {
     fetchPesosGamificacao(),
   ])
 
-  // Filtrar usuários por região se selecionado
+  // Filtrar usuários por região se selecionado (apenas operador e líder de rota)
   const filteredUsers = users.filter((u) => {
+    // Dupla blindagem: garantir que admin e supervisor nunca passem
+    if (u.role === 'admin' || u.role === 'supervisor') return false
     if (!regiaoFiltro) return true
     // Se o usuário tem regiões atribuídas, verificar se inclui a selecionada
     if (u.regioes && u.regioes.length > 0) {
       return u.regioes.includes(regiaoFiltro)
     }
-    // Administradores e supervisores gerais sem região explícita participam
-    return true
+    // Se não tiver região explícita e não há filtro de região, inclui
+    return !regiaoFiltro
   })
 
   // Janela de data para o período no fuso de Brasília (America/Sao_Paulo)
@@ -180,7 +187,7 @@ export async function calculateRankingData(options?: {
     return true
   }
 
-  // Agrupar métricas por operador
+  // Agrupar métricas por operador (somente operadores e líderes elegíveis)
   const metricsByUser: Record<
     string,
     {
@@ -194,7 +201,7 @@ export async function calculateRankingData(options?: {
     }
   > = {}
 
-  // Inicializar mapa para todos os usuários
+  // Inicializar mapa exclusivamente para os operadores e líderes filtrados
   for (const u of filteredUsers) {
     metricsByUser[u.id] = {
       atendimentos: 0,
@@ -207,7 +214,7 @@ export async function calculateRankingData(options?: {
     }
   }
 
-  // Processar interações no período
+  // Processar interações no período (ignora operadores que não estejam na lista elegível, como admin/supervisor)
   for (const it of interacoes) {
     if (!it.operador || !metricsByUser[it.operador]) continue
     if (!isWithinPeriod(it.created)) continue

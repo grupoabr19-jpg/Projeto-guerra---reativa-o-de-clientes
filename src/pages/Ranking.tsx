@@ -316,8 +316,8 @@ export function RankingPage() {
           </p>
         </div>
 
-        {/* Minha Posição Resumida (Destaque do Operador logado) */}
-        {currentUserRow && (
+        {/* Minha Posição Resumida (Destaque exclusivo do Operador e Líder de rota logados) */}
+        {currentUserRow ? (
           <div className="flex items-center space-x-3 bg-gradient-to-r from-slate-900 to-blue-950 text-white p-3 px-4 rounded-xl shadow-md border border-slate-800">
             <div className="text-center pr-3 border-r border-slate-700/80">
               <span className="text-[10px] uppercase tracking-wider text-slate-400 block font-mono">
@@ -357,7 +357,19 @@ export function RankingPage() {
               )}
             </div>
           </div>
-        )}
+        ) : isAdmin || user?.role === 'supervisor' ? (
+          <div className="flex items-center space-x-2.5 bg-slate-100 text-slate-700 p-3 px-4 rounded-xl border border-slate-200 text-xs">
+            <Shield className="h-4 w-4 text-[#253575] shrink-0" />
+            <div>
+              <span className="font-bold block text-slate-900">
+                Visão de Gestão ({user?.role === 'admin' ? 'Administrador' : 'Supervisor'})
+              </span>
+              <span className="text-[11px] text-slate-500">
+                Ranking exclusivo para operadores e líderes de rota ativos.
+              </span>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Barra de Filtros e Controles */}
