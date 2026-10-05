@@ -14,6 +14,7 @@ import {
   Activity,
   Trophy,
   Flag,
+  MessagesSquare,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -166,6 +167,16 @@ export default function Layout() {
           ...(hasRole('admin')
             ? [
                 {
+                  title: 'Atendimento (Hub)',
+                  href: '/hub-atendimento',
+                  icon: MessagesSquare,
+                  badgeText: 'Admin',
+                },
+              ]
+            : []),
+          ...(hasRole('admin')
+            ? [
+                {
                   title: 'Importação',
                   href: '/importacao',
                   icon: FileSpreadsheet,
@@ -271,7 +282,12 @@ export default function Layout() {
                   isActive ? 'text-[#F18800]' : 'text-slate-300 group-hover:text-white'
                 }`}
               />
-              <span className="truncate">{item.title}</span>
+              <span className="truncate flex-1">{item.title}</span>
+              {'badgeText' in item && item.badgeText && (
+                <span className="text-[10px] uppercase font-bold text-[#F18800] bg-[#F18800]/15 border border-[#F18800]/30 px-1.5 py-0.2 rounded shrink-0">
+                  {item.badgeText}
+                </span>
+              )}
             </NavLink>
           )
         })}

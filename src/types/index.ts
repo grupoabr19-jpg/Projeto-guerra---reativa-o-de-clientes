@@ -679,3 +679,63 @@ export interface ChatUnreadCountsResponse {
   total_unread: number
   by_conversation: Record<string, number>
 }
+
+// ==========================================
+// Hub de Atendimento — Fase 1 (Exclusivo Admin)
+// ==========================================
+
+export type EtapaTipoDesfecho = 'normal' | 'sucesso' | 'perda'
+
+export interface AtendimentoFunilEtapa {
+  id: string
+  funil: string
+  nome: string
+  ordem: number
+  cor_hex?: string
+  descricao?: string
+  tipo_desfecho?: EtapaTipoDesfecho
+  created: string
+  updated: string
+}
+
+export interface AtendimentoFunil {
+  id: string
+  nome: string
+  descricao?: string
+  ordem: number
+  cor_hex?: string
+  ativo: boolean
+  criado_por?: string
+  created: string
+  updated: string
+  etapas?: AtendimentoFunilEtapa[]
+}
+
+export interface KommoBridgeItem {
+  id: string
+  nome_lead: string
+  nome_contato: string
+  canal: string
+  telefone?: string
+  email?: string
+  valor?: number
+  pipeline_id: string
+  pipeline_nome: string
+  status_id: string
+  status_nome: string
+  status_cor?: string
+  ultima_atividade: string
+  criado_em: string
+}
+
+export interface KommoBridgeResponse {
+  ok: boolean
+  configured: boolean
+  somente_leitura: boolean
+  subdomain?: string
+  items: KommoBridgeItem[]
+  total: number
+  consultado_em?: string
+  error_code?: string
+  message?: string
+}

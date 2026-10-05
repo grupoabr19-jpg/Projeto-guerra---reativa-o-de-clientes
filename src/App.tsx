@@ -20,6 +20,7 @@ import ConfiguracoesPage from '@/pages/Configuracoes'
 import MeuPainelPage from '@/pages/MeuPainel'
 import RankingPage from '@/pages/Ranking'
 import EquipePage from '@/pages/Equipe'
+import HubAtendimentoPage from '@/pages/HubAtendimento'
 import { ForgotPassword, ResetPassword, VerifyEmail } from '@/pages/AuthPages'
 import NotFound from '@/pages/NotFound'
 
@@ -118,6 +119,14 @@ const App = () => (
               />
 
               {/* Rotas exclusivas de Administrador (Operador é redirecionado para /meu-painel) */}
+              <Route
+                path="/hub-atendimento"
+                element={
+                  <RoleRoute allowedRoles={['admin']}>
+                    <HubAtendimentoPage />
+                  </RoleRoute>
+                }
+              />
               <Route
                 path="/importacao"
                 element={
