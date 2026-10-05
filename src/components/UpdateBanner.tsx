@@ -73,12 +73,13 @@ export function UpdateBanner() {
 
           <Button
             variant="ghost"
-            size="icon"
+            size="sm"
             onClick={dismissBanner}
-            title="Lembrar mais tarde"
-            className="h-8 w-8 text-slate-300 hover:text-white hover:bg-white/10 shrink-0"
+            title="Dispensar aviso desta versão"
+            className="h-8 px-2 text-slate-300 hover:text-white hover:bg-white/10 text-xs shrink-0 flex items-center space-x-1"
           >
-            <X className="h-4 w-4" />
+            <span>Dispensar</span>
+            <X className="h-3.5 w-3.5 ml-0.5" />
           </Button>
         </div>
       </div>

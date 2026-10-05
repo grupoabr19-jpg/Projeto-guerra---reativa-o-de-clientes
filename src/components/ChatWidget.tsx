@@ -276,7 +276,7 @@ export function ChatWidget() {
       if (avisoPedirAtualizacao) {
         try {
           await emitirAtualizacaoVersaoAdmin({
-            version: '1.0.' + Math.floor((Date.now() / 60000) % 1000),
+            version: '0.0.' + Math.floor(((Date.now() / 60000) % 1000) + 70),
             mensagem: avisoTexto.trim(),
             dispararChatAviso: false,
           })

@@ -235,7 +235,7 @@ export default function ConfiguracoesPage() {
 
   // Estado para aba de Versão & Atualizações (Admin)
   const { currentVersion, latestVersion, checkNow } = useVersion()
-  const [versaoInput, setVersaoInput] = useState<string>('1.0.1')
+  const [versaoInput, setVersaoInput] = useState<string>('0.0.69')
   const [mensagemAtualizacao, setMensagemAtualizacao] = useState<string>(
     'Nova versão liberada com correções e melhorias de desempenho. Por favor, recarregue!',
   )

@@ -9,8 +9,8 @@ migrate(
       rec.set('chave', 'app_version')
       rec.set('descricao', 'Controle de versão do frontend e pulso de atualização do navegador')
       rec.set('valor', {
-        version: '1.0.0',
-        build_id: 'build-1.0.0',
+        version: '0.0.68',
+        build_id: 'v0.0.68',
         published_at: new Date().toISOString(),
         mensagem: 'Nova versão do Projeto Guerra disponível!',
         force_reload: false,

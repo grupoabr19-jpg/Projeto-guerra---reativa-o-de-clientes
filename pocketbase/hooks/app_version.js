@@ -12,8 +12,8 @@
 routerAdd('GET', '/backend/v1/app/version', (e) => {
   try {
     let versionData = {
-      version: '1.0.0',
-      build_id: 'build-1.0.0',
+      version: '0.0.68',
+      build_id: 'v0.0.68',
       published_at: new Date().toISOString(),
       mensagem: '',
       force_reload: false,
