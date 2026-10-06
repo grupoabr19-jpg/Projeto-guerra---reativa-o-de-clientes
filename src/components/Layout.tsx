@@ -17,7 +17,6 @@ import {
   MessagesSquare,
   ChevronLeft,
   ChevronRight,
-  Bot,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -159,8 +158,8 @@ export default function Layout() {
   }
 
   // Definição estrita de permissões de menu:
-  // Operador vê SOMENTE: "Meu Painel", "Atendimento" e "Ranking".
-  // Líder de Rota vê: "Meu Painel", "Atendimento", "Equipe" (novo) e "Ranking".
+  // Operador vê SOMENTE: "Meu Painel", "Atendimento" (antiga base de inativos) e "Ranking".
+  // Líder de Rota vê: "Meu Painel", "Atendimento", "Equipe" e "Ranking".
   // NÃO vê outras rotas, NÃO vê Importação, NÃO vê Configurações, NÃO vê a fila geral nem a lista de Clientes.
   // Supervisor e Admin mantêm seus acessos ampliados.
 
@@ -175,8 +174,8 @@ export default function Layout() {
           icon: Activity,
         },
         {
-          title: 'Base de Inativos',
-          href: '/base-inativos',
+          title: 'Atendimento',
+          href: '/atendimento',
           icon: Headphones,
         },
         {
@@ -193,8 +192,8 @@ export default function Layout() {
             icon: Activity,
           },
           {
-            title: 'Base de Inativos',
-            href: '/base-inativos',
+            title: 'Atendimento',
+            href: '/atendimento',
             icon: Headphones,
           },
           {
@@ -221,8 +220,8 @@ export default function Layout() {
           ...(hasRole('admin')
             ? [
                 {
-                  title: 'Atendimento (Hub)',
-                  href: '/hub-atendimento',
+                  title: 'CA - Comunicação Interna',
+                  href: '/ca-comunicacao-interna',
                   icon: MessagesSquare,
                   badgeCount: hubUnreadCount > 0 ? hubUnreadCount : undefined,
                 },
@@ -243,8 +242,8 @@ export default function Layout() {
             icon: ListOrdered,
           },
           {
-            title: 'Base de Inativos',
-            href: '/base-inativos',
+            title: 'Atendimento',
+            href: '/atendimento',
             icon: Headphones,
           },
           {
@@ -268,12 +267,6 @@ export default function Layout() {
             : []),
           ...(hasRole('admin')
             ? [
-                {
-                  title: 'Treinamento do SDR',
-                  href: '/treinamento-sdr',
-                  icon: Bot,
-                  badgeText: 'IA',
-                },
                 {
                   title: 'Configurações',
                   href: '/configuracoes',

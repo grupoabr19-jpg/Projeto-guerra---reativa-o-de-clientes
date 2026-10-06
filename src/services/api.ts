@@ -684,15 +684,8 @@ export async function syncKommoLead(data: {
   desfecho?: string
   observacoes?: string
 }) {
-  const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/kommo/sync-lead`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: pb.authStore.token,
-    },
-    body: JSON.stringify(data),
-  })
-  return res.json()
+  // Modo SOMENTE-LEITURA estrito restaurado: nenhuma escrita é enviada ao Kommo
+  return { ok: true, readonly: true, skipped: true, data }
 }
 
 // Process spreadsheet rows

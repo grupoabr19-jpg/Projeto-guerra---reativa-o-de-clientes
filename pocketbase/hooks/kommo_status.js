@@ -22,12 +22,10 @@ routerAdd(
         return e.json(403, { error: 'Acesso restrito ao administrador.' })
       }
 
-      const sdrPhoneTarget = '35997709232'
       const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
       const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
       const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
-      const readonlyEnv = $os.getenv('KOMMO_READONLY_MODE') || 'false'
-      const isReadonly = readonlyEnv.toLowerCase() === 'true' // KOMMO_READONLY_OVERRIDE=false
+      const isReadonly = true // Modo somente leitura restaurado
 
       const baseUrl = apiBaseUrlSecret
         ? apiBaseUrlSecret.endsWith('/')
@@ -66,26 +64,15 @@ routerAdd(
         }
       }
 
-      // Total de conversas WhatsApp SDR locais
-      let totalConversasSdr = 0
-      try {
-        const total = $app.countRecords('chat_conversas', "tipo = 'kommo_whatsapp'")
-        totalConversasSdr = total
-      } catch (_) {}
-
       return e.json(200, {
         ok: true,
         configured: isConfigured,
-        somente_leitura: isReadonly,
-        escrita_habilitada: !isReadonly,
+        somente_leitura: true,
+        escrita_habilitada: false,
         subdomain: subdomain,
-        sdr_phone: sdrPhoneTarget,
-        sdr_phone_formatted: '(35) 99770-9232',
-        webhook_endpoint: '/backend/v1/kommo/webhook',
         ping_ok: pingOk,
         ping_latency_ms: pingLatencyMs,
         ping_error: pingError,
-        total_conversas_sdr: totalConversasSdr,
         checado_em: new Date().toISOString(),
       })
     } catch (err) {

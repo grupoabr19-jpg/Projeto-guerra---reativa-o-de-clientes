@@ -321,10 +321,8 @@ routerAdd(
           }
         }
 
-        // Regra de produto: Se conversa é kommo_whatsapp e status_sdr = 'transferido' e não está em re_superficie,
-        // mensagens seguintes não incrementam não-lidas do admin (pertencem ao vendedor responsável).
-        const statusSdr = c.getString('status_sdr')
-        if (tipo === 'kommo_whatsapp' && userRole === 'admin' && statusSdr === 'transferido') {
+        // Apenas conversas internas (dm, canal_geral, canal_rota) são contabilizadas
+        if (tipo !== 'dm' && tipo !== 'canal_geral' && tipo !== 'canal_rota') {
           continue
         }
 

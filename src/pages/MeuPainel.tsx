@@ -307,13 +307,13 @@ export function MeuPainelPage() {
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             </Button>
-            <Link to="/base-inativos">
+            <Link to="/atendimento">
               <Button
                 size="sm"
                 className="bg-[#F18800] hover:bg-[#d97b00] text-white font-semibold text-xs shadow-sm shadow-[#F18800]/25 h-8"
               >
                 <Headphones className="h-3.5 w-3.5 mr-1.5" />
-                Acessar Base de Inativos
+                Acessar Atendimento
               </Button>
             </Link>{' '}
           </div>
@@ -739,7 +739,7 @@ export function MeuPainelPage() {
                   </CardDescription>
                 </div>
               </div>
-              <Link to="/base-inativos">
+              <Link to="/atendimento">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -793,7 +793,7 @@ export function MeuPainelPage() {
                         ) : null}
                       </div>
                     </div>
-                    <Link to="/base-inativos">
+                    <Link to="/atendimento">
                       <Button
                         size="sm"
                         className="bg-[#253575] hover:bg-[#1d2b5e] text-white text-xs h-8"

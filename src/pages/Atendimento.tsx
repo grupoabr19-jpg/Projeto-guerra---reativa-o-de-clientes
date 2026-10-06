@@ -198,7 +198,7 @@ export default function AtendimentoPage() {
         setResultadosBuscaCarteira([])
         setBuscaAberta(false)
         await loadCliente(res.cliente.id)
-        navigate(`/base-inativos/${res.cliente.id}`, { replace: true })
+        navigate(`/atendimento/${res.cliente.id}`, { replace: true })
         toast({
           title: 'Cliente aberto da carteira',
           description: `${item.nome} (${item.codigo}) aberto com lock ativo para atendimento.`,
@@ -246,7 +246,7 @@ export default function AtendimentoPage() {
       })
       if (res.cliente) {
         await loadCliente(res.cliente.id)
-        navigate(`/base-inativos/${res.cliente.id}`, { replace: true })
+        navigate(`/atendimento/${res.cliente.id}`, { replace: true })
         if (res.ja_reservado) {
           toast({
             title: 'Atendimento retomado',
@@ -713,17 +713,17 @@ export default function AtendimentoPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Cabeçalho da Base de Inativos com identidade institucional e navegação */}
+      {/* Cabeçalho de Atendimento com identidade institucional e navegação */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs">
         <div className="space-y-0.5">
           <div className="flex items-center space-x-2">
             <span className="text-[11px] font-semibold text-slate-400">Operação</span>
             <span className="text-slate-300">/</span>
-            <span className="text-[11px] font-bold text-[#F18800]">Base de Inativos</span>
+            <span className="text-[11px] font-bold text-[#F18800]">Atendimento</span>
           </div>
           <h1 className="text-lg font-black text-[#253575] tracking-tight flex items-center gap-2">
             <Headphones className="h-5 w-5 text-[#F18800]" />
-            <span>Base de Inativos · Fila e Ficha Operacional</span>
+            <span>Atendimento · Fila e Ficha Operacional</span>
           </h1>
           <p className="text-xs text-slate-500">
             Fila de atendimento de clientes 60–89 e 90+ dias, com lock atômico, qualificação das 17

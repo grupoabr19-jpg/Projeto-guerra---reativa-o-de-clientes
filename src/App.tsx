@@ -17,7 +17,6 @@ import AtendimentoPage from '@/pages/Atendimento'
 import ClientesPage from '@/pages/Clientes'
 import RelatoriosPage from '@/pages/Relatorios'
 import ConfiguracoesPage from '@/pages/Configuracoes'
-import TreinamentoSdrPage from '@/pages/TreinamentoSdr'
 import MeuPainelPage from '@/pages/MeuPainel'
 import RankingPage from '@/pages/Ranking'
 import EquipePage from '@/pages/Equipe'
@@ -41,7 +40,7 @@ const App = () => (
               <Route path="/verify-email" element={<VerifyEmail />} />
 
               {/* Rotas Operacionais Autorizadas */}
-              {/* Operador e Líder: veem /meu-painel, /base-inativos e /ranking */}
+              {/* Operador e Líder: veem /meu-painel, /atendimento e /ranking */}
               <Route
                 path="/meu-painel"
                 element={
@@ -50,25 +49,15 @@ const App = () => (
                   </RoleRoute>
                 }
               />
-              {/* Nova rota oficial 'Base de Inativos' */}
+              {/* Rota oficial 'Atendimento' */}
               <Route
-                path="/base-inativos"
+                path="/atendimento"
                 element={
                   <RoleRoute allowedRoles={['operador', 'lider', 'supervisor', 'admin']}>
                     <AtendimentoPage />
                   </RoleRoute>
                 }
               />
-              <Route
-                path="/base-inativos/:clientId"
-                element={
-                  <RoleRoute allowedRoles={['operador', 'lider', 'supervisor', 'admin']}>
-                    <AtendimentoPage />
-                  </RoleRoute>
-                }
-              />
-              {/* Redirecionamentos de compatibilidade para a rota /atendimento antiga */}
-              <Route path="/atendimento" element={<Navigate to="/base-inativos" replace />} />
               <Route
                 path="/atendimento/:clientId"
                 element={
@@ -76,6 +65,12 @@ const App = () => (
                     <AtendimentoPage />
                   </RoleRoute>
                 }
+              />
+              {/* Redirecionamentos de compatibilidade para /base-inativos */}
+              <Route path="/base-inativos" element={<Navigate to="/atendimento" replace />} />
+              <Route
+                path="/base-inativos/:clientId"
+                element={<Navigate to="/atendimento" replace />}
               />
               <Route
                 path="/ranking"
@@ -132,12 +127,16 @@ const App = () => (
 
               {/* Rotas exclusivas de Administrador (Operador é redirecionado para /meu-painel) */}
               <Route
-                path="/hub-atendimento"
+                path="/ca-comunicacao-interna"
                 element={
                   <RoleRoute allowedRoles={['admin']}>
                     <HubAtendimentoPage />
                   </RoleRoute>
                 }
+              />
+              <Route
+                path="/hub-atendimento"
+                element={<Navigate to="/ca-comunicacao-interna" replace />}
               />
               <Route
                 path="/importacao"
@@ -147,14 +146,7 @@ const App = () => (
                   </RoleRoute>
                 }
               />
-              <Route
-                path="/treinamento-sdr"
-                element={
-                  <RoleRoute allowedRoles={['admin']}>
-                    <TreinamentoSdrPage />
-                  </RoleRoute>
-                }
-              />
+              <Route path="/treinamento-sdr" element={<Navigate to="/configuracoes" replace />} />
               <Route
                 path="/configuracoes"
                 element={
