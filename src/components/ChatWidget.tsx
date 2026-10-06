@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   Trophy,
   ArrowRight,
+  Trash2,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -36,6 +37,16 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
@@ -47,6 +58,7 @@ import {
   fetchConversasUsuario,
   fetchMensagensConversa,
   enviarMensagemChat,
+  apagarMensagemChat,
   marcarConversaLida,
   fetchUnreadCounts,
   fetchColaboradoresParaDm,
@@ -91,6 +103,10 @@ export function ChatWidget() {
   const [avisoTexto, setAvisoTexto] = useState('')
   const [avisoPedirAtualizacao, setAvisoPedirAtualizacao] = useState(false)
   const [enviandoAviso, setEnviandoAviso] = useState(false)
+
+  // Diálogo discreto para exclusão de mensagens
+  const [mensagemParaExcluir, setMensagemParaExcluir] = useState<ChatMensagem | null>(null)
+  const [excluindoMsg, setExcluindoMsg] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
   const scrollAreaRef = useRef<HTMLDivElement | null>(null)
@@ -211,6 +227,11 @@ export function ChatWidget() {
           // Nova mensagem em outra conversa -> recalcula badge
           refreshUnread()
         }
+      } else if (e.action === 'delete') {
+        const deletedId = e.record.id
+        setMensagens((prev) => prev.filter((m) => m.id !== deletedId))
+        refreshUnread()
+        loadConversas()
       }
     })
 
@@ -341,6 +362,44 @@ export function ChatWidget() {
       console.error('Erro ao iniciar DM:', err)
     } finally {
       setLoadingConversas(false)
+    }
+  }
+
+  // Permissão para apagar mensagem no widget flutuante
+  const podeApagarMensagem = (msg: ChatMensagem) => {
+    if (!user) return false
+    if (user.role === 'admin') return true
+    if (msg.autor === user.id) return true
+
+    // Caso a mensagem seja do Sistema (notificação/follow-up/alerta)
+    const isSistema =
+      msg.tipo === 'notificacao' ||
+      msg.autor_nome === 'Sistema Projeto Guerra' ||
+      Boolean(msg.metadata?.tipo_evento)
+
+    if (isSistema && activeConversa?.tipo === 'dm') {
+      const parts = activeConversa.participantes || []
+      if (parts.includes(user.id)) return true
+    }
+
+    return false
+  }
+
+  // Executar exclusão confirmada
+  const handleConfirmarExclusaoMensagem = async () => {
+    if (!mensagemParaExcluir) return
+    const msgId = mensagemParaExcluir.id
+    setExcluindoMsg(true)
+    try {
+      await apagarMensagemChat(msgId)
+      setMensagens((prev) => prev.filter((m) => m.id !== msgId))
+      setMensagemParaExcluir(null)
+      await loadConversas()
+      await refreshUnread()
+    } catch (err) {
+      console.error('Falha ao apagar mensagem:', err)
+    } finally {
+      setExcluindoMsg(false)
     }
   }
 
@@ -741,7 +800,19 @@ export function ChatWidget() {
                                 Aviso Oficial da Administração
                               </span>
                             </div>
-                            <span className="text-[10px] text-slate-300 font-mono">{hora}</span>
+                            <div className="flex items-center space-x-1.5">
+                              <span className="text-[10px] text-slate-300 font-mono">{hora}</span>
+                              {podeApagarMensagem(msg) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setMensagemParaExcluir(msg)}
+                                  className="text-slate-300 hover:text-rose-400 transition-colors p-0.5 rounded"
+                                  title="Apagar aviso"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                           <p className="text-xs text-white leading-relaxed whitespace-pre-wrap font-medium pt-1">
                             {msg.texto}
@@ -815,7 +886,19 @@ export function ChatWidget() {
                                         : 'Notificação do Sistema'}
                               </span>
                             </span>
-                            <span className="text-slate-400 font-mono">{hora}</span>
+                            <div className="flex items-center space-x-1.5">
+                              <span className="text-slate-400 font-mono">{hora}</span>
+                              {podeApagarMensagem(msg) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setMensagemParaExcluir(msg)}
+                                  className="text-slate-400 hover:text-rose-600 transition-colors p-0.5 rounded"
+                                  title="Descartar esta notificação"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
                           </div>
 
                           <p className="whitespace-pre-wrap leading-relaxed text-[11px]">
@@ -855,7 +938,7 @@ export function ChatWidget() {
                     return (
                       <div
                         key={msg.id}
-                        className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                        className={`flex flex-col group ${isMe ? 'items-end' : 'items-start'}`}
                       >
                         {!isMe && (
                           <div className="flex items-center space-x-1 text-[10px] text-slate-500 mb-0.5 ml-1">
@@ -867,21 +950,39 @@ export function ChatWidget() {
                             )}
                           </div>
                         )}
-                        <div
-                          className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs shadow-xs relative break-words ${
-                            isMe
-                              ? 'bg-[#253575] text-white rounded-tr-xs'
-                              : 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-xs'
-                          }`}
-                        >
-                          <p className="whitespace-pre-wrap leading-relaxed">{msg.texto}</p>
-                          <span
-                            className={`block text-[9px] mt-1 font-mono text-right ${
-                              isMe ? 'text-blue-200' : 'text-slate-400'
+                        <div className="relative max-w-[85%]">
+                          <div
+                            className={`rounded-2xl px-3 py-2 text-xs shadow-xs relative break-words ${
+                              isMe
+                                ? 'bg-[#253575] text-white rounded-tr-xs'
+                                : 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-xs'
                             }`}
                           >
-                            {hora}
-                          </span>
+                            <p className="whitespace-pre-wrap leading-relaxed">{msg.texto}</p>
+                            <span
+                              className={`block text-[9px] mt-1 font-mono text-right ${
+                                isMe ? 'text-blue-200' : 'text-slate-400'
+                              }`}
+                            >
+                              {hora}
+                            </span>
+                          </div>
+
+                          {/* Botão discreto para apagar mensagem */}
+                          {podeApagarMensagem(msg) && (
+                            <button
+                              type="button"
+                              onClick={() => setMensagemParaExcluir(msg)}
+                              className={`absolute top-1 ${
+                                isMe
+                                  ? '-left-6 text-slate-400 hover:text-rose-600'
+                                  : '-right-6 text-slate-400 hover:text-rose-600'
+                              } opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-100`}
+                              title="Apagar mensagem"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     )
@@ -1091,6 +1192,39 @@ export function ChatWidget() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* AlertDialog de Confirmação Discreta de Exclusão (sem pop-up do navegador) */}
+      <AlertDialog
+        open={Boolean(mensagemParaExcluir)}
+        onOpenChange={(open) => {
+          if (!open) setMensagemParaExcluir(null)
+        }}
+      >
+        <AlertDialogContent className="bg-white border-slate-200 max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <Trash2 className="h-4 w-4 text-rose-600" />
+              <span>Apagar esta mensagem?</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600">
+              A mensagem será removida permanentemente do banco de dados e deixará de aparecer no
+              histórico desta conversa.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel disabled={excluindoMsg} className="text-xs h-8">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmarExclusaoMensagem}
+              disabled={excluindoMsg}
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs h-8 font-semibold"
+            >
+              {excluindoMsg ? 'Apagando...' : 'Sim, apagar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

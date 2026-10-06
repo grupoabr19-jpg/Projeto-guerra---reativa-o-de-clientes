@@ -83,7 +83,168 @@ onRecordCreateRequest((e) => {
   }
 }, 'chat_mensagens')
 
-// 1.1 Hook após persistir mensagem: atualizar conversa pai
+// 1.1 Hook de validação de exclusão de mensagem (segurança no servidor)
+// Regras:
+// - Autor da mensagem pode apagar
+// - Admin pode apagar qualquer mensagem (moderação de canal geral / supervisão)
+// - Se a mensagem foi enviada pelo Sistema (autor = sistema ou tipo = 'notificacao'), o destinatário da conversa pode apagar/descartar
+// - Operador/vendedor NÃO PODE apagar mensagem de outro colega
+onRecordDeleteRequest((e) => {
+  try {
+    const authRecord = e.auth
+    if (!authRecord || !authRecord.id) {
+      throw new BadRequestError('Autenticação obrigatória para apagar mensagem.')
+    }
+
+    const msgRecord = e.record
+    if (!msgRecord) return e.next()
+
+    const authId = authRecord.id
+    const userRole = authRecord.getString('role') || 'operador'
+    const autorId = msgRecord.getString('autor')
+    const conversaId = msgRecord.getString('conversa')
+
+    // 1. Admin tem permissão total de exclusão
+    if (userRole === 'admin') {
+      return e.next()
+    }
+
+    // 2. O autor original pode apagar sua própria mensagem
+    if (autorId === authId) {
+      return e.next()
+    }
+
+    // 3. Caso especial: mensagem enviada pelo Sistema (notificação/follow-up/alerta)
+    // Permite que o participante da conversa (o operador/líder destinatário) descarte a notificação
+    const msgTipo = msgRecord.getString('tipo')
+    const autorNome = msgRecord.getString('autor_nome') || ''
+    let isSistema = msgTipo === 'notificacao' || autorNome.includes('Sistema')
+
+    if (!isSistema && autorId) {
+      try {
+        const autorUser = $app.findRecordById('users', autorId)
+        if (autorUser && autorUser.getString('email') === 'sistema@grupoabr.com.br') {
+          isSistema = true
+        }
+      } catch (_) {}
+    }
+
+    if (isSistema && conversaId) {
+      try {
+        const conversa = $app.findRecordById('chat_conversas', conversaId)
+        let parts = []
+        try {
+          parts = conversa.getStringSlice('participantes') || []
+        } catch (_) {}
+        if (parts.includes(authId)) {
+          return e.next()
+        }
+      } catch (_) {}
+    }
+
+    // Caso não se enquadre em nenhuma das regras acima, nega no servidor
+    throw new ForbiddenError('Permissão negada: você não tem permissão para apagar esta mensagem.')
+  } catch (err) {
+    if (err && err.status) throw err
+    const msg = err && err.message ? err.message : String(err)
+    throw new BadRequestError(msg)
+  }
+}, 'chat_mensagens')
+
+// 1.2 Hook após exclusão de mensagem: recalcular conversa pai (total_mensagens, última mensagem) e limpar leituras/notificações
+onRecordAfterDeleteSuccess((e) => {
+  try {
+    const conversaId = e.record.getString('conversa')
+    const msgId = e.record.id
+    if (!conversaId) return
+
+    // Se houver registro de notificacoes_enviadas vinculado a esta mensagem, remover para coerência
+    if (msgId) {
+      try {
+        const notifs = $app.findRecordsByFilter(
+          'notificacoes_enviadas',
+          `mensagem_id = '${msgId}'`,
+          '',
+          10,
+          0,
+        )
+        for (let n = 0; n < notifs.length; n++) {
+          $app.delete(notifs[n])
+        }
+      } catch (_) {}
+    }
+
+    // Recalcular resumo e contagem da conversa pai
+    try {
+      const conversa = $app.findRecordById('chat_conversas', conversaId)
+      const ultimas = $app.findRecordsByFilter(
+        'chat_mensagens',
+        `conversa = '${conversaId}'`,
+        '-created',
+        1,
+        0,
+      )
+
+      const contagem = $app.findRecordsByFilter(
+        'chat_mensagens',
+        `conversa = '${conversaId}'`,
+        '',
+        1,
+        0,
+      )
+      // Obter contagem total real de mensagens da conversa
+      let totalRestante = 0
+      try {
+        const todasMsgs = $app.findRecordsByFilter(
+          'chat_mensagens',
+          `conversa = '${conversaId}'`,
+          '',
+          5000,
+          0,
+        )
+        totalRestante = todasMsgs.length
+      } catch (_) {
+        totalRestante = Math.max(0, (conversa.getInt('total_mensagens') || 1) - 1)
+      }
+
+      conversa.set('total_mensagens', totalRestante)
+
+      if (ultimas && ultimas.length > 0) {
+        const ultimaMsg = ultimas[0]
+        const texto = ultimaMsg.getString('texto') || ''
+        const resumo = texto.length > 120 ? texto.slice(0, 117) + '...' : texto
+        conversa.set('ultima_mensagem_texto', resumo)
+        conversa.set('ultimo_autor_nome', ultimaMsg.getString('autor_nome') || 'Colaborador')
+        conversa.set('ultima_mensagem_tipo', ultimaMsg.getString('tipo') || 'normal')
+        conversa.set(
+          'ultima_mensagem_data',
+          ultimaMsg.getString('created') || new Date().toISOString(),
+        )
+      } else {
+        // Nenhuma mensagem restante na conversa
+        const tipoConv = conversa.getString('tipo')
+        conversa.set(
+          'ultima_mensagem_texto',
+          tipoConv === 'geral' ? 'Canal Geral & Anúncios aberto.' : 'Conversa iniciada.',
+        )
+        conversa.set('ultimo_autor_nome', 'Sistema')
+        conversa.set('ultima_mensagem_tipo', 'normal')
+        conversa.set(
+          'ultima_mensagem_data',
+          conversa.getString('created') || new Date().toISOString(),
+        )
+      }
+
+      $app.save(conversa)
+    } catch (convErr) {
+      console.log('[chat_hook] Aviso ao recalcular conversa após exclusão: ' + convErr.message)
+    }
+  } catch (err) {
+    console.log('[chat_hook] Erro em onRecordAfterDeleteSuccess: ' + err.message)
+  }
+}, 'chat_mensagens')
+
+// 1.3 Hook após persistir mensagem: atualizar conversa pai
 onRecordAfterCreateSuccess((e) => {
   try {
     const conversaId = e.record.getString('conversa')

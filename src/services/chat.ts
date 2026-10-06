@@ -85,6 +85,16 @@ export async function enviarMensagemChat(params: {
   })
 }
 
+// 3.0 Apagar mensagem do chat
+// Regras:
+// - Autor da mensagem pode apagar
+// - Admin pode apagar qualquer mensagem (moderação de canal geral / supervisão)
+// - Se a mensagem é notificação do Sistema, o destinatário da conversa pode apagar/descartar
+export async function apagarMensagemChat(mensagemId: string): Promise<boolean> {
+  await pb.collection('chat_mensagens').delete(mensagemId)
+  return true
+}
+
 // 3.1 Disparar ciclo manual de notificações ou checagem do expediente
 export async function processarCicloNotificacoes(): Promise<{
   ok: boolean
