@@ -125,11 +125,11 @@ const App = () => (
                 }
               />
 
-              {/* Rotas exclusivas de Administrador (Operador é redirecionado para /meu-painel) */}
+              {/* Rota CA - Comunicação Interna (Acessível a todos os perfis autenticados) */}
               <Route
                 path="/ca-comunicacao-interna"
                 element={
-                  <RoleRoute allowedRoles={['admin']}>
+                  <RoleRoute allowedRoles={['operador', 'lider', 'supervisor', 'admin']}>
                     <HubAtendimentoPage />
                   </RoleRoute>
                 }
@@ -138,6 +138,8 @@ const App = () => (
                 path="/hub-atendimento"
                 element={<Navigate to="/ca-comunicacao-interna" replace />}
               />
+
+              {/* Rotas exclusivas de Administrador (Operador é redirecionado para /meu-painel) */}
               <Route
                 path="/importacao"
                 element={

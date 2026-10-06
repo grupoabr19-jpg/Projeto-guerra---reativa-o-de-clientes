@@ -321,8 +321,8 @@ routerAdd(
           }
         }
 
-        // Apenas conversas internas (dm, canal_geral, canal_rota) são contabilizadas
-        if (tipo !== 'dm' && tipo !== 'canal_geral' && tipo !== 'canal_rota') {
+        // Apenas conversas internas (dm, geral, canal_rota) são contabilizadas
+        if (tipo !== 'dm' && tipo !== 'geral' && tipo !== 'canal_geral' && tipo !== 'canal_rota') {
           continue
         }
 

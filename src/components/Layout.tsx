@@ -114,9 +114,9 @@ export default function Layout() {
     }
   }, [user])
 
-  // Contagem dinâmica de mensagens não lidas para o CA - Comunicação Interna
+  // Contagem dinâmica de mensagens não lidas para o CA - Comunicação Interna (para todos os usuários autenticados)
   useEffect(() => {
-    if (!user || user.role !== 'admin') return
+    if (!user) return
 
     const carregarUnread = async () => {
       try {
@@ -157,14 +157,21 @@ export default function Layout() {
     return null
   }
 
-  // Definição estrita de permissões de menu:
-  // Operador vê SOMENTE: "Meu Painel", "Atendimento" (antiga base de inativos) e "Ranking".
-  // Líder de Rota vê: "Meu Painel", "Atendimento", "Equipe" e "Ranking".
-  // NÃO vê outras rotas, NÃO vê Importação, NÃO vê Configurações, NÃO vê a fila geral nem a lista de Clientes.
-  // Supervisor e Admin mantêm seus acessos ampliados.
+  // Definição de permissões de menu:
+  // "CA - Comunicação Interna" é padrão para todos os perfis autenticados (sem selo Admin).
+  // Operador vê: "Meu Painel", "Atendimento", "CA - Comunicação Interna" e "Ranking".
+  // Líder de Rota vê: "Meu Painel", "Atendimento", "Equipe", "CA - Comunicação Interna" e "Ranking".
+  // Supervisor e Admin mantêm seus acessos ampliados, com "CA - Comunicação Interna" para todos.
 
   const isLider = user.role === 'lider'
   const isOperador = user.role === 'operador' || !user.role
+
+  const comunicacaoInternaItem = {
+    title: 'CA - Comunicação Interna',
+    href: '/ca-comunicacao-interna',
+    icon: MessagesSquare,
+    badgeCount: hubUnreadCount > 0 ? hubUnreadCount : undefined,
+  }
 
   const navItems = isOperador
     ? [
@@ -178,6 +185,7 @@ export default function Layout() {
           href: '/atendimento',
           icon: Headphones,
         },
+        comunicacaoInternaItem,
         {
           title: 'Ranking',
           href: '/ranking',
@@ -201,6 +209,7 @@ export default function Layout() {
             href: '/equipe',
             icon: Flag,
           },
+          comunicacaoInternaItem,
           {
             title: 'Ranking',
             href: '/ranking',
@@ -217,16 +226,7 @@ export default function Layout() {
                 },
               ]
             : []),
-          ...(hasRole('admin')
-            ? [
-                {
-                  title: 'CA - Comunicação Interna',
-                  href: '/ca-comunicacao-interna',
-                  icon: MessagesSquare,
-                  badgeCount: hubUnreadCount > 0 ? hubUnreadCount : undefined,
-                },
-              ]
-            : []),
+          comunicacaoInternaItem,
           ...(hasRole('admin')
             ? [
                 {
@@ -275,7 +275,6 @@ export default function Layout() {
               ]
             : []),
         ]
-
   const SidebarContent = ({ isMobile = false }: { isMobile?: boolean }) => {
     const isCollapsed = !isMobile && sidebarCollapsed
 
