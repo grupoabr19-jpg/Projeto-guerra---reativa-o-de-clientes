@@ -198,12 +198,13 @@ routerAdd(
       }
 
       const body = e.requestInfo().body || {}
-      const mensagem = (body.mensagem || body.message || '').toString().trim()
+      const tipoMensagem = (body.tipo_mensagem || 'texto').toString().toLowerCase()
+      let mensagem = (body.mensagem || body.message || '').toString().trim()
       const telefone = (body.telefone || '').toString().trim()
       const documento = (body.documento || '').toString().trim()
       const nomeCliente = (body.nome || body.nomeCliente || 'Cliente Teste').toString().trim()
 
-      if (!mensagem && !telefone && !documento) {
+      if (!mensagem && !telefone && !documento && tipoMensagem === 'texto') {
         return e.badRequestError(
           'Envie pelo menos uma mensagem, telefone ou documento para simulação.',
         )
@@ -222,17 +223,24 @@ routerAdd(
         aiResponseText = `Olá ${nomeCliente}! Sou o assistente SDR do Grupo ABR. Recebi sua solicitação de aço e já estou direcionando seu atendimento para o especialista responsável.`
       }
 
-      // Se o teste indicar simulação de fora de expediente
-      const simularForaExpediente = body.fora_expediente === true
-      let msgForaExpConfig = ''
+      // Obter configurações do sdr_bot_config (incluindo fallbacks de mídia)
+      let sdrConfig = {}
       try {
         const cfgObj = $app.findFirstRecordByData('configuracoes', 'chave', 'sdr_bot_config')
         if (cfgObj) {
-          const val = cfgObj.get('valor') || {}
-          if (val.mensagem_fora_expediente) msgForaExpConfig = val.mensagem_fora_expediente
+          sdrConfig = cfgObj.get('valor') || {}
         }
       } catch (_) {}
 
+      const fallbackAudioMsg =
+        sdrConfig.fallback_audio ||
+        'Recebi seu áudio! Para eu te atender mais rápido, pode me enviar por texto?'
+      const fallbackImagemMsg =
+        sdrConfig.fallback_imagem || 'Recebi sua imagem! Pode me descrever o que precisa por texto?'
+      const msgForaExpConfig = sdrConfig.mensagem_fora_expediente || ''
+
+      // Se o teste indicar simulação de fora de expediente
+      const simularForaExpediente = body.fora_expediente === true
       if (simularForaExpediente) {
         const respFora =
           msgForaExpConfig ||
@@ -241,6 +249,7 @@ routerAdd(
         return e.json(200, {
           ok: true,
           simulacao: true,
+          origem_midia: tipoMensagem,
           resposta_sdr: respFora,
           decisao: {
             classificacao: 'FORA_EXPEDIENTE',
@@ -256,6 +265,136 @@ routerAdd(
             status_transferencia: 'agendado_proximo_expediente',
           },
         })
+      }
+
+      // Tratar mídia (áudio ou imagem) se não veio texto junto
+      let mediaOrigem = tipoMensagem
+      let transcricaoSucesso = false
+      let gatewayTranscricaoDisponivel = false
+
+      if (tipoMensagem === 'imagem' && !mensagem) {
+        // Fallback garantido para imagem sem texto
+        const notaMidia = `[SDR Grupo ABR]: Cliente enviou imagem/anexo sem legenda. Respondido com fallback para solicitar texto.`
+        let logIdImg = ''
+        try {
+          const logCol = $app.findCollectionByNameOrId('sdr_triagens_log')
+          const logRec = new Record(logCol)
+          logRec.set('cliente_nome', `${nomeCliente} [SIMULAÇÃO]`)
+          logRec.set('telefone', telefone)
+          logRec.set('telefone_limpo', String(telefone).replace(/\D/g, ''))
+          logRec.set('documento', documento)
+          logRec.set('canal', 'Área de Teste Admin')
+          logRec.set('classificacao', 'MIDIA_IMAGEM')
+          logRec.set('regiao_nome', 'MATRIZ / ADMIN')
+          logRec.set('rota_destino', 'MATRIZ / ADMIN')
+          logRec.set('operador_destino', auth.id)
+          logRec.set('operador_nome', 'Thiago Almeida (Admin)')
+          logRec.set('kommo_user_id', '')
+          logRec.set('motivo_decisao', 'Imagem/anexo recebido sem legenda de texto.')
+          logRec.set('regra_aplicada', 'Fallback Garantido de Imagem')
+          logRec.set('status_transferencia', 'aguardando_texto_cliente')
+          logRec.set('nota_kommo', notaMidia)
+          logRec.set(
+            'conversa_resumo',
+            `[ORIGEM: IMAGEM/FOTO]\nCliente: <envio de imagem>\nSDR: ${fallbackImagemMsg}`,
+          )
+          logRec.set('eh_simulacao', true)
+          $app.save(logRec)
+          logIdImg = logRec.id
+        } catch (_) {}
+
+        return e.json(200, {
+          ok: true,
+          simulacao: true,
+          origem_midia: 'imagem',
+          resposta_sdr: fallbackImagemMsg,
+          decisao: {
+            classificacao: 'MIDIA_IMAGEM',
+            rota_destino: 'MATRIZ / ADMIN',
+            operador_destino_id: auth.id,
+            operador_destino_nome: 'Thiago Almeida (Admin)',
+            kommo_user_id: '',
+            regra_aplicada: 'Fallback Garantido de Imagem',
+            motivo_decisao: 'Imagem/anexo recebido sem texto associado.',
+            nota_kommo_preview: notaMidia,
+            status_transferencia: 'aguardando_texto_cliente',
+          },
+          log_id: logIdImg,
+        })
+      }
+
+      if (tipoMensagem === 'audio' && !mensagem) {
+        // Tentar transcrição de áudio se ativo e configurado
+        const transcreverAtivo = sdrConfig.transcrever_audio_ativo !== false
+        let textoTranscrito = ''
+
+        if (transcreverAtivo) {
+          // Validar gateway de IA Skip Cloud / whisper
+          // Skip Cloud oferece $ai.chat e $ai.agents nativos; verificar se há método de transcrição
+          try {
+            if (typeof $ai !== 'undefined' && typeof $ai.transcribe === 'function') {
+              gatewayTranscricaoDisponivel = true
+              // Se houvesse áudio binário/url, chamaria $ai.transcribe
+            }
+          } catch (_) {}
+        }
+
+        if (!textoTranscrito) {
+          // Fallback garantido para áudio
+          const notaMidia = `[SDR Grupo ABR]: Cliente enviou áudio. Respondido com fallback garantido de áudio (aguardando texto).`
+          let logIdAud = ''
+          try {
+            const logCol = $app.findCollectionByNameOrId('sdr_triagens_log')
+            const logRec = new Record(logCol)
+            logRec.set('cliente_nome', `${nomeCliente} [SIMULAÇÃO]`)
+            logRec.set('telefone', telefone)
+            logRec.set('telefone_limpo', String(telefone).replace(/\D/g, ''))
+            logRec.set('documento', documento)
+            logRec.set('canal', 'Área de Teste Admin')
+            logRec.set('classificacao', 'MIDIA_AUDIO')
+            logRec.set('regiao_nome', 'MATRIZ / ADMIN')
+            logRec.set('rota_destino', 'MATRIZ / ADMIN')
+            logRec.set('operador_destino', auth.id)
+            logRec.set('operador_nome', 'Thiago Almeida (Admin)')
+            logRec.set('kommo_user_id', '')
+            logRec.set('motivo_decisao', 'Áudio recebido do cliente (fallback ativado).')
+            logRec.set('regra_aplicada', 'Fallback Garantido de Áudio')
+            logRec.set('status_transferencia', 'aguardando_texto_cliente')
+            logRec.set('nota_kommo', notaMidia)
+            logRec.set(
+              'conversa_resumo',
+              `[ORIGEM: ÁUDIO]\nCliente: <mensagem de voz>\nSDR: ${fallbackAudioMsg}`,
+            )
+            logRec.set('eh_simulacao', true)
+            $app.save(logRec)
+            logIdAud = logRec.id
+          } catch (_) {}
+
+          return e.json(200, {
+            ok: true,
+            simulacao: true,
+            origem_midia: 'audio',
+            transcricao_sucesso: false,
+            gateway_transcricao_disponivel: gatewayTranscricaoDisponivel,
+            resposta_sdr: fallbackAudioMsg,
+            decisao: {
+              classificacao: 'MIDIA_AUDIO',
+              rota_destino: 'MATRIZ / ADMIN',
+              operador_destino_id: auth.id,
+              operador_destino_nome: 'Thiago Almeida (Admin)',
+              kommo_user_id: '',
+              regra_aplicada: 'Fallback Garantido de Áudio',
+              motivo_decisao:
+                'Áudio recebido sem transcrição imediata. Mensagem educada de solicitação enviada.',
+              nota_kommo_preview: notaMidia,
+              status_transferencia: 'aguardando_texto_cliente',
+            },
+            log_id: logIdAud,
+          })
+        } else {
+          mensagem = textoTranscrito
+          transcricaoSucesso = true
+        }
       }
       // Executa a triagem analítica inline
       const cleanPhone = String(telefone).replace(/\D/g, '')
@@ -616,7 +755,16 @@ routerAdd(
         logRec.set('regra_aplicada', regraAplicada)
         logRec.set('status_transferencia', 'simulado')
         logRec.set('nota_kommo', notaKommo)
-        logRec.set('conversa_resumo', `Cliente: ${mensagem}\nSDR: ${aiResponseText}`)
+        const prefixoOrigem =
+          mediaOrigem === 'audio'
+            ? '[ORIGEM: ÁUDIO TRANSCRITO]\n'
+            : mediaOrigem === 'imagem'
+              ? '[ORIGEM: IMAGEM COM LEGENDA]\n'
+              : ''
+        logRec.set(
+          'conversa_resumo',
+          `${prefixoOrigem}Cliente: ${mensagem}\nSDR: ${aiResponseText}`,
+        )
         logRec.set('eh_simulacao', true)
         $app.save(logRec)
         logId = logRec.id
@@ -627,6 +775,9 @@ routerAdd(
       return e.json(200, {
         ok: true,
         simulacao: true,
+        origem_midia: mediaOrigem,
+        transcricao_sucesso: transcricaoSucesso,
+        gateway_transcricao_disponivel: gatewayTranscricaoDisponivel,
         resposta_sdr: aiResponseText,
         decisao: {
           classificacao, // VARE | VCORP | ATACADO | SEM_ROTA

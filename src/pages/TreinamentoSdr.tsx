@@ -22,6 +22,8 @@ import {
   RefreshCw,
   Send,
   Sliders,
+  Mic,
+  Image as ImageIcon,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -60,6 +62,9 @@ export default function TreinamentoSdrPage() {
       'Qualifique se é compra para obra própria/reforma (Varejo) ou empresa/indústria/revenda (Corporativo). Identifique cidade e produto. NUNCA prometa preço ou prazo fechado. Transfira rapidamente para o vendedor especialista da rota.',
     mensagem_fora_expediente:
       'Olá! Nosso atendimento é de segunda a sexta, das 7h às 18h. Sua mensagem já foi registrada e retornaremos no início do próximo dia útil!',
+    fallback_audio: 'Recebi seu áudio! Para eu te atender mais rápido, pode me enviar por texto?',
+    fallback_imagem: 'Recebi sua imagem! Pode me descrever o que precisa por texto?',
+    transcrever_audio_ativo: true,
     regras_rotas: {
       BRAGANÇA: {
         especialista: 'Leiz Torso',
@@ -121,6 +126,7 @@ export default function TreinamentoSdrPage() {
     'Boa tarde! Preciso de cotação de 3 toneladas de vergalhão CA-50 de 10mm e telas soldadas para uma obra em Varginha. Vocês entregam aqui?',
   )
   const [simularForaExpediente, setSimularForaExpediente] = useState(false)
+  const [simTipoMensagem, setSimTipoMensagem] = useState<'texto' | 'audio' | 'imagem'>('texto')
   const [testando, setTestando] = useState(false)
   const [resultadoTeste, setResultadoTeste] = useState<SdrSimulacaoResponse | null>(null)
 
@@ -220,7 +226,7 @@ export default function TreinamentoSdrPage() {
   // Executar Simulação
   const handleExecutarSimulacao = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
-    if (!simMensagem.trim() && !simTelefone.trim()) {
+    if (!simMensagem.trim() && !simTelefone.trim() && simTipoMensagem === 'texto') {
       toast({
         title: 'Campos obrigatórios',
         description: 'Informe ao menos a mensagem simulada do cliente.',
@@ -237,6 +243,7 @@ export default function TreinamentoSdrPage() {
         documento: simDocumento,
         nomeCliente: simNome,
         fora_expediente: simularForaExpediente,
+        tipo_mensagem: simTipoMensagem,
       })
       setResultadoTeste(res)
       toast({
@@ -522,6 +529,87 @@ export default function TreinamentoSdrPage() {
                       semana ou feriados. A triagem é retida para acolhimento no próximo dia útil e
                       vendedores <strong>não</strong> recebem transferências à noite/fim de semana.
                     </p>
+                  </div>
+
+                  {/* Fallback de Áudio e Imagem/Mídia */}
+                  <div className="pt-4 border-t border-slate-100 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xs font-bold text-[#253575] uppercase tracking-wider flex items-center gap-1.5">
+                          <Mic className="h-4 w-4 text-[#F18800]" />
+                          Suporte a Áudio & Mídias WhatsApp
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          Respostas cordiais automáticas quando clientes enviam mensagens de voz,
+                          fotos ou documentos.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
+                        <Label
+                          htmlFor="transcrever_audio_switch"
+                          className="text-[11px] font-semibold text-slate-700 cursor-pointer"
+                        >
+                          Tentar Transcrição AI
+                        </Label>
+                        <Switch
+                          id="transcrever_audio_switch"
+                          checked={config.transcrever_audio_ativo !== false}
+                          onCheckedChange={(checked) =>
+                            setConfig({ ...config, transcrever_audio_ativo: checked })
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Fallback Áudio */}
+                      <div className="space-y-1.5 p-3.5 bg-amber-50/40 rounded-xl border border-amber-200/60">
+                        <Label
+                          htmlFor="fallback_audio"
+                          className="text-xs font-semibold text-slate-800 flex items-center gap-1.5"
+                        >
+                          <Mic className="h-4 w-4 text-amber-600" />
+                          <span>Fallback para Áudio / Mensagem de Voz</span>
+                        </Label>
+                        <Textarea
+                          id="fallback_audio"
+                          rows={3}
+                          value={config.fallback_audio || ''}
+                          onChange={(e) => setConfig({ ...config, fallback_audio: e.target.value })}
+                          placeholder="Recebi seu áudio! Para eu te atender mais rápido, pode me enviar por texto?"
+                          className="text-xs leading-relaxed bg-white"
+                        />
+                        <p className="text-[10px] text-slate-500">
+                          Enviado quando o cliente manda áudio e a transcrição falhar ou o endpoint
+                          não estiver disponível.
+                        </p>
+                      </div>
+
+                      {/* Fallback Imagem */}
+                      <div className="space-y-1.5 p-3.5 bg-blue-50/40 rounded-xl border border-blue-200/60">
+                        <Label
+                          htmlFor="fallback_imagem"
+                          className="text-xs font-semibold text-slate-800 flex items-center gap-1.5"
+                        >
+                          <ImageIcon className="h-4 w-4 text-[#253575]" />
+                          <span>Fallback para Imagem / Foto / Anexo</span>
+                        </Label>
+                        <Textarea
+                          id="fallback_imagem"
+                          rows={3}
+                          value={config.fallback_imagem || ''}
+                          onChange={(e) =>
+                            setConfig({ ...config, fallback_imagem: e.target.value })
+                          }
+                          placeholder="Recebi sua imagem! Pode me descrever o que precisa por texto?"
+                          className="text-xs leading-relaxed bg-white"
+                        />
+                        <p className="text-[10px] text-slate-500">
+                          Enviado quando o cliente manda foto de projeto, planta ou material sem
+                          descrição por texto.
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex justify-end pt-2">
@@ -843,17 +931,75 @@ export default function TreinamentoSdrPage() {
                     </div>
 
                     <div>
-                      <Label htmlFor="sim_msg" className="text-xs font-semibold text-slate-700">
-                        Mensagem do Cliente
-                      </Label>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="sim_msg" className="text-xs font-semibold text-slate-700">
+                          Mensagem / Conteúdo do Cliente
+                        </Label>
+                        {/* Seletor de Tipo de Mídia */}
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={simTipoMensagem === 'texto' ? 'default' : 'ghost'}
+                            className={`h-6 text-[10px] px-2 py-0 ${
+                              simTipoMensagem === 'texto'
+                                ? 'bg-[#253575] text-white'
+                                : 'text-slate-600'
+                            }`}
+                            onClick={() => setSimTipoMensagem('texto')}
+                          >
+                            Texto
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={simTipoMensagem === 'audio' ? 'default' : 'ghost'}
+                            className={`h-6 text-[10px] px-2 py-0 flex items-center gap-1 ${
+                              simTipoMensagem === 'audio'
+                                ? 'bg-amber-600 text-white'
+                                : 'text-slate-600'
+                            }`}
+                            onClick={() => setSimTipoMensagem('audio')}
+                          >
+                            <Mic className="h-3 w-3" />
+                            Áudio
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={simTipoMensagem === 'imagem' ? 'default' : 'ghost'}
+                            className={`h-6 text-[10px] px-2 py-0 flex items-center gap-1 ${
+                              simTipoMensagem === 'imagem'
+                                ? 'bg-blue-600 text-white'
+                                : 'text-slate-600'
+                            }`}
+                            onClick={() => setSimTipoMensagem('imagem')}
+                          >
+                            <ImageIcon className="h-3 w-3" />
+                            Imagem
+                          </Button>
+                        </div>
+                      </div>
                       <Textarea
                         id="sim_msg"
                         rows={4}
                         value={simMensagem}
                         onChange={(e) => setSimMensagem(e.target.value)}
-                        placeholder="Ex: Olá, gostaria de saber se vocês têm telha galvalume para entrega em Pouso Alegre..."
+                        placeholder={
+                          simTipoMensagem === 'audio'
+                            ? 'Deixe em branco para testar áudio sem texto prévio (ativa transcrição ou fallback garantido)...'
+                            : simTipoMensagem === 'imagem'
+                              ? 'Deixe em branco para testar foto sem legenda (ativa fallback para imagem)...'
+                              : 'Ex: Olá, gostaria de saber se vocês têm telha galvalume para entrega em Pouso Alegre...'
+                        }
                         className="text-xs leading-relaxed mt-1"
                       />
+                      {simTipoMensagem !== 'texto' && (
+                        <p className="text-[11px] text-amber-700 mt-1">
+                          Modo <strong>{simTipoMensagem.toUpperCase()}</strong> ativo. Se a mensagem
+                          for enviada vazia, o bot executará o fluxo de mídia/fallback.
+                        </p>
+                      )}
                     </div>
 
                     {/* Botões de Exemplos Rápidos */}
@@ -868,6 +1014,7 @@ export default function TreinamentoSdrPage() {
                           size="sm"
                           className="h-7 text-[11px] px-2 py-0 border-slate-300 hover:bg-slate-100"
                           onClick={() => {
+                            setSimTipoMensagem('texto')
                             setSimNome('Marcos da Silva')
                             setSimTelefone('(35) 99123-4567')
                             setSimDocumento('')
@@ -884,6 +1031,7 @@ export default function TreinamentoSdrPage() {
                           size="sm"
                           className="h-7 text-[11px] px-2 py-0 border-slate-300 hover:bg-slate-100"
                           onClick={() => {
+                            setSimTipoMensagem('texto')
                             setSimNome('Estruturas Metálicas Forte CNPJ 00.123.456/0001-00')
                             setSimTelefone('(11) 98765-4321')
                             setSimDocumento('00.123.456/0001-00')
@@ -900,6 +1048,7 @@ export default function TreinamentoSdrPage() {
                           size="sm"
                           className="h-7 text-[11px] px-2 py-0 border-slate-300 hover:bg-slate-100"
                           onClick={() => {
+                            setSimTipoMensagem('texto')
                             setSimNome('Depósito São Carlos')
                             setSimTelefone('(16) 99777-8899')
                             setSimDocumento('')
@@ -914,12 +1063,43 @@ export default function TreinamentoSdrPage() {
                           type="button"
                           variant="outline"
                           size="sm"
+                          className="h-7 text-[11px] px-2 py-0 border-amber-300 bg-amber-50/50 hover:bg-amber-100 text-amber-900"
+                          onClick={() => {
+                            setSimTipoMensagem('audio')
+                            setSimNome('Sebastião Pedreiro')
+                            setSimTelefone('(35) 99876-5432')
+                            setSimDocumento('')
+                            setSimMensagem('')
+                          }}
+                        >
+                          🎙️ Áudio de Pedreiro
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-[11px] px-2 py-0 border-blue-300 bg-blue-50/50 hover:bg-blue-100 text-blue-900"
+                          onClick={() => {
+                            setSimTipoMensagem('imagem')
+                            setSimNome('Engenharia Sul de Minas')
+                            setSimTelefone('(35) 99111-2233')
+                            setSimDocumento('')
+                            setSimMensagem('')
+                          }}
+                        >
+                          🖼️ Foto de Projeto / Planta
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
                           className={`h-7 text-[11px] px-2 py-0 border-amber-300 ${
                             simularForaExpediente
                               ? 'bg-amber-100 text-amber-900 border-amber-400 font-bold'
                               : 'bg-amber-50/60 text-amber-800 hover:bg-amber-100'
                           }`}
                           onClick={() => {
+                            setSimTipoMensagem('texto')
                             setSimNome('Carlos Ferreira (Noite)')
                             setSimTelefone('(35) 99199-0011')
                             setSimDocumento('')
@@ -933,7 +1113,6 @@ export default function TreinamentoSdrPage() {
                         </Button>
                       </div>
                     </div>
-
                     <div className="flex items-center gap-2 pt-1">
                       <input
                         type="checkbox"
@@ -995,9 +1174,28 @@ export default function TreinamentoSdrPage() {
                             <Bot className="h-4 w-4 text-[#F18800]" />
                             Resposta Conversacional do SDR Virtual:
                           </span>
-                          <span className="text-[10px] font-mono text-slate-500">
-                            Skip Cloud AI Agent
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {resultadoTeste.origem_midia &&
+                              resultadoTeste.origem_midia !== 'texto' && (
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[10px] font-semibold ${
+                                    resultadoTeste.origem_midia === 'audio'
+                                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                      : 'bg-blue-100 text-blue-900 border-blue-300'
+                                  }`}
+                                >
+                                  {resultadoTeste.origem_midia === 'audio' ? 'Áudio' : 'Imagem'}
+                                  {resultadoTeste.origem_midia === 'audio' &&
+                                    (resultadoTeste.transcricao_sucesso
+                                      ? ' (transcrito)'
+                                      : ' (fallback ativo)')}
+                                </Badge>
+                              )}
+                            <span className="text-[10px] font-mono text-slate-500">
+                              Skip Cloud AI Agent
+                            </span>
+                          </div>
                         </div>
                         <p className="text-xs text-slate-800 leading-relaxed font-sans whitespace-pre-wrap">
                           {resultadoTeste.resposta_sdr}
@@ -1193,6 +1391,7 @@ export default function TreinamentoSdrPage() {
                     <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-semibold uppercase text-[10px] tracking-wider">
                       <tr>
                         <th className="py-3 px-4">Data / Hora</th>
+                        <th className="py-3 px-4">Origem / Canal</th>
                         <th className="py-3 px-4">Cliente / Contato</th>
                         <th className="py-3 px-4">Classificação</th>
                         <th className="py-3 px-4">Rota / Região</th>
@@ -1206,6 +1405,29 @@ export default function TreinamentoSdrPage() {
                         <tr key={log.id} className="hover:bg-slate-50/70 transition-colors">
                           <td className="py-3 px-4 whitespace-nowrap text-slate-500 font-mono text-[11px]">
                             {new Date(log.created).toLocaleString('pt-BR')}
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            {log.conversa_resumo?.toLowerCase().includes('[origem: áudio') ||
+                            log.classificacao === 'MIDIA_AUDIO' ? (
+                              <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-[10px] flex items-center gap-1 w-fit">
+                                <Mic className="h-3 w-3 text-amber-700" />
+                                Áudio
+                              </Badge>
+                            ) : log.conversa_resumo?.toLowerCase().includes('[origem: imagem') ||
+                              log.classificacao === 'MIDIA_IMAGEM' ? (
+                              <Badge className="bg-blue-100 text-blue-900 border-blue-300 text-[10px] flex items-center gap-1 w-fit">
+                                <ImageIcon className="h-3 w-3 text-blue-700" />
+                                Imagem
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="text-slate-600 bg-slate-50 text-[10px] flex items-center gap-1 w-fit"
+                              >
+                                <MessageSquare className="h-3 w-3 text-slate-400" />
+                                Texto
+                              </Badge>
+                            )}
                           </td>
                           <td className="py-3 px-4">
                             <div className="font-semibold text-slate-900">{log.cliente_nome}</div>

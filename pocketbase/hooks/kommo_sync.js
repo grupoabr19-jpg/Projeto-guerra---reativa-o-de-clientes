@@ -272,8 +272,35 @@ routerAdd(
               const notes = notesRes.json._embedded.notes
               for (let n = notes.length - 1; n >= 0; n--) {
                 const note = notes[n]
-                const noteText = note.params?.text || note.params?.message || ''
-                if (!noteText.trim()) continue
+                const noteText = (note.params?.text || note.params?.message || '').trim()
+                const noteType = note.note_type || ''
+                const isAttachment = noteType === 'attachment'
+                const fileName = (note.params?.file_name || note.params?.name || '').toLowerCase()
+
+                let isAudioNote = false
+                let isImageNote = false
+
+                if (isAttachment) {
+                  if (
+                    fileName.endsWith('.ogg') ||
+                    fileName.endsWith('.mp3') ||
+                    fileName.endsWith('.wav') ||
+                    fileName.endsWith('.m4a') ||
+                    fileName.endsWith('.aac')
+                  ) {
+                    isAudioNote = true
+                  } else if (
+                    fileName.endsWith('.jpg') ||
+                    fileName.endsWith('.jpeg') ||
+                    fileName.endsWith('.png') ||
+                    fileName.endsWith('.webp') ||
+                    fileName.endsWith('.gif')
+                  ) {
+                    isImageNote = true
+                  }
+                }
+
+                if (!noteText && !isAttachment) continue
 
                 const msgId = `kommo_note_${note.id}`
                 let duplicada = false
@@ -288,19 +315,26 @@ routerAdd(
                 } catch (_) {}
 
                 if (!duplicada) {
+                  const textoSalvar =
+                    noteText ||
+                    (isAudioNote
+                      ? '🎙️ [Áudio recebido]'
+                      : isImageNote
+                        ? '🖼️ [Imagem recebida]'
+                        : '📎 [Arquivo recebido]')
                   const msg = new Record(msgCol)
                   msg.set('conversa', conversa.id)
                   msg.set('autor', adminId)
                   msg.set('autor_nome', contactName || 'Cliente SDR')
                   msg.set('autor_role', 'operador')
-                  msg.set('texto', noteText)
+                  msg.set('texto', textoSalvar)
                   msg.set('tipo', 'normal')
                   msg.set('direcao', 'entrada')
                   msg.set('kommo_status', 'recebida')
                   msg.set('kommo_message_id', msgId)
                   $app.save(msg)
 
-                  conversa.set('ultima_mensagem_texto', noteText.slice(0, 97))
+                  conversa.set('ultima_mensagem_texto', textoSalvar.slice(0, 97))
                   conversa.set('ultimo_autor_nome', contactName || 'Cliente SDR')
                   conversa.set('ultima_mensagem_tipo', 'normal')
                   conversa.set('ultima_mensagem_data', new Date().toISOString())
@@ -444,42 +478,125 @@ routerAdd(
                             triRec.set('regra_aplicada', 'Fora de Expediente')
                             triRec.set('status_transferencia', 'agendado_proximo_expediente')
                             triRec.set('nota_kommo', '[SDR Grupo ABR]: Contato fora do expediente.')
-                            triRec.set('conversa_resumo', `Cliente: ${noteText}\nBot: ${textoFora}`)
+                            triRec.set(
+                              'conversa_resumo',
+                              `Cliente: ${textoSalvar}\nBot: ${textoFora}`,
+                            )
                             triRec.set('eh_simulacao', false)
                             $app.save(triRec)
                           } catch (_) {}
                         }
                       } else if (botAtivo) {
-                        try {
-                          const agentRes = $ai.agent('sdr-triagem-bot').chat({
-                            user_id: adminId,
-                            message: `O cliente WhatsApp ${contactName || ''} enviou: "${noteText}". Faça a triagem rápida de soluções siderúrgicas do Grupo ABR como ${botNome}. Qualifique se é Varejo ou Corporativo e a cidade/local de entrega.${botPromptExtra}`,
-                          })
-                          const aiReply =
-                            agentRes && agentRes.content ? agentRes.content.trim() : ''
-                          if (aiReply) {
-                            const botMsg = new Record(msgCol)
-                            botMsg.set('conversa', conversa.id)
-                            botMsg.set('autor', adminId)
-                            botMsg.set('autor_nome', `${botNome} (IA)`)
-                            botMsg.set('autor_role', 'supervisor')
-                            botMsg.set('texto', aiReply)
-                            botMsg.set('tipo', 'normal')
-                            botMsg.set('direcao', 'saida')
-                            botMsg.set('kommo_status', 'enviada')
-                            botMsg.set('kommo_message_id', `sdr_sync_ai_${Date.now()}`)
-                            $app.save(botMsg)
+                        const isAudio =
+                          textoSalvar.includes('[Áudio recebido]') ||
+                          textoSalvar.toLowerCase().startsWith('[áudio]')
+                        const isImage =
+                          textoSalvar.includes('[Imagem recebida]') ||
+                          textoSalvar.toLowerCase().startsWith('[imagem]')
 
-                            conversa.set('ultima_mensagem_texto', aiReply.slice(0, 97))
-                            conversa.set('ultimo_autor_nome', botNome)
-                            conversa.set(
-                              'total_mensagens',
-                              (conversa.getInt('total_mensagens') || 0) + 1,
+                        if (isAudio || isImage) {
+                          let fallbackAudioConfig =
+                            'Recebi seu áudio! Para eu te atender mais rápido, pode me enviar por texto?'
+                          let fallbackImagemConfig =
+                            'Recebi sua imagem! Pode me descrever o que precisa por texto?'
+                          try {
+                            const cRec = $app.findFirstRecordByData(
+                              'configuracoes',
+                              'chave',
+                              'sdr_bot_config',
                             )
-                            $app.save(conversa)
+                            if (cRec) {
+                              const cv = cRec.get('valor') || {}
+                              if (cv.fallback_audio) fallbackAudioConfig = cv.fallback_audio
+                              if (cv.fallback_imagem) fallbackImagemConfig = cv.fallback_imagem
+                            }
+                          } catch (_) {}
+
+                          const fallbackTexto = isAudio ? fallbackAudioConfig : fallbackImagemConfig
+                          const rotulo = isAudio ? 'Áudio' : 'Imagem'
+
+                          const botMsg = new Record(msgCol)
+                          botMsg.set('conversa', conversa.id)
+                          botMsg.set('autor', adminId)
+                          botMsg.set('autor_nome', `${botNome} (${rotulo})`)
+                          botMsg.set('autor_role', 'supervisor')
+                          botMsg.set('texto', fallbackTexto)
+                          botMsg.set('tipo', 'normal')
+                          botMsg.set('direcao', 'saida')
+                          botMsg.set('kommo_status', 'enviada')
+                          botMsg.set('kommo_message_id', `sdr_sync_fallback_${Date.now()}`)
+                          $app.save(botMsg)
+
+                          conversa.set('ultima_mensagem_texto', fallbackTexto.slice(0, 97))
+                          conversa.set('ultimo_autor_nome', botNome)
+                          conversa.set(
+                            'total_mensagens',
+                            (conversa.getInt('total_mensagens') || 0) + 1,
+                          )
+                          $app.save(conversa)
+
+                          try {
+                            const triCol = $app.findCollectionByNameOrId('sdr_triagens_log')
+                            const triRec = new Record(triCol)
+                            triRec.set('cliente_nome', contactName || 'Cliente WhatsApp SDR')
+                            triRec.set('telefone', conversa.getString('kommo_phone'))
+                            triRec.set('telefone_limpo', conversa.getString('kommo_phone_clean'))
+                            triRec.set('canal', 'WhatsApp SDR (35) 99770-9232')
+                            triRec.set('classificacao', isAudio ? 'MIDIA_AUDIO' : 'MIDIA_IMAGEM')
+                            triRec.set('regiao_nome', 'MATRIZ / ADMIN')
+                            triRec.set('rota_destino', 'MATRIZ / ADMIN')
+                            triRec.set('operador_destino', adminId)
+                            triRec.set('operador_nome', 'Thiago Almeida (Admin)')
+                            triRec.set('conversa', conversa.id)
+                            triRec.set(
+                              'motivo_decisao',
+                              `${rotulo} recebido do cliente (sync manual). Respondido com fallback garantido.`,
+                            )
+                            triRec.set('regra_aplicada', `Fallback Garantido de ${rotulo}`)
+                            triRec.set('status_transferencia', 'aguardando_texto_cliente')
+                            triRec.set(
+                              'nota_kommo',
+                              `[SDR Grupo ABR]: Respondido com fallback de ${rotulo.toLowerCase()}.`,
+                            )
+                            triRec.set(
+                              'conversa_resumo',
+                              `[ORIGEM: ${rotulo.toUpperCase()}]\nCliente: <${rotulo.toLowerCase()}>\nBot: ${fallbackTexto}`,
+                            )
+                            triRec.set('eh_simulacao', false)
+                            $app.save(triRec)
+                          } catch (_) {}
+                        } else {
+                          try {
+                            const agentRes = $ai.agent('sdr-triagem-bot').chat({
+                              user_id: adminId,
+                              message: `O cliente WhatsApp ${contactName || ''} enviou: "${textoSalvar}". Faça a triagem rápida de soluções siderúrgicas do Grupo ABR como ${botNome}. Qualifique se é Varejo ou Corporativo e a cidade/local de entrega.${botPromptExtra}`,
+                            })
+                            const aiReply =
+                              agentRes && agentRes.content ? agentRes.content.trim() : ''
+                            if (aiReply) {
+                              const botMsg = new Record(msgCol)
+                              botMsg.set('conversa', conversa.id)
+                              botMsg.set('autor', adminId)
+                              botMsg.set('autor_nome', `${botNome} (IA)`)
+                              botMsg.set('autor_role', 'supervisor')
+                              botMsg.set('texto', aiReply)
+                              botMsg.set('tipo', 'normal')
+                              botMsg.set('direcao', 'saida')
+                              botMsg.set('kommo_status', 'enviada')
+                              botMsg.set('kommo_message_id', `sdr_sync_ai_${Date.now()}`)
+                              $app.save(botMsg)
+
+                              conversa.set('ultima_mensagem_texto', aiReply.slice(0, 97))
+                              conversa.set('ultimo_autor_nome', botNome)
+                              conversa.set(
+                                'total_mensagens',
+                                (conversa.getInt('total_mensagens') || 0) + 1,
+                              )
+                              $app.save(conversa)
+                            }
+                          } catch (sdrAiErr) {
+                            console.log('[kommo_sync] SDR AI fallback: ' + sdrAiErr.message)
                           }
-                        } catch (sdrAiErr) {
-                          console.log('[kommo_sync] SDR AI fallback: ' + sdrAiErr.message)
                         }
                       }
                     } catch (sdrErr) {

@@ -841,6 +841,9 @@ export interface SdrBotConfig {
   tom: string
   instrucoes: string
   mensagem_fora_expediente?: string
+  fallback_audio?: string
+  fallback_imagem?: string
+  transcrever_audio_ativo?: boolean
   regras_rotas: Record<string, SdrRotaRegra>
   regras_atacado_ddd: Record<string, SdrAtacadoDddRegra>
   fallback_admin?: { nome: string; role: string }
@@ -887,5 +890,8 @@ export interface SdrSimulacaoResponse {
   resposta_sdr: string
   decisao: SdrSimulacaoDecisao
   log_id?: string
+  origem_midia?: 'texto' | 'audio' | 'imagem'
+  transcricao_sucesso?: boolean
+  gateway_transcricao_disponivel?: boolean
   error?: string
 }

@@ -717,7 +717,34 @@ cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
             for (let n = notes.length - 1; n >= 0; n--) {
               const note = notes[n]
               const noteText = (note.params?.text || note.params?.message || '').trim()
-              if (!noteText) continue
+              const noteType = note.note_type || ''
+              const isAttachment = noteType === 'attachment'
+              const fileName = (note.params?.file_name || note.params?.name || '').toLowerCase()
+
+              let isAudioNote = false
+              let isImageNote = false
+
+              if (isAttachment) {
+                if (
+                  fileName.endsWith('.ogg') ||
+                  fileName.endsWith('.mp3') ||
+                  fileName.endsWith('.wav') ||
+                  fileName.endsWith('.m4a') ||
+                  fileName.endsWith('.aac')
+                ) {
+                  isAudioNote = true
+                } else if (
+                  fileName.endsWith('.jpg') ||
+                  fileName.endsWith('.jpeg') ||
+                  fileName.endsWith('.png') ||
+                  fileName.endsWith('.webp') ||
+                  fileName.endsWith('.gif')
+                ) {
+                  isImageNote = true
+                }
+              }
+
+              if (!noteText && !isAttachment) continue
 
               const msgId = `kommo_note_${note.id}`
               let jaExiste = false
@@ -732,12 +759,19 @@ cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
               } catch (_) {}
 
               if (!jaExiste) {
+                const textoSalvar =
+                  noteText ||
+                  (isAudioNote
+                    ? '🎙️ [Áudio recebido]'
+                    : isImageNote
+                      ? '🖼️ [Imagem recebida]'
+                      : '📎 [Arquivo recebido]')
                 const msg = new Record(msgCol)
                 msg.set('conversa', conv.id)
                 msg.set('autor', adminId || conv.getString('responsavel_id'))
                 msg.set('autor_nome', contactName || 'Cliente SDR')
                 msg.set('autor_role', 'operador')
-                msg.set('texto', noteText)
+                msg.set('texto', textoSalvar)
                 msg.set('tipo', 'normal')
                 msg.set('direcao', 'entrada')
                 msg.set('kommo_status', 'recebida')
@@ -747,7 +781,7 @@ cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
                 }
                 $app.save(msg)
                 novasMsgs++
-                ultimaNotaTexto = noteText
+                ultimaNotaTexto = textoSalvar
               }
             }
 
@@ -925,48 +959,144 @@ cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
                       } catch (_) {}
                     }
                   } else if (botAtivo) {
-                    // Dentro do expediente e bot ativo: aciona o agente Skip Cloud nativo
-                    try {
-                      const agentRes = $ai.agent('sdr-triagem-bot').chat({
-                        user_id: adminId,
-                        message: `O cliente WhatsApp ${contactName || ''} enviou: "${ultimaNotaTexto}". Faça a triagem rápida de soluções siderúrgicas do Grupo ABR como ${botNome}. Qualifique se é Varejo ou Corporativo e a cidade/local de entrega.${botPromptExtra}`,
-                      })
-                      const aiReply = agentRes && agentRes.content ? agentRes.content.trim() : ''
-                      if (aiReply) {
-                        const botMsg = new Record(msgCol)
-                        botMsg.set('conversa', conv.id)
-                        botMsg.set('autor', adminId)
-                        botMsg.set('autor_nome', `${botNome} (IA)`)
-                        botMsg.set('autor_role', 'supervisor')
-                        botMsg.set('texto', aiReply)
-                        botMsg.set('tipo', 'normal')
-                        botMsg.set('direcao', 'saida')
-                        botMsg.set('kommo_status', 'enviada')
-                        botMsg.set('kommo_message_id', `sdr_cron_ai_${Date.now()}`)
-                        $app.save(botMsg)
+                    // Dentro do expediente e bot ativo:
+                    // Checar se a mensagem é áudio ou imagem sem texto
+                    const isAudio =
+                      ultimaNotaTexto.includes('[Áudio recebido]') ||
+                      ultimaNotaTexto.toLowerCase().startsWith('[áudio]')
+                    const isImage =
+                      ultimaNotaTexto.includes('[Imagem recebida]') ||
+                      ultimaNotaTexto.toLowerCase().startsWith('[imagem]')
 
-                        conv.set('ultima_mensagem_texto', aiReply.slice(0, 97))
-                        conv.set('ultimo_autor_nome', botNome)
-                        conv.set('total_mensagens', (conv.getInt('total_mensagens') || 0) + 1)
-                        $app.save(conv)
+                    if (isAudio || isImage) {
+                      let fallbackAudioConfig =
+                        'Recebi seu áudio! Para eu te atender mais rápido, pode me enviar por texto?'
+                      let fallbackImagemConfig =
+                        'Recebi sua imagem! Pode me descrever o que precisa por texto?'
+                      try {
+                        const cRec = $app.findFirstRecordByData(
+                          'configuracoes',
+                          'chave',
+                          'sdr_bot_config',
+                        )
+                        if (cRec) {
+                          const cv = cRec.get('valor') || {}
+                          if (cv.fallback_audio) fallbackAudioConfig = cv.fallback_audio
+                          if (cv.fallback_imagem) fallbackImagemConfig = cv.fallback_imagem
+                        }
+                      } catch (_) {}
 
-                        try {
-                          $http.send({
-                            url: `${baseUrl}/api/v4/leads/${lead.id}/notes`,
-                            method: 'POST',
-                            headers: headers,
-                            data: JSON.stringify([
-                              {
-                                note_type: 'common',
-                                params: { text: `[Resposta SDR Virtual Grupo ABR]:\n${aiReply}` },
+                      const fallbackTexto = isAudio ? fallbackAudioConfig : fallbackImagemConfig
+                      const rotulo = isAudio ? 'Áudio' : 'Imagem'
+
+                      const botMsg = new Record(msgCol)
+                      botMsg.set('conversa', conv.id)
+                      botMsg.set('autor', adminId)
+                      botMsg.set('autor_nome', `${botNome} (${rotulo})`)
+                      botMsg.set('autor_role', 'supervisor')
+                      botMsg.set('texto', fallbackTexto)
+                      botMsg.set('tipo', 'normal')
+                      botMsg.set('direcao', 'saida')
+                      botMsg.set('kommo_status', 'enviada')
+                      botMsg.set('kommo_message_id', `sdr_cron_fallback_${Date.now()}`)
+                      $app.save(botMsg)
+
+                      conv.set('ultima_mensagem_texto', fallbackTexto.slice(0, 97))
+                      conv.set('ultimo_autor_nome', botNome)
+                      conv.set('total_mensagens', (conv.getInt('total_mensagens') || 0) + 1)
+                      $app.save(conv)
+
+                      try {
+                        const triCol = $app.findCollectionByNameOrId('sdr_triagens_log')
+                        const triRec = new Record(triCol)
+                        triRec.set('cliente_nome', contactName || 'Cliente WhatsApp SDR')
+                        triRec.set('telefone', contactPhone)
+                        triRec.set('telefone_limpo', cleanPhone)
+                        triRec.set('canal', 'WhatsApp SDR (35) 99770-9232')
+                        triRec.set('classificacao', isAudio ? 'MIDIA_AUDIO' : 'MIDIA_IMAGEM')
+                        triRec.set('regiao_nome', 'MATRIZ / ADMIN')
+                        triRec.set('rota_destino', 'MATRIZ / ADMIN')
+                        triRec.set('operador_destino', adminId)
+                        triRec.set('operador_nome', 'Thiago Almeida (Admin)')
+                        triRec.set('conversa', conv.id)
+                        triRec.set(
+                          'motivo_decisao',
+                          `${rotulo} recebido do cliente (polling cron). Respondido com fallback garantido.`,
+                        )
+                        triRec.set('regra_aplicada', `Fallback Garantido de ${rotulo}`)
+                        triRec.set('status_transferencia', 'aguardando_texto_cliente')
+                        triRec.set(
+                          'nota_kommo',
+                          `[SDR Grupo ABR]: Respondido com fallback de ${rotulo.toLowerCase()}.`,
+                        )
+                        triRec.set(
+                          'conversa_resumo',
+                          `[ORIGEM: ${rotulo.toUpperCase()}]\nCliente: <${rotulo.toLowerCase()}>\nBot: ${fallbackTexto}`,
+                        )
+                        triRec.set('eh_simulacao', false)
+                        $app.save(triRec)
+                      } catch (_) {}
+
+                      try {
+                        $http.send({
+                          url: `${baseUrl}/api/v4/leads/${lead.id}/notes`,
+                          method: 'POST',
+                          headers: headers,
+                          data: JSON.stringify([
+                            {
+                              note_type: 'common',
+                              params: {
+                                text: `[Resposta SDR Grupo ABR - Fallback ${rotulo}]:\n${fallbackTexto}`,
                               },
-                            ]),
-                            timeout: 5,
-                          })
-                        } catch (_) {}
+                            },
+                          ]),
+                          timeout: 5,
+                        })
+                      } catch (_) {}
+                    } else {
+                      // Mensagem de texto normal: aciona o agente Skip Cloud nativo
+                      try {
+                        const agentRes = $ai.agent('sdr-triagem-bot').chat({
+                          user_id: adminId,
+                          message: `O cliente WhatsApp ${contactName || ''} enviou: "${ultimaNotaTexto}". Faça a triagem rápida de soluções siderúrgicas do Grupo ABR como ${botNome}. Qualifique se é Varejo ou Corporativo e a cidade/local de entrega.${botPromptExtra}`,
+                        })
+                        const aiReply = agentRes && agentRes.content ? agentRes.content.trim() : ''
+                        if (aiReply) {
+                          const botMsg = new Record(msgCol)
+                          botMsg.set('conversa', conv.id)
+                          botMsg.set('autor', adminId)
+                          botMsg.set('autor_nome', `${botNome} (IA)`)
+                          botMsg.set('autor_role', 'supervisor')
+                          botMsg.set('texto', aiReply)
+                          botMsg.set('tipo', 'normal')
+                          botMsg.set('direcao', 'saida')
+                          botMsg.set('kommo_status', 'enviada')
+                          botMsg.set('kommo_message_id', `sdr_cron_ai_${Date.now()}`)
+                          $app.save(botMsg)
+
+                          conv.set('ultima_mensagem_texto', aiReply.slice(0, 97))
+                          conv.set('ultimo_autor_nome', botNome)
+                          conv.set('total_mensagens', (conv.getInt('total_mensagens') || 0) + 1)
+                          $app.save(conv)
+
+                          try {
+                            $http.send({
+                              url: `${baseUrl}/api/v4/leads/${lead.id}/notes`,
+                              method: 'POST',
+                              headers: headers,
+                              data: JSON.stringify([
+                                {
+                                  note_type: 'common',
+                                  params: { text: `[Resposta SDR Virtual Grupo ABR]:\n${aiReply}` },
+                                },
+                              ]),
+                              timeout: 5,
+                            })
+                          } catch (_) {}
+                        }
+                      } catch (cronAiErr) {
+                        console.log('[cron_kommo_sdr] IA SDR fallback: ' + cronAiErr.message)
                       }
-                    } catch (cronAiErr) {
-                      console.log('[cron_kommo_sdr] IA SDR fallback: ' + cronAiErr.message)
                     }
                   }
                 } catch (sdrProcErr) {

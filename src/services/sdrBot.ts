@@ -47,6 +47,8 @@ export async function testSdrBotSimulacao(params: {
   documento?: string
   nomeCliente?: string
   fora_expediente?: boolean
+  tipo_mensagem?: 'texto' | 'audio' | 'imagem'
+  media_url?: string
 }): Promise<SdrSimulacaoResponse> {
   return await pb.send<SdrSimulacaoResponse>('/backend/v1/sdr/test', {
     method: 'POST',

@@ -559,8 +559,112 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
     }
 
     // Helper inline para registrar mensagem e acionar IA SDR se couber
-    const registrarMensagem = (conversa, texto, autorNome, msgId, clienteRecord) => {
-      if (!conversa || !conversa.id || !texto) return
+    const registrarMensagem = (conversa, texto, autorNome, msgId, clienteRecord, infoMidia) => {
+      if (!conversa || !conversa.id) return
+
+      // Obter configurações do sdr_bot_config
+      let botAtivo = true
+      let botPromptExtra = ''
+      let botNome = 'SDR Virtual Grupo ABR'
+      let msgForaExpedienteCustom = ''
+      let fallbackAudioCustom =
+        'Recebi seu áudio! Para eu te atender mais rápido, pode me enviar por texto?'
+      let fallbackImagemCustom = 'Recebi sua imagem! Pode me descrever o que precisa por texto?'
+      let transcreverAudioAtivo = true
+      try {
+        const cfg = $app.findFirstRecordByData('configuracoes', 'chave', 'sdr_bot_config')
+        if (cfg) {
+          const v = cfg.get('valor') || {}
+          if (v.ativo === false) botAtivo = false
+          if (v.nome_sdr) botNome = v.nome_sdr
+          if (v.instrucoes) botPromptExtra = ` Diretrizes do Admin: ${v.instrucoes}`
+          if (v.mensagem_fora_expediente) msgForaExpedienteCustom = v.mensagem_fora_expediente
+          if (v.fallback_audio) fallbackAudioCustom = v.fallback_audio
+          if (v.fallback_imagem) fallbackImagemCustom = v.fallback_imagem
+          if (typeof v.transcrever_audio_ativo === 'boolean')
+            transcreverAudioAtivo = v.transcrever_audio_ativo
+        }
+      } catch (_) {}
+
+      // Mapeamento e detecção de mídia
+      let tipoMidia = 'texto'
+      let mediaUrl = ''
+      let textoEfetivo = (texto || '').trim()
+      let ehAudio = false
+      let ehImagem = false
+
+      if (infoMidia && typeof infoMidia === 'object') {
+        if (infoMidia.tipo === 'audio' || infoMidia.is_audio) ehAudio = true
+        if (infoMidia.tipo === 'imagem' || infoMidia.is_image) ehImagem = true
+        if (infoMidia.url) mediaUrl = infoMidia.url
+      }
+
+      // Detecção heurística caso infoMidia não tenha vindo explícita
+      if (!ehAudio && !ehImagem && textoEfetivo) {
+        const lower = textoEfetivo.toLowerCase()
+        if (
+          lower.startsWith('[áudio]') ||
+          lower.startsWith('[audio]') ||
+          lower.includes('.ogg') ||
+          lower.includes('.mp3') ||
+          lower.includes('.wav') ||
+          lower.includes('.m4a') ||
+          lower.includes('áudio enviado') ||
+          lower.includes('audio enviado')
+        ) {
+          ehAudio = true
+        } else if (
+          lower.startsWith('[imagem]') ||
+          lower.startsWith('[foto]') ||
+          lower.includes('.jpg') ||
+          lower.includes('.jpeg') ||
+          lower.includes('.png') ||
+          lower.includes('.webp') ||
+          lower.includes('imagem enviada')
+        ) {
+          ehImagem = true
+        }
+      }
+
+      if (ehAudio) tipoMidia = 'audio'
+      else if (ehImagem) tipoMidia = 'imagem'
+
+      // Se for áudio e NÃO tem texto transcrito ainda
+      let audioTranscritoSucesso = false
+      if (
+        ehAudio &&
+        (!textoEfetivo || textoEfetivo.startsWith('[áudio]') || textoEfetivo.startsWith('[audio]'))
+      ) {
+        if (transcreverAudioAtivo && mediaUrl) {
+          // Tentar transcrição de áudio se disponível no gateway
+          try {
+            if (typeof $ai !== 'undefined' && typeof $ai.transcribe === 'function') {
+              const resTranscribe = $ai.transcribe({ url: mediaUrl, language: 'pt' })
+              if (resTranscribe && resTranscribe.text) {
+                textoEfetivo = resTranscribe.text.trim()
+                audioTranscritoSucesso = true
+                console.log(
+                  '[kommo_webhook] Áudio transcrito com sucesso via gateway AI: ' + textoEfetivo,
+                )
+              }
+            }
+          } catch (trErr) {
+            console.log(
+              '[kommo_webhook] Falha na transcrição do áudio via gateway AI: ' + trErr.message,
+            )
+          }
+        }
+      }
+
+      // Se a mensagem for puramente mídia e não tem texto disponível
+      const semTexto =
+        !textoEfetivo ||
+        (ehAudio &&
+          !audioTranscritoSucesso &&
+          (textoEfetivo.startsWith('[áudio]') || textoEfetivo.startsWith('[audio]'))) ||
+        (ehImagem && (textoEfetivo.startsWith('[imagem]') || textoEfetivo.startsWith('[foto]')))
+
+      if (!textoEfetivo && !ehAudio && !ehImagem) return
       if (msgId) {
         try {
           const dup = $app.findRecordsByFilter(
@@ -573,12 +677,20 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
         } catch (_) {}
       }
 
+      const textoExibicao = semTexto
+        ? ehAudio
+          ? '🎙️ [Áudio recebido]'
+          : '🖼️ [Imagem/Foto recebida]'
+        : audioTranscritoSucesso
+          ? `🎙️ [Áudio transcrito]: ${textoEfetivo}`
+          : textoEfetivo
+
       const m = new Record(msgCol)
       m.set('conversa', conversa.id)
       m.set('autor', adminId || '')
       m.set('autor_nome', autorNome || 'Cliente (WhatsApp SDR)')
       m.set('autor_role', 'operador')
-      m.set('texto', texto)
+      m.set('texto', textoExibicao)
       m.set('tipo', 'normal')
       m.set('direcao', 'entrada')
       m.set('kommo_status', 'recebida')
@@ -586,7 +698,7 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
       $app.save(m)
 
       try {
-        conversa.set('ultima_mensagem_texto', texto.slice(0, 97))
+        conversa.set('ultima_mensagem_texto', textoExibicao.slice(0, 97))
         conversa.set('ultimo_autor_nome', autorNome || 'Cliente (WhatsApp SDR)')
         conversa.set('ultima_mensagem_tipo', 'normal')
         conversa.set('ultima_mensagem_data', new Date().toISOString())
@@ -623,22 +735,7 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
         $app.save(conversa)
       } catch (_) {}
 
-      // Checar status do bot SDR (ativo/inativo) e configurações
-      let botAtivo = true
-      let botPromptExtra = ''
-      let botNome = 'SDR Virtual Grupo ABR'
-      let msgForaExpedienteCustom = ''
-      try {
-        const cfg = $app.findFirstRecordByData('configuracoes', 'chave', 'sdr_bot_config')
-        if (cfg) {
-          const v = cfg.get('valor') || {}
-          if (v.ativo === false) botAtivo = false
-          if (v.nome_sdr) botNome = v.nome_sdr
-          if (v.instrucoes) botPromptExtra = ` Diretrizes do Admin: ${v.instrucoes}`
-          if (v.mensagem_fora_expediente) msgForaExpedienteCustom = v.mensagem_fora_expediente
-        }
-      } catch (_) {}
-
+      // Checar status do bot SDR (ativo/inativo) já lido acima
       // Verificação de expediente (expediente comercial: Seg-Sex 7h às 18h BRT, exceto fins de semana e feriados)
       // Se for FORA do expediente:
       // 1. NÃO transfere para vendedor agora (vendedores não devem receber leads à noite/fim de semana).
@@ -814,22 +911,149 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
       }
 
       // Dentro do expediente: se o bot estiver inativo, não transfere automaticamente nem responde por IA
-      // Cairá diretamente sob a gestão do admin
       if (!botAtivo) {
         console.log('[kommo_webhook] Bot SDR inativo. Lead mantido com Administrador.')
         return
       }
 
+      // FLUXO DE MÍDIA SEM TEXTO (FALLBACK GARANTIDO)
+      // Se for áudio sem transcrição ou imagem sem legenda, responder APENAS com o fallback configurado
+      if (semTexto) {
+        const textoFallback = ehAudio ? fallbackAudioCustom : fallbackImagemCustom
+        const rotuloMidia = ehAudio ? 'Áudio' : 'Imagem'
+        const classificacaoMidia = ehAudio ? 'MIDIA_AUDIO' : 'MIDIA_IMAGEM'
+
+        console.log(
+          `[kommo_webhook] Cliente enviou ${rotuloMidia} sem texto. Enviando fallback garantido.`,
+        )
+
+        const botMsg = new Record(msgCol)
+        botMsg.set('conversa', conversa.id)
+        botMsg.set('autor', adminId || '')
+        botMsg.set('autor_nome', `${botNome} (${rotuloMidia})`)
+        botMsg.set('autor_role', 'supervisor')
+        botMsg.set('texto', textoFallback)
+        botMsg.set('tipo', 'normal')
+        botMsg.set('direcao', 'saida')
+        botMsg.set('kommo_status', 'enviada')
+        botMsg.set('kommo_message_id', `sdr_fallback_${Date.now()}`)
+        $app.save(botMsg)
+
+        conversa.set('ultima_mensagem_texto', textoFallback.slice(0, 97))
+        conversa.set('ultimo_autor_nome', botNome)
+        conversa.set('ultima_mensagem_tipo', 'normal')
+        conversa.set('ultima_mensagem_data', new Date().toISOString())
+        const totBot = conversa.getInt('total_mensagens') || 0
+        conversa.set('total_mensagens', totBot + 1)
+        $app.save(conversa)
+
+        // Registrar auditoria em sdr_triagens_log
+        try {
+          const triCol = $app.findCollectionByNameOrId('sdr_triagens_log')
+          const triRec = new Record(triCol)
+          triRec.set(
+            'cliente_nome',
+            conversa.getString('titulo') || autorNome || 'Cliente WhatsApp SDR',
+          )
+          triRec.set('telefone', conversa.getString('kommo_phone'))
+          triRec.set('telefone_limpo', conversa.getString('kommo_phone_clean'))
+          triRec.set('canal', 'WhatsApp SDR (35) 99770-9232')
+          triRec.set('classificacao', classificacaoMidia)
+          triRec.set('regiao_nome', 'MATRIZ / ADMIN')
+          triRec.set('rota_destino', 'MATRIZ / ADMIN')
+          if (adminId) triRec.set('operador_destino', adminId)
+          triRec.set('operador_nome', 'Thiago Almeida (Admin)')
+          triRec.set('conversa', conversa.id)
+          triRec.set(
+            'motivo_decisao',
+            `${rotuloMidia} recebido do cliente sem texto. Respondido com fallback garantido solicitando texto.`,
+          )
+          triRec.set('regra_aplicada', `Fallback Garantido de ${rotuloMidia}`)
+          triRec.set('status_transferencia', 'aguardando_texto_cliente')
+          triRec.set(
+            'nota_kommo',
+            `[SDR Grupo ABR]: Cliente enviou ${rotuloMidia}. Respondido com fallback garantido: "${textoFallback}"`,
+          )
+          triRec.set(
+            'conversa_resumo',
+            `[ORIGEM: ${rotuloMidia.toUpperCase()}]\nCliente: <${rotuloMidia.toLowerCase()}>\nBot: ${textoFallback}`,
+          )
+          triRec.set('eh_simulacao', false)
+          $app.save(triRec)
+        } catch (trErr) {
+          console.log(
+            '[kommo_webhook] Falha ao registrar log de fallback de mídia: ' + trErr.message,
+          )
+        }
+
+        // Enviar fallback para o Kommo CRM (Talks / Notes)
+        try {
+          const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
+          const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
+          const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
+          const baseUrl = apiBaseUrlSecret
+            ? apiBaseUrlSecret.endsWith('/')
+              ? apiBaseUrlSecret.slice(0, -1)
+              : apiBaseUrlSecret
+            : `https://${subdomain}.kommo.com`
+
+          if (subdomain && accessToken) {
+            const headers = {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            }
+            const chatId = conversa.getString('kommo_chat_id')
+            const leadId = conversa.getString('kommo_lead_id')
+            if (chatId) {
+              $http.send({
+                url: `${baseUrl}/api/v4/talks/${chatId}/messages`,
+                method: 'POST',
+                headers: headers,
+                data: JSON.stringify({ text: textoFallback }),
+                timeout: 5,
+              })
+            } else if (leadId) {
+              $http.send({
+                url: `${baseUrl}/api/v4/leads/${leadId}/notes`,
+                method: 'POST',
+                headers: headers,
+                data: JSON.stringify([
+                  {
+                    note_type: 'common',
+                    params: {
+                      text: `[Resposta SDR Grupo ABR - Fallback ${rotuloMidia}]:\n${textoFallback}`,
+                    },
+                  },
+                ]),
+                timeout: 5,
+              })
+            }
+          }
+        } catch (kErr) {
+          console.log(
+            '[kommo_webhook] Falha no envio externo de fallback de mídia: ' + kErr.message,
+          )
+        }
+
+        return
+      }
+
+      // Se temos texto efetivo (seja de texto direto ou áudio transcrito), prossegue para triagem
       // Executar transferência se aplicável (bot ativo e dentro do expediente)
-      processarTransferenciaVendedor(conversa, clienteRecord, texto)
+      processarTransferenciaVendedor(conversa, clienteRecord, textoEfetivo)
 
       // Se a conversa ainda estiver sob o admin e for mensagem recente de entrada,
       // aciona o Skip Cloud AI Agent nativo 'sdr-triagem-bot' para responder e qualificar
       if (adminId && conversa.getString('responsavel_id') === adminId) {
         try {
+          const promptEntrada = audioTranscritoSucesso
+            ? `O cliente WhatsApp ${autorNome || ''} enviou um ÁUDIO (transcrito): "${textoEfetivo}". Faça a triagem rápida de soluções siderúrgicas do Grupo ABR como ${botNome}. Qualifique se é Varejo ou Corporativo e a cidade/local de entrega.${botPromptExtra}`
+            : `O cliente WhatsApp ${autorNome || ''} enviou: "${textoEfetivo}". Faça a triagem rápida de soluções siderúrgicas do Grupo ABR como ${botNome}. Qualifique se é Varejo ou Corporativo e a cidade/local de entrega.${botPromptExtra}`
+
           const agentRes = $ai.agent('sdr-triagem-bot').chat({
             user_id: adminId,
-            message: `O cliente WhatsApp ${autorNome || ''} enviou: "${texto}". Faça a triagem rápida de soluções siderúrgicas do Grupo ABR como ${botNome}. Qualifique se é Varejo ou Corporativo e a cidade/local de entrega.${botPromptExtra}`,
+            message: promptEntrada,
           })
 
           const aiReply = agentRes && agentRes.content ? agentRes.content.trim() : ''
@@ -990,9 +1214,25 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
     for (let m = 0; m < msgsArray.length; m++) {
       const item = msgsArray[m]
       const text = item.text || item.message || ''
+      const mediaAttachment = item.attachment || item.media || item.file || null
+      const mediaType =
+        item.media_type || item.type || (mediaAttachment ? mediaAttachment.type : '')
+      const mediaUrl =
+        item.media_url || (mediaAttachment ? mediaAttachment.url || mediaAttachment.link : '')
       const phone = item.phone || item.contact_phone || ''
       const senderName = item.sender_name || item.name || 'Cliente WhatsApp SDR'
-      if (text) {
+
+      const isAudio =
+        mediaType === 'audio' ||
+        mediaType === 'voice' ||
+        (item.type && (item.type.includes('audio') || item.type.includes('voice')))
+      const isImage =
+        mediaType === 'picture' ||
+        mediaType === 'image' ||
+        mediaType === 'photo' ||
+        (item.type && (item.type.includes('image') || item.type.includes('picture')))
+
+      if (text || isAudio || isImage || mediaAttachment) {
         const { conversa, clienteRecord } = obterOuCriarConversa(
           phone || KOMMO_SDR_PHONE_TARGET,
           senderName,
@@ -1006,6 +1246,12 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
           senderName,
           item.id ? String(item.id) : `webhook_msg_${Date.now()}`,
           clienteRecord,
+          {
+            tipo: isAudio ? 'audio' : isImage ? 'imagem' : 'texto',
+            is_audio: isAudio,
+            is_image: isImage,
+            url: mediaUrl,
+          },
         )
         eventosProcessados++
       }
