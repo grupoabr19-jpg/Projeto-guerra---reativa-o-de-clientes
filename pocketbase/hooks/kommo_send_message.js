@@ -84,11 +84,12 @@ routerAdd(
           const ev = new Record(colEv)
           ev.set('usuario', authRecord.id)
           ev.set('acao', `kommo_${action}`)
-          ev.set('detalhes', {
-            action: action,
-            ...details,
-            timestamp: new Date().toISOString(),
-          })
+          ev.set(
+            'detalhes',
+            Object.assign({ action: action }, details, {
+              timestamp: new Date().toISOString(),
+            }),
+          )
           $app.save(ev)
         } catch (auditErr) {
           console.log('[kommo_send_message] Falha ao registrar auditoria: ' + auditErr.message)

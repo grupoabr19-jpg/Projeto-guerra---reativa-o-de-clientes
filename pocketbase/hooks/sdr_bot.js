@@ -43,6 +43,8 @@ routerAdd(
           tom: 'profissional, ágil e focado em fechamento',
           instrucoes:
             'Qualifique se é compra para obra própria/reforma (Varejo) ou empresa/indústria/revenda (Corporativo). Identifique cidade e produto. NUNCA prometa preço ou prazo fechado. Transfira rapidamente para o vendedor especialista da rota.',
+          mensagem_fora_expediente:
+            'Olá! Nosso atendimento é de segunda a sexta, das 7h às 18h. Sua mensagem já foi registrada e retornaremos no início do próximo dia útil!',
           regras_rotas: {},
           regras_atacado_ddd: {},
           fallback_admin: { nome: 'Thiago Almeida', role: 'admin' },
@@ -85,10 +87,8 @@ routerAdd(
       }
 
       const currentVal = cfgRec.get('valor') || {}
-      const updatedVal = {
-        ...currentVal,
-        ...(body.config || body),
-      }
+      const payload = body.config || body || {}
+      const updatedVal = Object.assign({}, currentVal, payload)
 
       cfgRec.set('valor', updatedVal)
       $app.save(cfgRec)
@@ -151,10 +151,7 @@ routerAdd(
       const currentVal = cfgRec.get('valor') || {}
       const novoAtivo = typeof body.ativo === 'boolean' ? body.ativo : !currentVal.ativo
 
-      const updatedVal = {
-        ...currentVal,
-        ativo: novoAtivo,
-      }
+      const updatedVal = Object.assign({}, currentVal, { ativo: novoAtivo })
 
       cfgRec.set('valor', updatedVal)
       $app.save(cfgRec)
@@ -225,6 +222,41 @@ routerAdd(
         aiResponseText = `Olá ${nomeCliente}! Sou o assistente SDR do Grupo ABR. Recebi sua solicitação de aço e já estou direcionando seu atendimento para o especialista responsável.`
       }
 
+      // Se o teste indicar simulação de fora de expediente
+      const simularForaExpediente = body.fora_expediente === true
+      let msgForaExpConfig = ''
+      try {
+        const cfgObj = $app.findFirstRecordByData('configuracoes', 'chave', 'sdr_bot_config')
+        if (cfgObj) {
+          const val = cfgObj.get('valor') || {}
+          if (val.mensagem_fora_expediente) msgForaExpConfig = val.mensagem_fora_expediente
+        }
+      } catch (_) {}
+
+      if (simularForaExpediente) {
+        const respFora =
+          msgForaExpConfig ||
+          'Olá! Nosso atendimento é de segunda a sexta, das 7h às 18h. Sua mensagem já foi registrada e retornaremos no início do próximo dia útil!'
+
+        return e.json(200, {
+          ok: true,
+          simulacao: true,
+          resposta_sdr: respFora,
+          decisao: {
+            classificacao: 'FORA_EXPEDIENTE',
+            rota_destino: 'MATRIZ / ADMIN',
+            operador_destino_id: auth.id,
+            operador_destino_nome: 'Thiago Almeida (Admin)',
+            kommo_user_id: '',
+            regra_aplicada: 'Regra Fora de Expediente (após 18h / fim de semana / feriado)',
+            motivo_decisao:
+              'Contato simulado fora do expediente comercial. Mensagem automática enviada e lead retido para o próximo dia útil às 7h.',
+            nota_kommo_preview:
+              '[SDR Grupo ABR]: Contato fora do expediente. Retido para próximo dia útil.',
+            status_transferencia: 'agendado_proximo_expediente',
+          },
+        })
+      }
       // Executa a triagem analítica inline
       const cleanPhone = String(telefone).replace(/\D/g, '')
       const cleanDoc = String(documento).replace(/\D/g, '')

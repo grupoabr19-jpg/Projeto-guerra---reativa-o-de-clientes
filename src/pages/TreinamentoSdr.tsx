@@ -58,6 +58,8 @@ export default function TreinamentoSdrPage() {
     tom: 'profissional, ágil e focado em fechamento',
     instrucoes:
       'Qualifique se é compra para obra própria/reforma (Varejo) ou empresa/indústria/revenda (Corporativo). Identifique cidade e produto. NUNCA prometa preço ou prazo fechado. Transfira rapidamente para o vendedor especialista da rota.',
+    mensagem_fora_expediente:
+      'Olá! Nosso atendimento é de segunda a sexta, das 7h às 18h. Sua mensagem já foi registrada e retornaremos no início do próximo dia útil!',
     regras_rotas: {
       BRAGANÇA: {
         especialista: 'Leiz Torso',
@@ -118,6 +120,7 @@ export default function TreinamentoSdrPage() {
   const [simMensagem, setSimMensagem] = useState(
     'Boa tarde! Preciso de cotação de 3 toneladas de vergalhão CA-50 de 10mm e telas soldadas para uma obra em Varginha. Vocês entregam aqui?',
   )
+  const [simularForaExpediente, setSimularForaExpediente] = useState(false)
   const [testando, setTestando] = useState(false)
   const [resultadoTeste, setResultadoTeste] = useState<SdrSimulacaoResponse | null>(null)
 
@@ -233,6 +236,7 @@ export default function TreinamentoSdrPage() {
         telefone: simTelefone,
         documento: simDocumento,
         nomeCliente: simNome,
+        fora_expediente: simularForaExpediente,
       })
       setResultadoTeste(res)
       toast({
@@ -469,7 +473,7 @@ export default function TreinamentoSdrPage() {
                     </Label>
                     <Textarea
                       id="instrucoes"
-                      rows={6}
+                      rows={5}
                       value={config.instrucoes}
                       onChange={(e) => setConfig({ ...config, instrucoes: e.target.value })}
                       placeholder="Diretrizes do que o bot pode e não pode falar..."
@@ -484,6 +488,40 @@ export default function TreinamentoSdrPage() {
                         empresa/indústria) e a cidade de entrega, repassando o lead de imediato.
                       </div>
                     </div>
+                  </div>
+
+                  {/* Mensagem Fora de Expediente (editável pelo Admin) */}
+                  <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <Label
+                        htmlFor="mensagem_fora_expediente"
+                        className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"
+                      >
+                        <Clock className="h-4 w-4 text-[#253575]" />
+                        <span>Mensagem de Resposta Fora do Expediente</span>
+                      </Label>
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] bg-slate-100 text-slate-600 font-mono"
+                      >
+                        Após 18h, fins de semana e feriados
+                      </Badge>
+                    </div>
+                    <Textarea
+                      id="mensagem_fora_expediente"
+                      rows={3}
+                      value={config.mensagem_fora_expediente || ''}
+                      onChange={(e) =>
+                        setConfig({ ...config, mensagem_fora_expediente: e.target.value })
+                      }
+                      placeholder="Ex: Olá! Nosso atendimento é de segunda a sexta, das 7h às 18h..."
+                      className="text-sm leading-relaxed"
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      Disparada automaticamente para contatos que chegam após as 18h, aos fins de
+                      semana ou feriados. A triagem é retida para acolhimento no próximo dia útil e
+                      vendedores <strong>não</strong> recebem transferências à noite/fim de semana.
+                    </p>
                   </div>
 
                   <div className="flex justify-end pt-2">
@@ -551,13 +589,19 @@ export default function TreinamentoSdrPage() {
                 </CardHeader>
                 <CardContent className="p-4 space-y-2 text-xs text-slate-600">
                   <div className="p-2.5 rounded-lg bg-blue-50/60 border border-blue-100 text-slate-700">
-                    <div className="font-semibold text-[#253575]">Expediente Oficial ABR:</div>
-                    <div className="text-slate-600">Segunda a Sexta, das 07:00 às 17:00</div>
+                    <div className="font-semibold text-[#253575]">
+                      Atendimento Comercial WhatsApp:
+                    </div>
+                    <div className="text-slate-600 font-medium">
+                      Segunda a Sexta, das 07:00 às 18:00
+                    </div>
                   </div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Fora do expediente, o bot SDR acolhe o cliente, coleta a necessidade de compra e
-                    agenda a transferência para abertura do expediente matutino às 7h.
-                  </p>
+                  <div className="p-2 rounded-lg bg-amber-50/70 border border-amber-200/50 text-[11px] text-amber-900">
+                    <strong>Regra Fora do Expediente:</strong> Contatos após as 18h, aos fins de
+                    semana ou feriados nacionais recebem resposta automática cordial imediata e têm
+                    a triagem/transferência agendada para o próximo dia útil às 7h. Vendedores não
+                    são acionados fora de horário.
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -866,7 +910,44 @@ export default function TreinamentoSdrPage() {
                         >
                           📦 Atacado DDD 16
                         </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className={`h-7 text-[11px] px-2 py-0 border-amber-300 ${
+                            simularForaExpediente
+                              ? 'bg-amber-100 text-amber-900 border-amber-400 font-bold'
+                              : 'bg-amber-50/60 text-amber-800 hover:bg-amber-100'
+                          }`}
+                          onClick={() => {
+                            setSimNome('Carlos Ferreira (Noite)')
+                            setSimTelefone('(35) 99199-0011')
+                            setSimDocumento('')
+                            setSimMensagem(
+                              'Boa noite! Preciso de orçamento de treliças e barras de aço urgente.',
+                            )
+                            setSimularForaExpediente(true)
+                          }}
+                        >
+                          🌙 Testar Fora do Expediente
+                        </Button>
                       </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="checkbox"
+                        id="chk_fora_exp"
+                        checked={simularForaExpediente}
+                        onChange={(e) => setSimularForaExpediente(e.target.checked)}
+                        className="rounded border-slate-300 text-[#253575] focus:ring-[#253575] h-4 w-4"
+                      />
+                      <label
+                        htmlFor="chk_fora_exp"
+                        className="text-xs text-slate-700 cursor-pointer select-none"
+                      >
+                        Simular chegada fora de expediente (após 18h / fim de semana / feriado)
+                      </label>
                     </div>
 
                     <Button

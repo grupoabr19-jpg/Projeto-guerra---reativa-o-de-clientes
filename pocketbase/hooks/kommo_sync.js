@@ -337,6 +337,155 @@ routerAdd(
                   $app.save(conversa)
 
                   totalProcessadas++
+
+                  // Acionamento do Bot SDR se a conversa estiver com o Admin
+                  if (adminId && conversa.getString('responsavel_id') === adminId) {
+                    try {
+                      let botAtivo = true
+                      let botNome = 'SDR Virtual Grupo ABR'
+                      let botPromptExtra = ''
+                      let msgForaExpedienteCustom = ''
+                      try {
+                        const cfg = $app.findFirstRecordByData(
+                          'configuracoes',
+                          'chave',
+                          'sdr_bot_config',
+                        )
+                        if (cfg) {
+                          const v = cfg.get('valor') || {}
+                          if (v.ativo === false) botAtivo = false
+                          if (v.nome_sdr) botNome = v.nome_sdr
+                          if (v.instrucoes) botPromptExtra = ` Diretrizes do Admin: ${v.instrucoes}`
+                          if (v.mensagem_fora_expediente)
+                            msgForaExpedienteCustom = v.mensagem_fora_expediente
+                        }
+                      } catch (_) {}
+
+                      const dataAgora = new Date()
+                      const brtDate = new Date(dataAgora.getTime() - 3 * 60 * 60 * 1000)
+                      const brtDay = brtDate.getUTCDay()
+                      const brtHours = brtDate.getUTCHours()
+                      const brtMonth = brtDate.getUTCMonth() + 1
+                      const brtDayOfMonth = brtDate.getUTCDate()
+                      const mmdd =
+                        (brtMonth < 10 ? '0' : '') +
+                        brtMonth +
+                        '-' +
+                        (brtDayOfMonth < 10 ? '0' : '') +
+                        brtDayOfMonth
+
+                      const feriadosFixos = [
+                        '01-01',
+                        '04-21',
+                        '05-01',
+                        '09-07',
+                        '10-12',
+                        '11-02',
+                        '11-15',
+                        '11-20',
+                        '12-25',
+                        '03-03',
+                        '03-04',
+                        '04-18',
+                        '06-19',
+                        '02-16',
+                        '02-17',
+                        '04-03',
+                        '06-04',
+                      ]
+                      const ehFimDeSemana = brtDay === 0 || brtDay === 6
+                      const ehFeriado = feriadosFixos.indexOf(mmdd) !== -1
+                      const ehForaHorario = brtHours < 7 || brtHours >= 18
+                      const ehForaExpediente = ehFimDeSemana || ehFeriado || ehForaHorario
+
+                      if (ehForaExpediente) {
+                        if (botAtivo) {
+                          const textoFora =
+                            msgForaExpedienteCustom ||
+                            'Olá! Nosso atendimento é de segunda a sexta, das 7h às 18h. Sua mensagem já foi registrada e retornaremos no início do próximo dia útil!'
+
+                          const foraMsg = new Record(msgCol)
+                          foraMsg.set('conversa', conversa.id)
+                          foraMsg.set('autor', adminId)
+                          foraMsg.set('autor_nome', `${botNome} (Fora de Expediente)`)
+                          foraMsg.set('autor_role', 'supervisor')
+                          foraMsg.set('texto', textoFora)
+                          foraMsg.set('tipo', 'normal')
+                          foraMsg.set('direcao', 'saida')
+                          foraMsg.set('kommo_status', 'enviada')
+                          foraMsg.set('kommo_message_id', `sdr_sync_fora_${Date.now()}`)
+                          $app.save(foraMsg)
+
+                          conversa.set('ultima_mensagem_texto', textoFora.slice(0, 97))
+                          conversa.set('ultimo_autor_nome', botNome)
+                          conversa.set(
+                            'total_mensagens',
+                            (conversa.getInt('total_mensagens') || 0) + 1,
+                          )
+                          $app.save(conversa)
+
+                          try {
+                            const triCol = $app.findCollectionByNameOrId('sdr_triagens_log')
+                            const triRec = new Record(triCol)
+                            triRec.set('cliente_nome', contactName || 'Cliente WhatsApp SDR')
+                            triRec.set('telefone', conversa.getString('kommo_phone'))
+                            triRec.set('telefone_limpo', conversa.getString('kommo_phone_clean'))
+                            triRec.set('canal', 'WhatsApp SDR (35) 99770-9232')
+                            triRec.set('classificacao', 'FORA_EXPEDIENTE')
+                            triRec.set('regiao_nome', 'Aguardando Expediente')
+                            triRec.set('rota_destino', 'MATRIZ / ADMIN')
+                            triRec.set('operador_destino', adminId)
+                            triRec.set('operador_nome', 'Thiago Almeida (Admin)')
+                            triRec.set('conversa', conversa.id)
+                            triRec.set(
+                              'motivo_decisao',
+                              'Mensagem sincronizada manualmente fora do expediente comercial (7h às 18h).',
+                            )
+                            triRec.set('regra_aplicada', 'Fora de Expediente')
+                            triRec.set('status_transferencia', 'agendado_proximo_expediente')
+                            triRec.set('nota_kommo', '[SDR Grupo ABR]: Contato fora do expediente.')
+                            triRec.set('conversa_resumo', `Cliente: ${noteText}\nBot: ${textoFora}`)
+                            triRec.set('eh_simulacao', false)
+                            $app.save(triRec)
+                          } catch (_) {}
+                        }
+                      } else if (botAtivo) {
+                        try {
+                          const agentRes = $ai.agent('sdr-triagem-bot').chat({
+                            user_id: adminId,
+                            message: `O cliente WhatsApp ${contactName || ''} enviou: "${noteText}". Faça a triagem rápida de soluções siderúrgicas do Grupo ABR como ${botNome}. Qualifique se é Varejo ou Corporativo e a cidade/local de entrega.${botPromptExtra}`,
+                          })
+                          const aiReply =
+                            agentRes && agentRes.content ? agentRes.content.trim() : ''
+                          if (aiReply) {
+                            const botMsg = new Record(msgCol)
+                            botMsg.set('conversa', conversa.id)
+                            botMsg.set('autor', adminId)
+                            botMsg.set('autor_nome', `${botNome} (IA)`)
+                            botMsg.set('autor_role', 'supervisor')
+                            botMsg.set('texto', aiReply)
+                            botMsg.set('tipo', 'normal')
+                            botMsg.set('direcao', 'saida')
+                            botMsg.set('kommo_status', 'enviada')
+                            botMsg.set('kommo_message_id', `sdr_sync_ai_${Date.now()}`)
+                            $app.save(botMsg)
+
+                            conversa.set('ultima_mensagem_texto', aiReply.slice(0, 97))
+                            conversa.set('ultimo_autor_nome', botNome)
+                            conversa.set(
+                              'total_mensagens',
+                              (conversa.getInt('total_mensagens') || 0) + 1,
+                            )
+                            $app.save(conversa)
+                          }
+                        } catch (sdrAiErr) {
+                          console.log('[kommo_sync] SDR AI fallback: ' + sdrAiErr.message)
+                        }
+                      }
+                    } catch (sdrErr) {
+                      console.log('[kommo_sync] Erro ao disparar SDR: ' + sdrErr.message)
+                    }
+                  }
                 }
               }
             }

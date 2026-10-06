@@ -840,12 +840,10 @@ export interface SdrBotConfig {
   saudacao: string
   tom: string
   instrucoes: string
+  mensagem_fora_expediente?: string
   regras_rotas: Record<string, SdrRotaRegra>
   regras_atacado_ddd: Record<string, SdrAtacadoDddRegra>
-  fallback_admin?: {
-    nome: string
-    role: string
-  }
+  fallback_admin?: { nome: string; role: string }
 }
 
 export interface SdrTriagemLogItem {

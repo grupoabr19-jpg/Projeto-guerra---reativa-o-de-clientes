@@ -31,11 +31,10 @@ routerAdd('GET', '/backend/v1/app/version', (e) => {
       // Usa fallback
     }
 
-    return e.json(200, {
-      ok: true,
-      ...versionData,
+    const resPayload = Object.assign({ ok: true }, versionData, {
       server_time: new Date().toISOString(),
     })
+    return e.json(200, resPayload)
   } catch (err) {
     const errMsg = err && err.message ? err.message : String(err)
     return e.json(500, { error: 'Falha ao buscar versão: ' + errMsg })
@@ -106,10 +105,7 @@ routerAdd(
         }
       }
 
-      return e.json(200, {
-        ok: true,
-        ...payload,
-      })
+      return e.json(200, Object.assign({ ok: true }, payload))
     } catch (err) {
       const errMsg = err && err.message ? err.message : String(err)
       return e.json(500, { error: 'Falha ao atualizar versão: ' + errMsg })

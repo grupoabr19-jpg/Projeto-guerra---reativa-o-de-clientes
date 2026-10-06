@@ -46,6 +46,7 @@ export async function testSdrBotSimulacao(params: {
   telefone?: string
   documento?: string
   nomeCliente?: string
+  fora_expediente?: boolean
 }): Promise<SdrSimulacaoResponse> {
   return await pb.send<SdrSimulacaoResponse>('/backend/v1/sdr/test', {
     method: 'POST',

@@ -48,11 +48,12 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
         const ev = new Record(colEv)
         if (userId) ev.set('usuario', userId)
         ev.set('acao', `kommo_${action}`)
-        ev.set('detalhes', {
-          action: action,
-          ...details,
-          timestamp: new Date().toISOString(),
-        })
+        ev.set(
+          'detalhes',
+          Object.assign({ action: action }, details, {
+            timestamp: new Date().toISOString(),
+          }),
+        )
         $app.save(ev)
       } catch (err) {
         console.log('[kommo_webhook] Falha ao registrar log de auditoria: ' + err.message)
@@ -622,31 +623,209 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
         $app.save(conversa)
       } catch (_) {}
 
-      // Executar transferência se aplicável
+      // Checar status do bot SDR (ativo/inativo) e configurações
+      let botAtivo = true
+      let botPromptExtra = ''
+      let botNome = 'SDR Virtual Grupo ABR'
+      let msgForaExpedienteCustom = ''
+      try {
+        const cfg = $app.findFirstRecordByData('configuracoes', 'chave', 'sdr_bot_config')
+        if (cfg) {
+          const v = cfg.get('valor') || {}
+          if (v.ativo === false) botAtivo = false
+          if (v.nome_sdr) botNome = v.nome_sdr
+          if (v.instrucoes) botPromptExtra = ` Diretrizes do Admin: ${v.instrucoes}`
+          if (v.mensagem_fora_expediente) msgForaExpedienteCustom = v.mensagem_fora_expediente
+        }
+      } catch (_) {}
+
+      // Verificação de expediente (expediente comercial: Seg-Sex 7h às 18h BRT, exceto fins de semana e feriados)
+      // Se for FORA do expediente:
+      // 1. NÃO transfere para vendedor agora (vendedores não devem receber leads à noite/fim de semana).
+      // 2. Se o bot estiver ativo, responde automaticamente com a mensagem fora de expediente.
+      // 3. Registra no sdr_triagens_log com status_transferencia = 'agendado_proximo_expediente'.
+      const dataAgora = new Date()
+      // Cálculo do horário de Brasília (UTC-3)
+      const brtOffsetMs = 3 * 60 * 60 * 1000
+      const brtDate = new Date(dataAgora.getTime() - brtOffsetMs)
+      const brtDay = brtDate.getUTCDay() // 0 = Dom, 6 = Sáb
+      const brtHours = brtDate.getUTCHours()
+      const brtMonth = brtDate.getUTCMonth() + 1 // 1..12
+      const brtDayOfMonth = brtDate.getUTCDate()
+      const mmdd =
+        (brtMonth < 10 ? '0' : '') +
+        brtMonth +
+        '-' +
+        (brtDayOfMonth < 10 ? '0' : '') +
+        brtDayOfMonth
+
+      const feriadosFixos = [
+        '01-01', // Ano Novo
+        '04-21', // Tiradentes
+        '05-01', // Dia do Trabalho
+        '09-07', // Independência do Brasil
+        '10-12', // Nossa Senhora Aparecida
+        '11-02', // Finados
+        '11-15', // Proclamação da República
+        '11-20', // Consciência Negra
+        '12-25', // Natal
+        // Móveis conhecidos 2025/2026
+        '03-03',
+        '03-04', // Carnaval 2025
+        '04-18', // Sexta-feira Santa 2025
+        '06-19', // Corpus Christi 2025
+        '02-16',
+        '02-17', // Carnaval 2026
+        '04-03', // Sexta-feira Santa 2026
+        '06-04', // Corpus Christi 2026
+      ]
+
+      const ehFimDeSemana = brtDay === 0 || brtDay === 6
+      const ehFeriado = feriadosFixos.indexOf(mmdd) !== -1
+      const ehForaHorario = brtHours < 7 || brtHours >= 18
+      const ehForaExpediente = ehFimDeSemana || ehFeriado || ehForaHorario
+
+      if (ehForaExpediente) {
+        let motivoFora = 'Fora do expediente comercial (7h às 18h)'
+        if (ehFimDeSemana) motivoFora = 'Fim de semana (sábado/domingo)'
+        else if (ehFeriado) motivoFora = 'Feriado nacional'
+        else if (brtHours >= 18) motivoFora = 'Horário noturno (após às 18h)'
+        else if (brtHours < 7) motivoFora = 'Horário matutino (antes das 7h)'
+
+        console.log(
+          `[sdr_bot] Contato recebido fora de expediente: ${motivoFora}. Mantido com admin/agendado para próximo dia útil.`,
+        )
+
+        if (botAtivo) {
+          const textoRespostaFora =
+            msgForaExpedienteCustom ||
+            'Olá! Nosso atendimento é de segunda a sexta, das 7h às 18h. Sua mensagem já foi registrada e retornaremos no início do próximo dia útil!'
+
+          // Registrar resposta de fora de expediente no chat local
+          const foraMsg = new Record(msgCol)
+          foraMsg.set('conversa', conversa.id)
+          foraMsg.set('autor', adminId || '')
+          foraMsg.set('autor_nome', `${botNome} (Fora de Expediente)`)
+          foraMsg.set('autor_role', 'supervisor')
+          foraMsg.set('texto', textoRespostaFora)
+          foraMsg.set('tipo', 'normal')
+          foraMsg.set('direcao', 'saida')
+          foraMsg.set('kommo_status', 'enviada')
+          foraMsg.set('kommo_message_id', `sdr_fora_exp_${Date.now()}`)
+          $app.save(foraMsg)
+
+          conversa.set('ultima_mensagem_texto', textoRespostaFora.slice(0, 97))
+          conversa.set('ultimo_autor_nome', botNome)
+          conversa.set('ultima_mensagem_tipo', 'normal')
+          conversa.set('ultima_mensagem_data', new Date().toISOString())
+          const totFora = conversa.getInt('total_mensagens') || 0
+          conversa.set('total_mensagens', totFora + 1)
+          $app.save(conversa)
+
+          // Registrar no sdr_triagens_log para visibilidade do admin
+          try {
+            const triCol = $app.findCollectionByNameOrId('sdr_triagens_log')
+            const triRec = new Record(triCol)
+            triRec.set(
+              'cliente_nome',
+              conversa.getString('titulo') || autorNome || 'Cliente WhatsApp SDR',
+            )
+            triRec.set('telefone', conversa.getString('kommo_phone'))
+            triRec.set('telefone_limpo', conversa.getString('kommo_phone_clean'))
+            triRec.set('canal', 'WhatsApp SDR (35) 99770-9232')
+            triRec.set('classificacao', 'FORA_EXPEDIENTE')
+            triRec.set('regiao_nome', 'Aguardando Expediente')
+            triRec.set('rota_destino', 'MATRIZ / ADMIN')
+            if (adminId) triRec.set('operador_destino', adminId)
+            triRec.set('operador_nome', 'Thiago Almeida (Admin)')
+            triRec.set('conversa', conversa.id)
+            triRec.set(
+              'motivo_decisao',
+              `Mensagem recebida fora do expediente: ${motivoFora}. Resposta automática enviada. Transferência retida para o próximo dia útil.`,
+            )
+            triRec.set('regra_aplicada', `Fora de Expediente (${motivoFora})`)
+            triRec.set('status_transferencia', 'agendado_proximo_expediente')
+            triRec.set(
+              'nota_kommo',
+              `[SDR Grupo ABR]: Contato fora de expediente (${motivoFora}). Resposta automática enviada ao cliente. Triagem retida para próximo dia útil.`,
+            )
+            triRec.set('conversa_resumo', `Cliente: ${texto}\nBot: ${textoRespostaFora}`)
+            triRec.set('eh_simulacao', false)
+            $app.save(triRec)
+          } catch (trLogErr) {
+            console.log(
+              '[kommo_webhook] Falha ao registrar log fora de expediente: ' + trLogErr.message,
+            )
+          }
+
+          // Enviar resposta automática ao Kommo CRM (Talks ou Lead Notes)
+          try {
+            const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
+            const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
+            const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
+            const baseUrl = apiBaseUrlSecret
+              ? apiBaseUrlSecret.endsWith('/')
+                ? apiBaseUrlSecret.slice(0, -1)
+                : apiBaseUrlSecret
+              : `https://${subdomain}.kommo.com`
+
+            if (subdomain && accessToken) {
+              const headers = {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+              }
+              const chatId = conversa.getString('kommo_chat_id')
+              const leadId = conversa.getString('kommo_lead_id')
+              if (chatId) {
+                $http.send({
+                  url: `${baseUrl}/api/v4/talks/${chatId}/messages`,
+                  method: 'POST',
+                  headers: headers,
+                  data: JSON.stringify({ text: textoRespostaFora }),
+                  timeout: 5,
+                })
+              } else if (leadId) {
+                $http.send({
+                  url: `${baseUrl}/api/v4/leads/${leadId}/notes`,
+                  method: 'POST',
+                  headers: headers,
+                  data: JSON.stringify([
+                    {
+                      note_type: 'common',
+                      params: {
+                        text: `[Resposta SDR Grupo ABR - Fora de Expediente]:\n${textoRespostaFora}`,
+                      },
+                    },
+                  ]),
+                  timeout: 5,
+                })
+              }
+            }
+          } catch (kErr) {
+            console.log(
+              '[kommo_webhook] Falha no envio externo fora de expediente: ' + kErr.message,
+            )
+          }
+        }
+
+        // Não prossegue para transferência nem qualificação de vendedores fora do expediente
+        return
+      }
+
+      // Dentro do expediente: se o bot estiver inativo, não transfere automaticamente nem responde por IA
+      // Cairá diretamente sob a gestão do admin
+      if (!botAtivo) {
+        console.log('[kommo_webhook] Bot SDR inativo. Lead mantido com Administrador.')
+        return
+      }
+
+      // Executar transferência se aplicável (bot ativo e dentro do expediente)
       processarTransferenciaVendedor(conversa, clienteRecord, texto)
 
       // Se a conversa ainda estiver sob o admin e for mensagem recente de entrada,
       // aciona o Skip Cloud AI Agent nativo 'sdr-triagem-bot' para responder e qualificar
       if (adminId && conversa.getString('responsavel_id') === adminId) {
-        // Checar se o bot está ativo e ler saudação/instruções das configurações
-        let botAtivo = true
-        let botPromptExtra = ''
-        let botNome = 'SDR Virtual Grupo ABR'
-        try {
-          const cfg = $app.findFirstRecordByData('configuracoes', 'chave', 'sdr_bot_config')
-          if (cfg) {
-            const v = cfg.get('valor') || {}
-            if (v.ativo === false) botAtivo = false
-            if (v.nome_sdr) botNome = v.nome_sdr
-            if (v.instrucoes) botPromptExtra = ` Diretrizes do Admin: ${v.instrucoes}`
-          }
-        } catch (_) {}
-
-        if (!botAtivo) {
-          console.log('[kommo_webhook] Bot SDR inativo. Resposta IA pulada.')
-          return
-        }
-
         try {
           const agentRes = $ai.agent('sdr-triagem-bot').chat({
             user_id: adminId,
@@ -659,7 +838,7 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
             const botMsg = new Record(msgCol)
             botMsg.set('conversa', conversa.id)
             botMsg.set('autor', adminId)
-            botMsg.set('autor_nome', 'SDR Virtual Grupo ABR (IA)')
+            botMsg.set('autor_nome', `${botNome} (IA)`)
             botMsg.set('autor_role', 'supervisor')
             botMsg.set('texto', aiReply)
             botMsg.set('tipo', 'normal')
@@ -669,7 +848,7 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
             $app.save(botMsg)
 
             conversa.set('ultima_mensagem_texto', aiReply.slice(0, 97))
-            conversa.set('ultimo_autor_nome', 'SDR Virtual Grupo ABR')
+            conversa.set('ultimo_autor_nome', botNome)
             conversa.set('ultima_mensagem_tipo', 'normal')
             conversa.set('ultima_mensagem_data', new Date().toISOString())
             const totBot = conversa.getInt('total_mensagens') || 0
