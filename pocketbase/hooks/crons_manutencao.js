@@ -700,6 +700,36 @@ cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
           if (mudou) $app.save(conv)
         }
 
+        // TESTE INSPECT LEAD NO PRIMEIRO LEAD DA CRON
+        try {
+          const testInsp = $http.send({
+            url: `${baseUrl}/api/v4/talks?filter[entity_type]=lead&filter[entity_id][]=${lead.id}`,
+            method: 'GET',
+            headers: headers,
+            timeout: 5,
+          })
+          console.log(
+            '[cron_kommo_sdr probe ' +
+              lead.id +
+              '] talks: ' +
+              JSON.stringify(testInsp.json || testInsp.raw).slice(0, 400),
+          )
+          const testEv = $http.send({
+            url: `${baseUrl}/api/v4/events?filter[entity]=lead&filter[entity_id]=${lead.id}&filter[type][]=incoming_chat_message&filter[type][]=outgoing_chat_message`,
+            method: 'GET',
+            headers: headers,
+            timeout: 5,
+          })
+          console.log(
+            '[cron_kommo_sdr probe ' +
+              lead.id +
+              '] events: ' +
+              JSON.stringify(testEv.json || testEv.raw).slice(0, 400),
+          )
+        } catch (probeErr) {
+          console.log('[cron_kommo_sdr probe ' + lead.id + '] err: ' + probeErr.message)
+        }
+
         // CORREÇÃO 1 — Causa A: Buscar e sincronizar notas/mensagens do lead no Kommo para chat_mensagens
         try {
           const notesRes = $http.send({

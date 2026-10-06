@@ -296,3 +296,123 @@ routerAdd('POST', '/backend/v1/kommo/test', (e) => {
     })
   }
 })
+
+routerAdd('GET', '/backend/v1/kommo/inspect-lead', (e) => {
+  try {
+    const leadId = e.request.url.query().get('lead_id') || '9121415'
+    const subdomain = $os.getenv('KOMMO_SUBDOMAIN') || ''
+    const accessToken = $os.getenv('KOMMO_ACCESS_TOKEN') || ''
+    const apiBaseUrlSecret = $os.getenv('KOMMO_API_BASE_URL') || ''
+    const baseUrl = apiBaseUrlSecret
+      ? apiBaseUrlSecret.endsWith('/')
+        ? apiBaseUrlSecret.slice(0, -1)
+        : apiBaseUrlSecret
+      : `https://${subdomain}.kommo.com`
+
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    }
+
+    // 1. Lead details
+    let leadData = null
+    try {
+      const res = $http.send({
+        url: `${baseUrl}/api/v4/leads/${leadId}?with=contacts`,
+        method: 'GET',
+        headers: headers,
+        timeout: 6,
+      })
+      leadData = res.json || null
+    } catch (err) {
+      leadData = { error: String(err.message) }
+    }
+
+    // 2. Talks
+    let talksData = null
+    try {
+      const res = $http.send({
+        url: `${baseUrl}/api/v4/talks?filter[entity_type]=lead&filter[entity_id][]=${leadId}`,
+        method: 'GET',
+        headers: headers,
+        timeout: 6,
+      })
+      talksData = res.json || { statusCode: res.statusCode, raw: res.raw }
+      console.log('[inspect-lead] talksData: ' + JSON.stringify(talksData).slice(0, 500))
+    } catch (err) {
+      talksData = { error: String(err.message) }
+      console.log('[inspect-lead] talks error: ' + err.message)
+    }
+
+    // 2b. If talk found, fetch messages
+    let talkMessages = null
+    const rawTalk = talksData?._embedded?.talks?.[0]
+    const talkId = rawTalk?.talk_id || rawTalk?.id
+    if (talkId) {
+      try {
+        const msgRes = $http.send({
+          url: `${baseUrl}/api/v4/talks/${talkId}/messages?limit=25`,
+          method: 'GET',
+          headers: headers,
+          timeout: 6,
+        })
+        talkMessages = msgRes.json || { statusCode: msgRes.statusCode, raw: msgRes.raw }
+        console.log(
+          '[inspect-lead ' +
+            leadId +
+            ' talkId=' +
+            talkId +
+            '] msgRes status=' +
+            (msgRes ? msgRes.statusCode : 0) +
+            ' json=' +
+            JSON.stringify(talkMessages).slice(0, 500),
+        )
+      } catch (err) {
+        talkMessages = { error: String(err.message) }
+      }
+    }
+
+    // 3. Events
+    let eventsData = null
+    try {
+      const res = $http.send({
+        url: `${baseUrl}/api/v4/events?filter[entity]=lead&filter[entity_id]=${leadId}&filter[type][]=incoming_chat_message&filter[type][]=outgoing_chat_message`,
+        method: 'GET',
+        headers: headers,
+        timeout: 6,
+      })
+      eventsData = res.json || { statusCode: res.statusCode, raw: res.raw }
+    } catch (err) {
+      eventsData = { error: String(err.message) }
+    }
+
+    // 4. Contact events if lead has contacts
+    let contactEvents = null
+    const contactId = leadData?._embedded?.contacts?.[0]?.id
+    if (contactId) {
+      try {
+        const res = $http.send({
+          url: `${baseUrl}/api/v4/events?filter[entity]=contact&filter[entity_id]=${contactId}&filter[type][]=incoming_chat_message&filter[type][]=outgoing_chat_message`,
+          method: 'GET',
+          headers: headers,
+          timeout: 6,
+        })
+        contactEvents = res.json || { statusCode: res.statusCode, raw: res.raw }
+      } catch (err) {
+        contactEvents = { error: String(err.message) }
+      }
+    }
+
+    console.log('[inspect-lead] events: ' + JSON.stringify(eventsData).slice(0, 500))
+    return e.json(200, {
+      lead_id: leadId,
+      lead: leadData ? { id: leadData.id, name: leadData.name } : null,
+      talks: talksData,
+      talk_messages: talkMessages,
+      events: eventsData,
+      contact_events: contactEvents,
+    })
+  } catch (err) {
+    return e.json(500, { error: String(err.message) })
+  }
+})
