@@ -50,6 +50,7 @@ import {
   fetchMensagensConversa,
   enviarMensagemChat,
   apagarMensagemChat,
+  apagarConversaChat,
   marcarConversaLida,
   fetchUnreadCounts,
   fetchColaboradoresParaDm,
@@ -107,6 +108,8 @@ export default function HubAtendimentoPage() {
   // Diálogo discreto de confirmação para exclusão de mensagem
   const [mensagemParaExcluir, setMensagemParaExcluir] = useState<ChatMensagem | null>(null)
   const [excluindoMsg, setExcluindoMsg] = useState(false)
+  const [conversaParaExcluir, setConversaParaExcluir] = useState<ChatConversa | null>(null)
+  const [excluindoConversa, setExcluindoConversa] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const activeConversaRef = useRef<ChatConversa | null>(null)
@@ -414,6 +417,49 @@ export default function HubAtendimentoPage() {
     return false
   }
 
+  // Checagem de permissão para apagar a conversa inteira:
+  // - Ninguém pode apagar o canal Geral
+  // - Admin pode apagar qualquer conversa (exceto canal Geral)
+  // - Colaborador participante pode apagar/descartar sua própria conversa 1:1 (inclusive Sistema)
+  const podeApagarConversa = (conv: ChatConversa | null | undefined): boolean => {
+    if (!user || !conv) return false
+    if (conv.tipo === 'geral') return false
+    if (user.role === 'admin') return true
+    if (conv.tipo === 'dm' || conv.tipo === 'kommo_whatsapp') {
+      const parts = conv.participantes || []
+      return parts.includes(user.id) || conv.responsavel_id === user.id
+    }
+    return false
+  }
+
+  // Executar exclusão confirmada de conversa
+  const handleConfirmarExclusaoConversa = async () => {
+    if (!conversaParaExcluir) return
+    const convId = conversaParaExcluir.id
+    setExcluindoConversa(true)
+    try {
+      await apagarConversaChat(convId)
+      toast({
+        title: 'Conversa apagada com sucesso',
+        description: 'A conversa e seu histórico foram removidos.',
+      })
+      if (activeConversa?.id === convId) {
+        setActiveConversa(null)
+        setMensagens([])
+      }
+      setConversaParaExcluir(null)
+      await carregarConversas()
+    } catch (err) {
+      toast({
+        title: 'Falha ao apagar conversa',
+        description: String(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setExcluindoConversa(false)
+    }
+  }
+
   // Executar exclusão confirmada
   const handleConfirmarExclusaoMensagem = async () => {
     if (!mensagemParaExcluir) return
@@ -708,55 +754,75 @@ export default function HubAtendimentoPage() {
                 contatosFiltrados.map((item) => {
                   const isSelected = contatoSelecionadoId === item.id
                   return (
-                    <button
+                    <div
                       key={item.id}
-                      onClick={() => handleSelecionarContato(item)}
                       className={`w-full text-left p-2.5 rounded-xl transition-all border flex items-center space-x-3 group relative ${
                         isSelected
                           ? 'bg-white border-[#253575] shadow-xs'
                           : 'bg-white/90 hover:bg-white border-slate-200/80 hover:border-slate-300'
                       }`}
                     >
-                      {/* Avatar */}
-                      <div className="relative shrink-0">
-                        <div
-                          className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-xs ${
-                            item.tipo === 'chat_canal'
-                              ? 'bg-[#253575] text-[#F18800]'
-                              : 'bg-slate-800 text-white'
-                          }`}
-                        >
-                          {item.initials}
-                        </div>
-                        {item.isOnline && (
-                          <span
-                            className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-white"
-                            title="Online agora"
-                          />
-                        )}
-                      </div>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1">
-                          <span
-                            className={`text-xs truncate font-bold ${
-                              isSelected ? 'text-[#253575]' : 'text-slate-900'
+                      <button
+                        type="button"
+                        onClick={() => handleSelecionarContato(item)}
+                        className="flex items-center space-x-3 flex-1 min-w-0 text-left focus:outline-hidden"
+                      >
+                        {/* Avatar */}
+                        <div className="relative shrink-0">
+                          <div
+                            className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-xs ${
+                              item.tipo === 'chat_canal'
+                                ? 'bg-[#253575] text-[#F18800]'
+                                : 'bg-slate-800 text-white'
                             }`}
                           >
-                            {item.nome}
-                          </span>
-                          {item.unreadCount && item.unreadCount > 0 ? (
-                            <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[9px] font-bold flex items-center justify-center shrink-0">
-                              {item.unreadCount}
-                            </span>
-                          ) : null}
+                            {item.initials}
+                          </div>
+                          {item.isOnline && (
+                            <span
+                              className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-white"
+                              title="Online agora"
+                            />
+                          )}
                         </div>
-                        <p className="text-[11px] text-slate-500 truncate mt-0.5 font-normal">
-                          {item.subtitulo}
-                        </p>
-                      </div>
-                    </button>
+
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1">
+                            <span
+                              className={`text-xs truncate font-bold ${
+                                isSelected ? 'text-[#253575]' : 'text-slate-900'
+                              }`}
+                            >
+                              {item.nome}
+                            </span>
+                            {item.unreadCount && item.unreadCount > 0 ? (
+                              <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                                {item.unreadCount}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="text-[11px] text-slate-500 truncate mt-0.5 font-normal">
+                            {item.subtitulo}
+                          </p>
+                        </div>
+                      </button>
+
+                      {/* Botão de exclusão da conversa */}
+                      {item.conversaRef && podeApagarConversa(item.conversaRef) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setConversaParaExcluir(item.conversaRef!)
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all shrink-0"
+                          title="Apagar conversa"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   )
                 })
               )}
@@ -808,18 +874,33 @@ export default function HubAtendimentoPage() {
                     </div>
                   </div>
 
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => carregarMensagens(activeConversa.id)}
-                    disabled={loadingMensagens}
-                    className="h-8 text-xs text-slate-500 hover:text-slate-700"
-                  >
-                    <RefreshCw
-                      className={`h-3.5 w-3.5 mr-1 ${loadingMensagens ? 'animate-spin' : ''}`}
-                    />
-                    Atualizar
-                  </Button>
+                  <div className="flex items-center space-x-1.5 shrink-0">
+                    {podeApagarConversa(activeConversa) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setConversaParaExcluir(activeConversa)}
+                        className="h-8 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                        title="Apagar esta conversa inteira"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        <span className="hidden sm:inline">Apagar conversa</span>
+                      </Button>
+                    )}
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => carregarMensagens(activeConversa.id)}
+                      disabled={loadingMensagens}
+                      className="h-8 text-xs text-slate-500 hover:text-slate-700"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 mr-1 ${loadingMensagens ? 'animate-spin' : ''}`}
+                      />
+                      Atualizar
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Área de Mensagens */}
@@ -1211,7 +1292,7 @@ export default function HubAtendimentoPage() {
         </DialogContent>
       </Dialog>
 
-      {/* AlertDialog de Confirmação Discreta de Exclusão (shadcn/ui, sem pop-up do navegador) */}
+      {/* AlertDialog de Confirmação Discreta de Exclusão de Mensagem */}
       <AlertDialog
         open={Boolean(mensagemParaExcluir)}
         onOpenChange={(open) => {
@@ -1239,6 +1320,39 @@ export default function HubAtendimentoPage() {
               className="bg-rose-600 hover:bg-rose-700 text-white text-xs h-8 font-semibold"
             >
               {excluindoMsg ? 'Apagando...' : 'Sim, apagar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AlertDialog de Confirmação Discreta de Exclusão de Conversa Inteira */}
+      <AlertDialog
+        open={Boolean(conversaParaExcluir)}
+        onOpenChange={(open) => {
+          if (!open) setConversaParaExcluir(null)
+        }}
+      >
+        <AlertDialogContent className="bg-white border-slate-200 max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <Trash2 className="h-4 w-4 text-rose-600" />
+              <span>Excluir esta conversa?</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600">
+              A conversa inteira e todas as suas mensagens serão excluídas permanentemente da barra
+              lateral e do histórico.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel disabled={excluindoConversa} className="text-xs h-8">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmarExclusaoConversa}
+              disabled={excluindoConversa}
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs h-8 font-semibold"
+            >
+              {excluindoConversa ? 'Excluindo...' : 'Sim, excluir conversa'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

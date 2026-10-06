@@ -59,6 +59,7 @@ import {
   fetchMensagensConversa,
   enviarMensagemChat,
   apagarMensagemChat,
+  apagarConversaChat,
   marcarConversaLida,
   fetchUnreadCounts,
   fetchColaboradoresParaDm,
@@ -104,9 +105,11 @@ export function ChatWidget() {
   const [avisoPedirAtualizacao, setAvisoPedirAtualizacao] = useState(false)
   const [enviandoAviso, setEnviandoAviso] = useState(false)
 
-  // Diálogo discreto para exclusão de mensagens
+  // Diálogo discreto para exclusão de mensagens e conversas
   const [mensagemParaExcluir, setMensagemParaExcluir] = useState<ChatMensagem | null>(null)
   const [excluindoMsg, setExcluindoMsg] = useState(false)
+  const [conversaParaExcluir, setConversaParaExcluir] = useState<ChatConversa | null>(null)
+  const [excluindoConversa, setExcluindoConversa] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
   const scrollAreaRef = useRef<HTMLDivElement | null>(null)
@@ -385,7 +388,40 @@ export function ChatWidget() {
     return false
   }
 
-  // Executar exclusão confirmada
+  // Permissão para apagar a conversa inteira no widget
+  const podeApagarConversa = (conv: ChatConversa | null | undefined): boolean => {
+    if (!user || !conv) return false
+    if (conv.tipo === 'geral') return false
+    if (user.role === 'admin') return true
+    if (conv.tipo === 'dm' || conv.tipo === 'kommo_whatsapp') {
+      const parts = conv.participantes || []
+      return parts.includes(user.id) || conv.responsavel_id === user.id
+    }
+    return false
+  }
+
+  // Executar exclusão confirmada de conversa no widget
+  const handleConfirmarExclusaoConversa = async () => {
+    if (!conversaParaExcluir) return
+    const convId = conversaParaExcluir.id
+    setExcluindoConversa(true)
+    try {
+      await apagarConversaChat(convId)
+      if (activeConversa?.id === convId) {
+        setActiveConversa(null)
+        setMensagens([])
+      }
+      setConversaParaExcluir(null)
+      await loadConversas()
+      await refreshUnread()
+    } catch (err) {
+      console.error('Falha ao apagar conversa:', err)
+    } finally {
+      setExcluindoConversa(false)
+    }
+  }
+
+  // Executar exclusão confirmada de mensagem
   const handleConfirmarExclusaoMensagem = async () => {
     if (!mensagemParaExcluir) return
     const msgId = mensagemParaExcluir.id
@@ -543,6 +579,24 @@ export function ChatWidget() {
             </div>
 
             <div className="flex items-center space-x-1">
+              {/* Botão discreto de apagar conversa no header */}
+              {activeConversa && podeApagarConversa(activeConversa) && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => setConversaParaExcluir(activeConversa)}
+                      className="p-1.5 text-slate-300 hover:text-rose-400 rounded-md hover:bg-white/10 transition-colors"
+                      title="Apagar conversa inteira"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    Excluir conversa e mensagens
+                  </TooltipContent>
+                </Tooltip>
+              )}
+
               {/* Botão de Enviar Aviso a Todos (Admin Only) */}
               {isAdmin && !activeConversa && (
                 <Tooltip>
@@ -696,40 +750,59 @@ export function ChatWidget() {
                         const unread = unreadCounts.by_conversation[dm.id] || 0
 
                         return (
-                          <button
+                          <div
                             key={dm.id}
-                            onClick={() => handleSelectConversa(dm)}
-                            className="w-full text-left p-2 rounded-lg bg-white hover:bg-slate-100/80 border border-slate-200/70 transition-colors flex items-center space-x-2.5"
+                            className="w-full text-left p-2 rounded-lg bg-white hover:bg-slate-100/80 border border-slate-200/70 transition-colors flex items-center space-x-2.5 group"
                           >
-                            <div className="relative shrink-0">
-                              <div className="h-8 w-8 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xs">
-                                {initials}
+                            <button
+                              type="button"
+                              onClick={() => handleSelectConversa(dm)}
+                              className="flex items-center space-x-2.5 flex-1 min-w-0 text-left focus:outline-hidden"
+                            >
+                              <div className="relative shrink-0">
+                                <div className="h-8 w-8 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xs">
+                                  {initials}
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between">
-                                <span className="font-semibold text-xs text-slate-900 truncate">
-                                  {name}
-                                </span>
-                                {unread > 0 ? (
-                                  <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center">
-                                    {unread}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-semibold text-xs text-slate-900 truncate">
+                                    {name}
                                   </span>
-                                ) : (
-                                  <span className="text-[10px] text-slate-400 font-mono">
-                                    {dm.ultima_mensagem_data
-                                      ? formatarDataHoraBrasilia(dm.ultima_mensagem_data, {
-                                          formatoCurto: true,
-                                        }).split('às')[1] || ''
-                                      : ''}
-                                  </span>
-                                )}
+                                  {unread > 0 ? (
+                                    <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center">
+                                      {unread}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 font-mono">
+                                      {dm.ultima_mensagem_data
+                                        ? formatarDataHoraBrasilia(dm.ultima_mensagem_data, {
+                                            formatoCurto: true,
+                                          }).split('às')[1] || ''
+                                        : ''}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-slate-500 truncate">
+                                  {dm.ultima_mensagem_texto || 'Conversa iniciada'}
+                                </p>
                               </div>
-                              <p className="text-[10px] text-slate-500 truncate">
-                                {dm.ultima_mensagem_texto || 'Conversa iniciada'}
-                              </p>
-                            </div>
-                          </button>
+                            </button>
+
+                            {podeApagarConversa(dm) && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setConversaParaExcluir(dm)
+                                }}
+                                className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 rounded transition-all shrink-0"
+                                title="Apagar conversa"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         )
                       })}
                     </div>
@@ -1193,7 +1266,7 @@ export function ChatWidget() {
         </Dialog>
       )}
 
-      {/* AlertDialog de Confirmação Discreta de Exclusão (sem pop-up do navegador) */}
+      {/* AlertDialog de Confirmação Discreta de Exclusão de Mensagem */}
       <AlertDialog
         open={Boolean(mensagemParaExcluir)}
         onOpenChange={(open) => {
@@ -1221,6 +1294,38 @@ export function ChatWidget() {
               className="bg-rose-600 hover:bg-rose-700 text-white text-xs h-8 font-semibold"
             >
               {excluindoMsg ? 'Apagando...' : 'Sim, apagar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AlertDialog de Confirmação Discreta de Exclusão de Conversa Inteira */}
+      <AlertDialog
+        open={Boolean(conversaParaExcluir)}
+        onOpenChange={(open) => {
+          if (!open) setConversaParaExcluir(null)
+        }}
+      >
+        <AlertDialogContent className="bg-white border-slate-200 max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <Trash2 className="h-4 w-4 text-rose-600" />
+              <span>Excluir esta conversa?</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600">
+              A conversa inteira e todas as suas mensagens serão excluídas permanentemente do chat.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel disabled={excluindoConversa} className="text-xs h-8">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmarExclusaoConversa}
+              disabled={excluindoConversa}
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs h-8 font-semibold"
+            >
+              {excluindoConversa ? 'Excluindo...' : 'Sim, excluir conversa'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

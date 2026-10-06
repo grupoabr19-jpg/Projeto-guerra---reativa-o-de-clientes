@@ -94,13 +94,36 @@ routerAdd(
         const existing = $app.findRecordsByFilter(
           'chat_conversas',
           "tipo = 'dm' && chave_dm = '" + chaveDm + "'",
-          '',
-          1,
+          '-updated',
+          5,
           0,
         )
 
         if (existing && existing.length > 0) {
           return existing[0]
+        }
+
+        const existingByParts = $app.findRecordsByFilter(
+          'chat_conversas',
+          "tipo = 'dm' && participantes ~ '" +
+            sistemaId +
+            "' && participantes ~ '" +
+            destinatarioId +
+            "'",
+          '-updated',
+          5,
+          0,
+        )
+
+        if (existingByParts && existingByParts.length > 0) {
+          const conv = existingByParts[0]
+          if (conv.getString('chave_dm') !== chaveDm) {
+            conv.set('chave_dm', chaveDm)
+            try {
+              $app.save(conv)
+            } catch (_) {}
+          }
+          return conv
         }
 
         let destNome = 'Colaborador'
@@ -723,15 +746,43 @@ onRecordAfterCreateSuccess((e) => {
       const pair = [sistemaUser.id, destId].sort()
       const chaveDm = pair[0] + ':' + pair[1]
 
+      // 1. Busca por chave_dm
       const existing = $app.findRecordsByFilter(
         'chat_conversas',
         "tipo = 'dm' && chave_dm = '" + chaveDm + "'",
-        '',
-        1,
+        '-updated',
+        5,
         0,
       )
 
-      if (existing && existing.length > 0) return existing[0]
+      if (existing && existing.length > 0) {
+        // Se houver mais de uma por resquício, reusa a primeira
+        return existing[0]
+      }
+
+      // 2. Busca de segurança por participantes contendo ambos os IDs
+      const existingByParts = $app.findRecordsByFilter(
+        'chat_conversas',
+        "tipo = 'dm' && participantes ~ '" +
+          sistemaUser.id +
+          "' && participantes ~ '" +
+          destId +
+          "'",
+        '-updated',
+        5,
+        0,
+      )
+
+      if (existingByParts && existingByParts.length > 0) {
+        const conv = existingByParts[0]
+        if (conv.getString('chave_dm') !== chaveDm) {
+          conv.set('chave_dm', chaveDm)
+          try {
+            $app.save(conv)
+          } catch (_) {}
+        }
+        return conv
+      }
 
       let destNome = 'Colaborador'
       try {
@@ -964,12 +1015,35 @@ cronAdd('crons_notificacoes_operacionais', '*/15 * * * *', () => {
       const existing = $app.findRecordsByFilter(
         'chat_conversas',
         "tipo = 'dm' && chave_dm = '" + chaveDm + "'",
-        '',
-        1,
+        '-updated',
+        5,
         0,
       )
 
       if (existing && existing.length > 0) return existing[0]
+
+      const existingByParts = $app.findRecordsByFilter(
+        'chat_conversas',
+        "tipo = 'dm' && participantes ~ '" +
+          sistemaUser.id +
+          "' && participantes ~ '" +
+          destId +
+          "'",
+        '-updated',
+        5,
+        0,
+      )
+
+      if (existingByParts && existingByParts.length > 0) {
+        const conv = existingByParts[0]
+        if (conv.getString('chave_dm') !== chaveDm) {
+          conv.set('chave_dm', chaveDm)
+          try {
+            $app.save(conv)
+          } catch (_) {}
+        }
+        return conv
+      }
 
       let destNome = 'Colaborador'
       try {

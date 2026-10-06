@@ -151,6 +151,125 @@ onRecordDeleteRequest((e) => {
   }
 }, 'chat_mensagens')
 
+// 1.1b Hook de validação de exclusão de conversa (chat_conversas)
+// Regras estritas no servidor:
+// - Ninguém pode apagar o canal Geral & Anúncios (tipo === 'geral')
+// - Admin pode apagar qualquer conversa (exceto canal Geral)
+// - Colaborador participante pode apagar/descartar sua própria conversa 1:1 (tipo === 'dm' ou 'kommo_whatsapp')
+// - Ninguém pode apagar conversa alheia onde não é participante
+onRecordDeleteRequest((e) => {
+  try {
+    const authRecord = e.auth
+    if (!authRecord || !authRecord.id) {
+      throw new BadRequestError('Autenticação obrigatória para apagar conversa.')
+    }
+
+    const convRecord = e.record
+    if (!convRecord) return e.next()
+
+    const authId = authRecord.id
+    const userRole = authRecord.getString('role') || 'operador'
+    const convTipo = convRecord.getString('tipo')
+
+    // Regra prioritária: canal Geral nunca pode ser apagado
+    if (convTipo === 'geral') {
+      throw new ForbiddenError(
+        'O canal Geral & Anúncios é o canal oficial da empresa e não pode ser apagado.',
+      )
+    }
+
+    // Admin pode apagar qualquer conversa (exceto canal geral já bloqueado acima)
+    if (userRole === 'admin') {
+      return e.next()
+    }
+
+    // Colaborador comum: só pode apagar DM onde ele mesmo é participante
+    if (convTipo === 'dm' || convTipo === 'kommo_whatsapp') {
+      let parts = []
+      try {
+        parts = convRecord.getStringSlice('participantes') || []
+      } catch (_) {}
+      const respId = convRecord.getString('responsavel_id')
+
+      if (parts.includes(authId) || respId === authId) {
+        return e.next()
+      }
+    }
+
+    throw new ForbiddenError('Permissão negada: você não tem permissão para apagar esta conversa.')
+  } catch (err) {
+    if (err && err.status) throw err
+    const msg = err && err.message ? err.message : String(err)
+    throw new BadRequestError(msg)
+  }
+}, 'chat_conversas')
+
+// 1.1c Hook após exclusão de conversa: limpeza em cascata no servidor
+// Remove todas as mensagens da conversa, leituras associadas e desassocia notificações enviadas
+onRecordAfterDeleteSuccess((e) => {
+  try {
+    const convId = e.record.id
+    if (!convId) return
+
+    // 1. Apagar mensagens vinculadas a esta conversa
+    try {
+      const msgs = $app.findRecordsByFilter('chat_mensagens', `conversa = '${convId}'`, '', 5000, 0)
+      for (let m = 0; m < msgs.length; m++) {
+        try {
+          $app.delete(msgs[m])
+        } catch (_) {}
+      }
+    } catch (errMsgs) {
+      console.log(
+        '[chat_hook] Aviso ao limpar mensagens da conversa ' + convId + ': ' + errMsgs.message,
+      )
+    }
+
+    // 2. Apagar registros de leitura desta conversa
+    try {
+      const leituras = $app.findRecordsByFilter(
+        'chat_leituras',
+        `conversa = '${convId}'`,
+        '',
+        500,
+        0,
+      )
+      for (let l = 0; l < leituras.length; l++) {
+        try {
+          $app.delete(leituras[l])
+        } catch (_) {}
+      }
+    } catch (errLeituras) {
+      console.log(
+        '[chat_hook] Aviso ao limpar leituras da conversa ' + convId + ': ' + errLeituras.message,
+      )
+    }
+
+    // 3. Atualizar notificações enviadas para remover o ponteiro da conversa
+    try {
+      const notifs = $app.findRecordsByFilter(
+        'notificacoes_enviadas',
+        `conversa = '${convId}'`,
+        '',
+        500,
+        0,
+      )
+      for (let n = 0; n < notifs.length; n++) {
+        try {
+          const rec = notifs[n]
+          rec.set('conversa', null)
+          rec.set('mensagem_id', '')
+          $app.save(rec)
+        } catch (_) {}
+      }
+    } catch (_) {}
+  } catch (err) {
+    console.log(
+      '[chat_hook] Erro em onRecordAfterDeleteSuccess para chat_conversas: ' + err.message,
+    )
+  }
+}, 'chat_conversas')
+
 // 1.2 Hook após exclusão de mensagem: recalcular conversa pai (total_mensagens, última mensagem) e limpar leituras/notificações
 onRecordAfterDeleteSuccess((e) => {
   try {
@@ -324,18 +443,41 @@ routerAdd(
       const pair = [myId, targetUserId].sort()
       const chaveDm = pair[0] + ':' + pair[1]
 
-      // Verificar se já existe conversa com essa chave_dm
+      // Verificar se já existe conversa com essa chave_dm ou por participantes
       const existing = $app.findRecordsByFilter(
         'chat_conversas',
         `tipo = 'dm' && chave_dm = '${chaveDm}'`,
-        '',
-        1,
+        '-updated',
+        5,
         0,
       )
 
       if (existing && existing.length > 0) {
         return e.json(200, {
           conversa: existing[0],
+          is_new: false,
+        })
+      }
+
+      // Verificação de segurança por participantes
+      const existingByParts = $app.findRecordsByFilter(
+        'chat_conversas',
+        `tipo = 'dm' && participantes ~ '${myId}' && participantes ~ '${targetUserId}'`,
+        '-updated',
+        5,
+        0,
+      )
+
+      if (existingByParts && existingByParts.length > 0) {
+        const conv = existingByParts[0]
+        if (conv.getString('chave_dm') !== chaveDm) {
+          conv.set('chave_dm', chaveDm)
+          try {
+            $app.save(conv)
+          } catch (_) {}
+        }
+        return e.json(200, {
+          conversa: conv,
           is_new: false,
         })
       }

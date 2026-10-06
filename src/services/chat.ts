@@ -95,6 +95,17 @@ export async function apagarMensagemChat(mensagemId: string): Promise<boolean> {
   return true
 }
 
+// 3.0b Apagar/descartar conversa inteira do chat
+// Regras validadas no servidor:
+// - Canal Geral nunca pode ser apagado
+// - Admin pode apagar qualquer conversa (exceto canal Geral)
+// - Colaborador participante pode apagar/descartar sua própria conversa 1:1 (incluindo conversa do Sistema)
+// - Ao apagar, o backend remove mensagens e leituras em cascata
+export async function apagarConversaChat(conversaId: string): Promise<boolean> {
+  await pb.collection('chat_conversas').delete(conversaId)
+  return true
+}
+
 // 3.1 Disparar ciclo manual de notificações ou checagem do expediente
 export async function processarCicloNotificacoes(): Promise<{
   ok: boolean
