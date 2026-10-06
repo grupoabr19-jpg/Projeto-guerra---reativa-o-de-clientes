@@ -6,6 +6,7 @@ import {
   MessageSquare,
   Mail,
   Lock,
+  LockOpen,
   ArrowLeft,
   CheckCircle2,
   AlertTriangle,
@@ -60,6 +61,8 @@ import {
   reserveNextQueueClient,
   searchClientesCarteira,
   reserveSpecificQueueClient,
+  destravarClienteStandby,
+  type ReserveSpecificError,
   transferClienteOperador,
   fetchUsers,
   type ClienteBuscaCarteiraItem,
@@ -131,6 +134,14 @@ export default function AtendimentoPage() {
   // Diálogos shadcn de confirmação
   const [showConfirmAbandonar, setShowConfirmAbandonar] = useState(false)
   const [showConfirmReativarSemPedido, setShowConfirmReativarSemPedido] = useState(false)
+  const [showConfirmDestravarStandby, setShowConfirmDestravarStandby] = useState(false)
+  const [clienteParaDestravar, setClienteParaDestravar] = useState<{
+    id: string
+    nome: string
+    codigo: string
+    standbyAte?: string
+  } | null>(null)
+  const [destravandoStandby, setDestravandoStandby] = useState(false)
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
 
   // Timeline nova nota
@@ -206,13 +217,87 @@ export default function AtendimentoPage() {
       }
     } catch (err: unknown) {
       const rawMsg = err instanceof Error ? err.message : String(err)
+      const reserveErr = err as ReserveSpecificError
+      const isStandby =
+        reserveErr?.isStandby ||
+        rawMsg.toLowerCase().includes('standby') ||
+        rawMsg.toLowerCase().includes('reativado recentemente')
+
+      if (isStandby && user?.role === 'admin') {
+        // Para admin: prepara o modal de confirmação para destravar imediatamente
+        setClienteParaDestravar({
+          id: reserveErr?.clienteId || item.id,
+          nome: reserveErr?.clienteNome || item.nome,
+          codigo: reserveErr?.clienteCodigo || item.codigo,
+          standbyAte: reserveErr?.standbyAte,
+        })
+        setShowConfirmDestravarStandby(true)
+      }
+
       toast({
         variant: 'destructive',
         title: 'Não foi possível abrir o cliente',
-        description: rawMsg || 'Falha ao reservar o cliente para atendimento.',
+        description:
+          user?.role === 'admin' && isStandby
+            ? `${rawMsg} Como Administrador, você pode usar a opção "Destravar cliente" abaixo.`
+            : rawMsg || 'Falha ao reservar o cliente para atendimento.',
       })
     } finally {
       setSelecionandoClienteBusca(null)
+    }
+  }
+
+  // Ação exclusiva de Admin: Destravar cliente em standby
+  const handleConfirmDestravarStandby = async () => {
+    const alvo =
+      clienteParaDestravar ||
+      (cliente ? { id: cliente.id, nome: cliente.nome, codigo: cliente.codigo } : null)
+    if (!alvo) return
+    setDestravandoStandby(true)
+    try {
+      const res = await destravarClienteStandby(
+        alvo.id,
+        `Destrave de standby manual realizado pelo administrador ${user?.name || user?.email || 'admin'}.`,
+      )
+      toast({
+        title: 'Cliente destravado!',
+        description:
+          res.message || `${alvo.nome} foi liberado do standby e pode ser atendido normalmente.`,
+      })
+      setShowConfirmDestravarStandby(false)
+      setClienteParaDestravar(null)
+
+      // Se o cliente atual for o destravado, recarrega
+      if (cliente && cliente.id === alvo.id) {
+        await loadCliente(alvo.id)
+      } else {
+        // Tenta abrir o cliente imediatamente
+        try {
+          const resReserve = await reserveSpecificQueueClient(alvo.id)
+          if (resReserve.cliente) {
+            setTermoBuscaCarteira('')
+            setResultadosBuscaCarteira([])
+            setBuscaAberta(false)
+            await loadCliente(resReserve.cliente.id)
+            navigate(`/atendimento/${resReserve.cliente.id}`, { replace: true })
+          }
+        } catch (_) {
+          // Se não conseguir auto-abrir, apenas recarrega busca
+          if (termoBuscaCarteira.trim().length >= 3) {
+            const reSearch = await searchClientesCarteira(termoBuscaCarteira.trim())
+            setResultadosBuscaCarteira(reSearch.items || [])
+          }
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao destravar cliente em standby'
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao destravar',
+        description: msg,
+      })
+    } finally {
+      setDestravandoStandby(false)
     }
   }
 
@@ -907,24 +992,46 @@ export default function AtendimentoPage() {
                                 </span>
                               </div>
                             </div>
-                            <Button
-                              size="sm"
-                              onClick={() => handleSelecionarClienteBusca(item)}
-                              disabled={selecionandoClienteBusca === item.id}
-                              className="bg-[#253575] hover:bg-[#1d2b5e] text-white text-xs font-semibold h-8 px-3 shrink-0 shadow-xs"
-                            >
-                              {selecionandoClienteBusca === item.id ? (
-                                <>
-                                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                                  Abrindo...
-                                </>
-                              ) : (
-                                <>
-                                  <PhoneCall className="h-3.5 w-3.5 mr-1" />
-                                  Atender
-                                </>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {user?.role === 'admin' && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setClienteParaDestravar({
+                                      id: item.id,
+                                      nome: item.nome,
+                                      codigo: item.codigo,
+                                    })
+                                    setShowConfirmDestravarStandby(true)
+                                  }}
+                                  className="text-amber-700 border-amber-300 hover:bg-amber-50 text-[11px] h-8 px-2.5 font-medium"
+                                  title="Destravar cliente em standby (admin)"
+                                >
+                                  <LockOpen className="h-3.5 w-3.5 mr-1 text-amber-600" />
+                                  Destravar
+                                </Button>
                               )}
-                            </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleSelecionarClienteBusca(item)}
+                                disabled={selecionandoClienteBusca === item.id}
+                                className="bg-[#253575] hover:bg-[#1d2b5e] text-white text-xs font-semibold h-8 px-3 shadow-xs"
+                              >
+                                {selecionandoClienteBusca === item.id ? (
+                                  <>
+                                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                                    Abrindo...
+                                  </>
+                                ) : (
+                                  <>
+                                    <PhoneCall className="h-3.5 w-3.5 mr-1" />
+                                    Atender
+                                  </>
+                                )}
+                              </Button>
+                            </div>
                           </div>
                         ))
                       )}
@@ -954,6 +1061,63 @@ export default function AtendimentoPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* AlertDialog de Destrave de Standby quando nenhum cliente estiver carregado na ficha (Exclusivo Admin) */}
+      {!cliente && (
+        <AlertDialog
+          open={showConfirmDestravarStandby}
+          onOpenChange={setShowConfirmDestravarStandby}
+        >
+          <AlertDialogContent className="max-w-md">
+            <AlertDialogHeader>
+              <div className="flex items-center space-x-2 text-amber-600">
+                <LockOpen className="h-5 w-5" />
+                <AlertDialogTitle>Destravar Cliente em Standby?</AlertDialogTitle>
+              </div>
+              <AlertDialogDescription className="text-xs text-slate-600 space-y-2 pt-2">
+                <p>
+                  O cliente <strong className="text-slate-900">{clienteParaDestravar?.nome}</strong>{' '}
+                  (<span className="font-mono">{clienteParaDestravar?.codigo}</span>) está sob o
+                  período de blindagem de 60 dias fora da fila.
+                </p>
+                <p className="bg-amber-50 border border-amber-200 text-amber-800 p-2.5 rounded-md">
+                  Como <strong>Administrador</strong>, você pode zerar essa restrição imediatamente.
+                  O cliente voltará a ficar liberado para atendimento normal e reaparecerá na
+                  esteira da carteira do vendedor original.
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Esta ação será registrada nos registros de auditoria do sistema com o seu usuário.
+                </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={destravandoStandby} className="text-xs">
+                Cancelar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault()
+                  handleConfirmDestravarStandby()
+                }}
+                disabled={destravandoStandby}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs"
+              >
+                {destravandoStandby ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    Destravando...
+                  </>
+                ) : (
+                  <>
+                    <LockOpen className="h-3.5 w-3.5 mr-1.5" />
+                    Confirmar Destrave
+                  </>
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
 
       {/* Se não houver cliente selecionado */}
       {!cliente ? (
@@ -1011,6 +1175,11 @@ export default function AtendimentoPage() {
                       ? `${cliente.dias_sem_faturar} dias sem faturar`
                       : 'Inativo'}
                   </Badge>
+                  {cliente.standby_ate && new Date(cliente.standby_ate).getTime() > Date.now() && (
+                    <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-[10px] font-mono">
+                      Em Standby até {new Date(cliente.standby_ate).toLocaleDateString('pt-BR')}
+                    </Badge>
+                  )}
                 </div>
                 <h2 className="text-xl font-black text-slate-900 tracking-tight">{cliente.nome}</h2>
                 <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
@@ -1031,6 +1200,28 @@ export default function AtendimentoPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                {/* Se o cliente estiver em standby ativo e o usuário logado for Admin: Botão de Destrave Direto */}
+                {user?.role === 'admin' &&
+                  cliente.standby_ate &&
+                  new Date(cliente.standby_ate).getTime() > Date.now() && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setClienteParaDestravar({
+                          id: cliente.id,
+                          nome: cliente.nome,
+                          codigo: cliente.codigo,
+                          standbyAte: cliente.standby_ate,
+                        })
+                        setShowConfirmDestravarStandby(true)
+                      }}
+                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs h-9 px-3.5 shadow-sm"
+                      title="Destravar cliente em standby (exclusivo admin)"
+                    >
+                      <LockOpen className="h-4 w-4 mr-1.5" />
+                      Destravar cliente
+                    </Button>
+                  )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -2066,6 +2257,68 @@ export default function AtendimentoPage() {
               </div>
             </div>
           )}
+
+          {/* AlertDialog de Destrave de Standby (Exclusivo Perfil Admin) */}
+          <AlertDialog
+            open={showConfirmDestravarStandby}
+            onOpenChange={setShowConfirmDestravarStandby}
+          >
+            <AlertDialogContent className="max-w-md">
+              <AlertDialogHeader>
+                <div className="flex items-center space-x-2 text-amber-600">
+                  <LockOpen className="h-5 w-5" />
+                  <AlertDialogTitle>Destravar Cliente em Standby?</AlertDialogTitle>
+                </div>
+                <AlertDialogDescription className="text-xs text-slate-600 space-y-2 pt-2">
+                  <p>
+                    O cliente{' '}
+                    <strong className="text-slate-900">
+                      {clienteParaDestravar?.nome || cliente?.nome}
+                    </strong>{' '}
+                    (
+                    <span className="font-mono">
+                      {clienteParaDestravar?.codigo || cliente?.codigo}
+                    </span>
+                    ) está sob o período de blindagem de 60 dias fora da fila.
+                  </p>
+                  <p className="bg-amber-50 border border-amber-200 text-amber-800 p-2.5 rounded-md">
+                    Como <strong>Administrador</strong>, você pode zerar essa restrição
+                    imediatamente. O cliente voltará a ficar liberado para atendimento normal e
+                    reaparecerá na esteira da carteira do vendedor original.
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Esta ação será registrada nos registros de auditoria do sistema com o seu
+                    usuário.
+                  </p>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={destravandoStandby} className="text-xs">
+                  Cancelar
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault()
+                    handleConfirmDestravarStandby()
+                  }}
+                  disabled={destravandoStandby}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs"
+                >
+                  {destravandoStandby ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                      Destravando...
+                    </>
+                  ) : (
+                    <>
+                      <LockOpen className="h-3.5 w-3.5 mr-1.5" />
+                      Confirmar Destrave
+                    </>
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* Modal / Dialog de Confirmação do Atendimento quando o operador clica em "Confirmar Atendimento" */}
           {showQuestionarioModal && (

@@ -361,6 +361,14 @@ export async function searchClientesCarteira(termo: string): Promise<{
  * Permite que o operador abra a ficha de um cliente encontrado na busca para atendê-lo
  * ou eliminá-lo da base como "Cliente Ativo — Fora da Base".
  */
+export interface ReserveSpecificError extends Error {
+  isStandby?: boolean
+  standbyAte?: string
+  clienteId?: string
+  clienteNome?: string
+  clienteCodigo?: string
+}
+
 export async function reserveSpecificQueueClient(clienteId: string): Promise<{
   cliente: Cliente
   message: string
@@ -377,8 +385,48 @@ export async function reserveSpecificQueueClient(clienteId: string): Promise<{
     },
   )
   if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    const error = new Error(
+      errData.error || errData.message || 'Falha ao reservar cliente',
+    ) as ReserveSpecificError
+    if (errData.is_standby) {
+      error.isStandby = true
+      error.standbyAte = errData.standby_ate
+      error.clienteId = errData.cliente_id || clienteId
+      error.clienteNome = errData.cliente_nome
+      error.clienteCodigo = errData.cliente_codigo
+    }
+    throw error
+  }
+  return res.json()
+}
+
+/**
+ * Destrava um cliente em standby de 60 dias (exclusivo para perfil admin).
+ * Remove o standby_ate e reativado_em e, se estava como 'reativado', devolve para 'na_base'.
+ * Registra rastro de auditoria no servidor (eventos_log e timeline).
+ */
+export async function destravarClienteStandby(
+  clienteId: string,
+  motivo?: string,
+): Promise<{ ok: boolean; message: string; cliente: Cliente }> {
+  const res = await fetch(
+    `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/queue/destravar-standby`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: pb.authStore.token,
+      },
+      body: JSON.stringify({
+        cliente_id: clienteId,
+        motivo: motivo || 'Destrave manual de standby autorizado por administrador',
+      }),
+    },
+  )
+  if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || err.message || 'Falha ao reservar cliente')
+    throw new Error(err.error || err.message || 'Falha ao destravar cliente em standby')
   }
   return res.json()
 }

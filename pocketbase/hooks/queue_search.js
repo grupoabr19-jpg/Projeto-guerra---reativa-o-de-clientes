@@ -372,6 +372,7 @@ routerAdd(
       }
 
       // Blindagem de Standby: se o cliente está reativado e em período de standby de 60 dias
+      // Administrador pode abrir o cliente para consultar ou atender
       const estadoCli = cliente.getString('estado')
       const standbyAteStr = cliente.getString('standby_ate')
       if (estadoCli === 'reativado') {
@@ -382,10 +383,15 @@ routerAdd(
             emStandby = true
           }
         }
-        if (emStandby) {
+        if (emStandby && userRole !== 'admin') {
           return e.json(400, {
             error:
               'Este cliente foi reativado recentemente e está no período de standby de 60 dias fora da fila.',
+            is_standby: true,
+            standby_ate: standbyAteStr,
+            cliente_id: cliente.id,
+            cliente_nome: cliente.getString('nome'),
+            cliente_codigo: cliente.getString('codigo'),
           })
         }
       }
@@ -567,6 +573,128 @@ routerAdd(
       const msg = err && err.message ? err.message : String(err)
       console.error('[queue_search] Erro em reserve-specific: ' + msg)
       return e.json(500, { error: 'Falha ao abrir cliente: ' + msg })
+    }
+  },
+  $apis.requireAuth(),
+)
+
+/**
+ * Endpoint para DESTRAVAR / remover standby de cliente
+ * Exclusivo para role = 'admin' (operador, líder e supervisor recebem 403).
+ * Limpa standby_ate e reativado_em, permitindo que o cliente volte à fila / carteira imediatamente.
+ * Se o cliente ainda estiver como 'reativado', retorna para 'na_base' (ou mantém estado compatível se for reagendado).
+ * Grava auditoria em eventos_log com usuário admin, cliente e data/hora.
+ */
+routerAdd(
+  'POST',
+  '/backend/v1/queue/destravar-standby',
+  (e) => {
+    try {
+      const authRecord = e.auth
+      if (!authRecord || !authRecord.id) {
+        return e.json(401, { error: 'Autenticação obrigatória' })
+      }
+
+      const userRole = authRecord.getString('role')
+      if (userRole !== 'admin') {
+        return e.json(403, {
+          error:
+            'Permissão negada. Apenas o perfil administrador pode destravar clientes em standby.',
+        })
+      }
+
+      let body = {}
+      try {
+        body = e.requestInfo().body || {}
+      } catch (_) {}
+
+      const clienteId = (body.cliente_id || '').trim()
+      const motivo = (
+        body.motivo || 'Destrave manual de standby autorizado por administrador'
+      ).trim()
+
+      if (!clienteId) {
+        return e.json(400, { error: 'cliente_id é obrigatório' })
+      }
+
+      const cliente = $app.findRecordById('clientes', clienteId)
+      if (!cliente) {
+        return e.json(404, { error: 'Cliente não encontrado' })
+      }
+
+      const estadoAnterior = cliente.getString('estado')
+      const standbyAnterior = cliente.getString('standby_ate')
+      const reativadoEmAnterior = cliente.getString('reativado_em')
+
+      // Zerar standby e reativação
+      cliente.set('standby_ate', null)
+      cliente.set('reativado_em', null)
+
+      // Se estava como reativado fora da fila, devolve para na_base para reaparecer no fluxo normal
+      if (estadoAnterior === 'reativado') {
+        cliente.set('estado', 'na_base')
+        cliente.set('operador', '')
+        cliente.set('lock_timestamp', null)
+      }
+
+      $app.save(cliente)
+
+      // 1. Gravar registro em eventos_log para auditoria
+      try {
+        const colEv = $app.findCollectionByNameOrId('eventos_log')
+        const ev = new Record(colEv)
+        ev.set('cliente', cliente.id)
+        ev.set('usuario', authRecord.id)
+        ev.set('acao', 'destrave_standby_admin')
+        ev.set('detalhes', {
+          codigo: cliente.getString('codigo'),
+          nome: cliente.getString('nome'),
+          regiao: cliente.getString('regiao'),
+          vendedor: cliente.getString('vendedor'),
+          admin_id: authRecord.id,
+          admin_nome: authRecord.getString('name') || authRecord.getString('email'),
+          admin_email: authRecord.getString('email'),
+          estado_anterior: estadoAnterior,
+          estado_novo: cliente.getString('estado'),
+          standby_ate_anterior: standbyAnterior,
+          reativado_em_anterior: reativadoEmAnterior,
+          motivo: motivo,
+          timestamp: new Date().toISOString(),
+        })
+        $app.save(ev)
+      } catch (evErr) {
+        console.log('[queue_search] Aviso ao registrar auditoria eventos_log: ' + evErr.message)
+      }
+
+      // 2. Gravar interação na timeline do cliente para histórico visível na ficha
+      try {
+        const colIt = $app.findCollectionByNameOrId('interacoes')
+        const it = new Record(colIt)
+        it.set('cliente', cliente.id)
+        it.set('operador', authRecord.id)
+        it.set('tipo', 'status')
+        it.set('desfecho', 'destravado_admin')
+        it.set('motivo', motivo)
+        it.set(
+          'conteudo',
+          `Cliente destravado pelo Administrador ${authRecord.getString('name') || authRecord.getString('email')}. Standby de 60 dias removido. O cliente está liberado para atendimento normal pela carteira/fila.`,
+        )
+        it.set('estado_anterior', estadoAnterior)
+        it.set('estado_novo', cliente.getString('estado'))
+        $app.save(it)
+      } catch (itErr) {
+        console.log('[queue_search] Aviso ao registrar interacao de destrave: ' + itErr.message)
+      }
+
+      return e.json(200, {
+        ok: true,
+        message: `Cliente ${cliente.getString('nome')} (${cliente.getString('codigo')}) destravado com sucesso pelo administrador.`,
+        cliente: cliente,
+      })
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err)
+      console.error('[queue_search] Erro ao destravar standby: ' + msg)
+      return e.json(500, { error: 'Falha ao destravar cliente: ' + msg })
     }
   },
   $apis.requireAuth(),
