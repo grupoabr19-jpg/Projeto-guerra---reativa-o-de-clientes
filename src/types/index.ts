@@ -635,7 +635,37 @@ export interface ReportsAnalyticsResponse {
 
 // Chat Interno
 export type ChatConversaTipo = 'geral' | 'canal_rota' | 'dm' | 'kommo_whatsapp'
-export type ChatMensagemTipo = 'normal' | 'aviso'
+export type ChatMensagemTipo = 'normal' | 'aviso' | 'notificacao'
+
+export interface ChatMensagemMetadata {
+  tipo_evento?:
+    | 'followup_dia'
+    | 'followup_atrasado'
+    | 'resumo_matinal'
+    | 'ranking_conquista'
+    | 'ranking_subida_geral'
+    | 'cliente_devolvido'
+    | 'transferencia_recebida'
+  cliente_id?: string
+  cliente_codigo?: string
+  cliente_nome?: string
+  regiao?: string
+  horario?: string
+  data_agendada?: string
+  data_original?: string
+  data_referencia?: string
+  atendimentos_ontem?: number
+  conversoes_ontem?: number
+  followups_hoje?: number
+  titulo_id?: string
+  titulo_nome?: string
+  titulo_emoji?: string
+  titulo_nivel?: string
+  pontos?: number
+  usuario_id?: string
+  usuario_nome?: string
+  motivo?: string
+}
 
 export interface ChatConversa {
   id: string
@@ -677,6 +707,7 @@ export interface ChatMensagem {
   autor_role: string
   texto: string
   tipo: ChatMensagemTipo
+  metadata?: ChatMensagemMetadata
   direcao?: 'entrada' | 'saida'
   kommo_status?: 'recebida' | 'enviada' | 'erro' | 'pendente'
   kommo_message_id?: string

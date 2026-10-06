@@ -11,6 +11,7 @@ import type {
   RankingUserRow,
 } from '@/types'
 import { fetchConfiguracoes } from './api'
+import { parabenizarConquistaRanking } from './chat'
 
 export const PESOS_GAMIFICACAO_PADRAO: PesosGamificacao = {
   atendimento_ligacao: 10,
@@ -342,12 +343,25 @@ export async function calculateRankingData(options?: {
   const currentUserRow = rows.find((r) => r.isCurrentUser)
 
   // Gravar em background as conquistas no PocketBase para o usuário atual se novo título
+  // e disparar parabenização no CA se foi recém-conquistado
   if (currentUserRow && currentUserRow.usuario.id && currentUserRow.tituloAtual.id) {
     registrarConquistaTitulo(
       currentUserRow.usuario.id,
       currentUserRow.tituloAtual.id,
       currentUserRow.pontos,
-    ).catch(() => {})
+    )
+      .then((conquista) => {
+        // Se a conquista foi recém-criada (ou o título requer celebração), chama o endpoint de parabenização
+        if (conquista && currentUserRow.usuario.id && currentUserRow.tituloAtual.id) {
+          parabenizarConquistaRanking({
+            usuarioId: currentUserRow.usuario.id,
+            tituloId: currentUserRow.tituloAtual.id,
+            pontos: currentUserRow.pontos,
+            publicarGeral: true,
+          }).catch(() => {})
+        }
+      })
+      .catch(() => {})
   }
 
   return {

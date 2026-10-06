@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-06T13:37:27.332Z",
+  "generatedAt": "2026-10-06T14:09:10.365Z",
   "collections": [
     {
       "name": "users",
@@ -1555,7 +1555,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["normal", "aviso"]
+          "selectValues": ["normal", "aviso", "notificacao"]
         },
         {
           "name": "created",
@@ -1592,6 +1592,12 @@
         {
           "name": "direcao",
           "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "metadata",
+          "type": "json",
           "required": false,
           "system": false
         }
@@ -2056,6 +2062,90 @@
         "CREATE INDEX idx_sdr_triagens_classif ON sdr_triagens_log (classificacao)",
         "CREATE INDEX idx_sdr_triagens_simul ON sdr_triagens_log (eh_simulacao)",
         "CREATE INDEX idx_sdr_triagens_phone ON sdr_triagens_log (telefone_limpo)"
+      ]
+    },
+    {
+      "name": "notificacoes_enviadas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && (usuario = @request.auth.id || @request.auth.role = 'admin')",
+        "view": "@request.auth.id != '' && (usuario = @request.auth.id || @request.auth.role = 'admin')",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != '' && @request.auth.role = 'admin'",
+        "delete": "@request.auth.id != '' && @request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "chave_dedupe",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "tipo",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": [
+            "followup_dia",
+            "followup_atrasado",
+            "resumo_matinal",
+            "ranking_subida",
+            "ranking_conquista",
+            "cliente_devolvido"
+          ]
+        },
+        {
+          "name": "usuario",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "cliente_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "conversa",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "chat_conversas"
+        },
+        {
+          "name": "mensagem_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "dados",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_notif_chave_dedupe ON notificacoes_enviadas (chave_dedupe)",
+        "CREATE INDEX idx_notif_usuario_tipo ON notificacoes_enviadas (usuario, tipo)",
+        "CREATE INDEX idx_notif_created ON notificacoes_enviadas (created DESC)"
       ]
     }
   ]

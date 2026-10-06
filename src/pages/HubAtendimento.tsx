@@ -11,7 +11,14 @@ import {
   Radio,
   Clock,
   Sparkles,
+  Bell,
+  Calendar,
+  AlertTriangle,
+  Trophy,
+  ArrowRight,
+  ShieldCheck,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/hooks/use-toast'
 import { usePresence, derivePresenceStatus } from '@/hooks/usePresence'
@@ -36,6 +43,7 @@ import {
   fetchColaboradoresParaDm,
   getOrCreateDm,
   fetchCanalGeral,
+  processarCicloNotificacoes,
 } from '@/services/chat'
 import { emitirAtualizacaoVersaoAdmin } from '@/services/version'
 import { formatarDataHoraBrasilia } from '@/lib/expediente'
@@ -527,9 +535,13 @@ export default function HubAtendimentoPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => carregarConversas()}
+              onClick={async () => {
+                await processarCicloNotificacoes().catch(() => {})
+                await carregarConversas()
+              }}
               disabled={loadingConversas}
               className="text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
+              title="Recarrega conversas e checa notificações de follow-ups pendentes no expediente"
             >
               <RefreshCw
                 className={`h-3.5 w-3.5 mr-1.5 ${loadingConversas ? 'animate-spin' : ''}`}
@@ -759,6 +771,10 @@ export default function HubAtendimentoPage() {
                     mensagens.map((msg) => {
                       const isMinha = msg.autor === user?.id
                       const isAviso = msg.tipo === 'aviso'
+                      const isNotificacao =
+                        msg.tipo === 'notificacao' ||
+                        msg.autor_nome === 'Sistema Projeto Guerra' ||
+                        Boolean(msg.metadata?.tipo_evento)
 
                       if (isAviso) {
                         return (
@@ -776,6 +792,106 @@ export default function HubAtendimentoPage() {
                               </span>
                             </div>
                             <p className="whitespace-pre-wrap leading-relaxed">{msg.texto}</p>
+                          </div>
+                        )
+                      }
+
+                      // MENSAGEM DO SISTEMA / NOTIFICAÇÃO OPERACIONAL DISCRETA
+                      if (isNotificacao) {
+                        const evtTipo = msg.metadata?.tipo_evento
+                        const isFollowup = evtTipo === 'followup_dia'
+                        const isAtraso = evtTipo === 'followup_atrasado'
+                        const isRanking =
+                          evtTipo === 'ranking_conquista' || evtTipo === 'ranking_subida_geral'
+                        const isResumo = evtTipo === 'resumo_matinal'
+
+                        const badgeColor = isAtraso
+                          ? 'bg-rose-100 text-rose-800 border-rose-300'
+                          : isRanking
+                            ? 'bg-amber-100 text-amber-900 border-amber-300'
+                            : isFollowup
+                              ? 'bg-blue-100 text-[#253575] border-blue-300'
+                              : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+
+                        return (
+                          <div
+                            key={msg.id}
+                            className={`rounded-2xl p-3.5 text-xs border shadow-xs space-y-2 max-w-[90%] sm:max-w-[80%] my-1.5 ${
+                              isAtraso
+                                ? 'bg-gradient-to-br from-rose-50/90 to-white border-rose-200'
+                                : isRanking
+                                  ? 'bg-gradient-to-br from-amber-50/90 via-orange-50/60 to-white border-amber-200'
+                                  : isFollowup
+                                    ? 'bg-gradient-to-br from-blue-50/90 via-indigo-50/50 to-white border-blue-200'
+                                    : 'bg-gradient-to-br from-slate-50 via-slate-100/60 to-white border-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 pb-1.5">
+                              <div className="flex items-center space-x-1.5">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeColor}`}
+                                >
+                                  {isRanking ? (
+                                    <Trophy className="h-3 w-3 text-amber-600" />
+                                  ) : isAtraso ? (
+                                    <AlertTriangle className="h-3 w-3 text-rose-600" />
+                                  ) : isFollowup ? (
+                                    <Calendar className="h-3 w-3 text-[#253575]" />
+                                  ) : (
+                                    <Bell className="h-3 w-3 text-emerald-600" />
+                                  )}
+                                  <span>
+                                    {isRanking
+                                      ? 'Conquista / Ranking'
+                                      : isAtraso
+                                        ? 'Follow-up Pendente'
+                                        : isFollowup
+                                          ? 'Follow-up de Hoje'
+                                          : isResumo
+                                            ? 'Resumo Matinal 7h'
+                                            : 'Notificação do Sistema'}
+                                  </span>
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {formatarDataHoraBrasilia(msg.created, { formatoCurto: true })}
+                              </span>
+                            </div>
+
+                            <p className="whitespace-pre-wrap leading-relaxed text-slate-800 font-sans">
+                              {msg.texto}
+                            </p>
+
+                            {/* Link de atalho contextual para Atendimento ou Ranking */}
+                            {(isFollowup || isAtraso || msg.metadata?.cliente_id) && (
+                              <div className="pt-1 border-t border-slate-200/60 flex items-center justify-between">
+                                <span className="text-[10px] text-slate-500">
+                                  Ficha oficial de atendimento
+                                </span>
+                                <Link
+                                  to="/atendimento"
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-[#253575] hover:text-[#F18800] transition-colors"
+                                >
+                                  <span>Abrir Ficha</span>
+                                  <ArrowRight className="h-3 w-3" />
+                                </Link>
+                              </div>
+                            )}
+
+                            {isRanking && (
+                              <div className="pt-1 border-t border-amber-200/60 flex items-center justify-between">
+                                <span className="text-[10px] text-amber-700">
+                                  Mural da Gamificação
+                                </span>
+                                <Link
+                                  to="/ranking"
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-[#F18800] hover:text-[#d97b00] transition-colors"
+                                >
+                                  <span>Ver Tabela do Ranking</span>
+                                  <ArrowRight className="h-3 w-3" />
+                                </Link>
+                              </div>
+                            )}
                           </div>
                         )
                       }

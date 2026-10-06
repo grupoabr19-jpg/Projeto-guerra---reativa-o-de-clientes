@@ -46,8 +46,8 @@ onRecordCreateRequest((e) => {
     e.record.set('autor_role', userRole)
 
     const msgTipo = e.record.getString('tipo')
-    // Apenas admin pode enviar mensagens do tipo 'aviso' (broadcast)
-    if (msgTipo === 'aviso' && userRole !== 'admin') {
+    // Apenas admin pode enviar mensagens do tipo 'aviso' ou 'notificacao' manuais
+    if ((msgTipo === 'aviso' || msgTipo === 'notificacao') && userRole !== 'admin') {
       e.record.set('tipo', 'normal')
     }
 

@@ -17,7 +17,13 @@ import {
   Shield,
   Layers,
   ArrowDown,
+  Bell,
+  Calendar,
+  AlertTriangle,
+  Trophy,
+  ArrowRight,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -41,11 +47,12 @@ import {
   fetchConversasUsuario,
   fetchMensagensConversa,
   enviarMensagemChat,
-  getOrCreateDm,
   marcarConversaLida,
   fetchUnreadCounts,
   fetchColaboradoresParaDm,
+  getOrCreateDm,
   fetchCanalGeral,
+  processarCicloNotificacoes,
 } from '@/services/chat'
 import type { ChatConversa, ChatMensagem, ChatUnreadCountsResponse, User } from '@/types'
 
@@ -115,6 +122,16 @@ export function ChatWidget() {
     const unread = await fetchUnreadCounts()
     setUnreadCounts(unread)
   }, [user])
+
+  const processCicloAndReload = useCallback(async () => {
+    try {
+      await processarCicloNotificacoes()
+    } catch {
+      /* intentionally ignored */
+    }
+    refreshUnread()
+    loadConversas()
+  }, [refreshUnread, loadConversas])
 
   // Polling / carregamento inicial de conversas e não lidas
   useEffect(() => {
@@ -380,8 +397,7 @@ export function ChatWidget() {
               onClick={() => {
                 setIsOpen((prev) => !prev)
                 if (!isOpen) {
-                  refreshUnread()
-                  loadConversas()
+                  processCicloAndReload()
                 }
               }}
               aria-label="Abrir Chat Interno"
@@ -516,15 +532,36 @@ export function ChatWidget() {
                   </div>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleOpenNovaDm}
-                        className="h-7.5 px-2.5 text-xs text-[#253575] border-[#253575]/30 hover:bg-[#253575]/5 font-semibold shrink-0"
-                      >
-                        <Plus className="h-3.5 w-3.5 mr-1" />
-                        <span>Nova DM</span>
-                      </Button>
+                      <div className="flex items-center space-x-1">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={processCicloAndReload}
+                              disabled={loadingConversas}
+                              className="h-7.5 w-7.5 p-0 text-slate-600 hover:text-[#253575] hover:bg-slate-100"
+                            >
+                              <RefreshCw
+                                className={`h-3.5 w-3.5 ${loadingConversas ? 'animate-spin' : ''}`}
+                              />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="text-xs">
+                            Recarregar conversas e checar lembretes operacionais
+                          </TooltipContent>
+                        </Tooltip>
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleOpenNovaDm}
+                          className="h-7.5 px-2.5 text-xs text-[#253575] border-[#253575]/30 hover:bg-[#253575]/5 font-semibold shrink-0"
+                        >
+                          <Plus className="h-3.5 w-3.5 mr-1" />
+                          <span>Nova DM</span>
+                        </Button>
+                      </div>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="text-xs">
                       Conversar em privado com qualquer colaborador
@@ -724,6 +761,92 @@ export function ChatWidget() {
                           <div className="text-[10px] text-slate-300 text-right pt-0.5">
                             Emitido por: {msg.autor_nome || 'Diretoria'}
                           </div>
+                        </div>
+                      )
+                    }
+
+                    // MENSAGEM DE NOTIFICAÇÃO DO SISTEMA / FOLLOW-UP / RANKING
+                    const isNotificacao =
+                      msg.tipo === 'notificacao' ||
+                      msg.autor_nome === 'Sistema Projeto Guerra' ||
+                      Boolean(msg.metadata?.tipo_evento)
+
+                    if (isNotificacao) {
+                      const evtTipo = msg.metadata?.tipo_evento
+                      const isFollowup = evtTipo === 'followup_dia'
+                      const isAtraso = evtTipo === 'followup_atrasado'
+                      const isRanking =
+                        evtTipo === 'ranking_conquista' || evtTipo === 'ranking_subida_geral'
+                      const isResumo = evtTipo === 'resumo_matinal'
+
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`my-2 p-2.5 rounded-xl border text-xs shadow-xs space-y-1.5 ${
+                            isAtraso
+                              ? 'bg-rose-50/95 border-rose-300 text-rose-950'
+                              : isRanking
+                                ? 'bg-amber-50/95 border-amber-300 text-amber-950'
+                                : isFollowup
+                                  ? 'bg-blue-50/95 border-blue-300 text-blue-950'
+                                  : 'bg-slate-50 border-slate-300 text-slate-900'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-[10px] pb-1 border-b border-slate-200/70 font-semibold">
+                            <span className="flex items-center gap-1">
+                              {isRanking ? (
+                                <Trophy className="h-3.5 w-3.5 text-amber-600" />
+                              ) : isAtraso ? (
+                                <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
+                              ) : isFollowup ? (
+                                <Calendar className="h-3.5 w-3.5 text-[#253575]" />
+                              ) : (
+                                <Bell className="h-3.5 w-3.5 text-emerald-600" />
+                              )}
+                              <span>
+                                {isRanking
+                                  ? 'Conquista / Ranking'
+                                  : isAtraso
+                                    ? 'Follow-up Atrasado'
+                                    : isFollowup
+                                      ? 'Follow-up de Hoje'
+                                      : isResumo
+                                        ? 'Resumo 7h'
+                                        : 'Notificação do Sistema'}
+                              </span>
+                            </span>
+                            <span className="text-slate-400 font-mono">{hora}</span>
+                          </div>
+
+                          <p className="whitespace-pre-wrap leading-relaxed text-[11px]">
+                            {msg.texto}
+                          </p>
+
+                          {(isFollowup || isAtraso || msg.metadata?.cliente_id) && (
+                            <div className="pt-1 border-t border-slate-200/60 flex justify-end">
+                              <Link
+                                to="/atendimento"
+                                onClick={() => setIsOpen(false)}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-[#253575] hover:text-[#F18800]"
+                              >
+                                <span>Abrir Atendimento</span>
+                                <ArrowRight className="h-3 w-3" />
+                              </Link>
+                            </div>
+                          )}
+
+                          {isRanking && (
+                            <div className="pt-1 border-t border-amber-200/60 flex justify-end">
+                              <Link
+                                to="/ranking"
+                                onClick={() => setIsOpen(false)}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-[#F18800] hover:text-[#d97b00]"
+                              >
+                                <span>Ver Ranking</span>
+                                <ArrowRight className="h-3 w-3" />
+                              </Link>
+                            </div>
+                          )}
                         </div>
                       )
                     }

@@ -18,6 +18,7 @@ cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
 
     for (let i = 0; i < expiredLocks.length; i++) {
       const c = expiredLocks[i]
+      const opAnterior = c.getString('operador')
       c.set('estado', 'na_base')
       c.set('operador', '')
       c.set('lock_timestamp', null)
@@ -28,7 +29,10 @@ cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
         const ev = new Record(colEv)
         ev.set('cliente', c.id)
         ev.set('acao', 'timeout_lock_expirado')
-        ev.set('detalhes', { motivo: 'Inatividade superior a 30 minutos' })
+        ev.set('detalhes', {
+          motivo: 'Inatividade superior a 30 minutos',
+          operador_anterior: opAnterior,
+        })
         $app.save(ev)
       } catch (_) {}
     }

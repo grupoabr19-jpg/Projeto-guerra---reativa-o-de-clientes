@@ -68,10 +68,11 @@ export async function fetchMensagensConversa(
 export async function enviarMensagemChat(params: {
   conversaId: string
   texto: string
-  tipo?: 'normal' | 'aviso'
+  tipo?: 'normal' | 'aviso' | 'notificacao'
   autorId: string
   autorNome: string
   autorRole: string
+  metadata?: Record<string, unknown>
 }): Promise<ChatMensagem> {
   return pb.collection('chat_mensagens').create<ChatMensagem>({
     conversa: params.conversaId,
@@ -80,7 +81,48 @@ export async function enviarMensagemChat(params: {
     autor_role: params.autorRole,
     texto: params.texto.trim(),
     tipo: params.tipo || 'normal',
+    ...(params.metadata ? { metadata: params.metadata } : {}),
   })
+}
+
+// 3.1 Disparar ciclo manual de notificações ou checagem do expediente
+export async function processarCicloNotificacoes(): Promise<{
+  ok: boolean
+  expediente?: boolean
+  followups_enviados?: number
+  resumos_enviados?: number
+}> {
+  try {
+    return await pb.send('/backend/v1/notificacoes/processar-ciclo', {
+      method: 'POST',
+    })
+  } catch (err) {
+    console.warn('Falha ao processar ciclo de notificações:', err)
+    return { ok: false }
+  }
+}
+
+// 3.2 Parabenizar colaborador por conquista de título no ranking
+export async function parabenizarConquistaRanking(params: {
+  usuarioId: string
+  tituloId: string
+  pontos: number
+  publicarGeral?: boolean
+}): Promise<{ ok: boolean; sent_dm?: boolean; sent_geral?: boolean }> {
+  try {
+    return await pb.send('/backend/v1/notificacoes/parabenizar-conquista', {
+      method: 'POST',
+      body: {
+        usuario_id: params.usuarioId,
+        titulo_id: params.tituloId,
+        pontos: params.pontos,
+        publicar_geral: params.publicarGeral !== false,
+      },
+    })
+  } catch (err) {
+    console.warn('Falha ao enviar parabenização no chat:', err)
+    return { ok: false }
+  }
 }
 
 // 4. Iniciar ou obter conversa DM 1:1
