@@ -21,11 +21,22 @@ routerAdd(
       // Libera operador e volta para 'na_base' se ainda estava reservado ou em_atendimento
       const estado = cliente.getString('estado')
       if (estado === 'reservado' || estado === 'em_atendimento') {
-        cliente.set('estado', 'na_base')
+        // PRESERVAÇÃO DE STANDBY: se o cliente estava reativado em standby e foi aberto em lock por admin,
+        // ele NÃO deve cair para 'na_base'! Deve voltar para 'reativado'!
+        const standbyAteStr = cliente.getString('standby_ate')
+        let emStandby = false
+        if (standbyAteStr) {
+          const parsedStandby = new Date(standbyAteStr)
+          if (!isNaN(parsedStandby.getTime()) && parsedStandby.getTime() > new Date().getTime()) {
+            emStandby = true
+          }
+        }
+
+        const novoEstado = emStandby ? 'reativado' : 'na_base'
+        cliente.set('estado', novoEstado)
         cliente.set('operador', '')
         cliente.set('lock_timestamp', null)
         $app.save(cliente)
-
         try {
           const colEv = $app.findCollectionByNameOrId('eventos_log')
           const ev = new Record(colEv)

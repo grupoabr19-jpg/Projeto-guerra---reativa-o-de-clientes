@@ -139,8 +139,24 @@ routerAdd(
         })
       }
 
-      const estadoAnterior = cliente.getString('estado')
+      // Blindagem de standby na transferência: se cliente estiver reativado em standby, não pode ser repassado para reagendado por não-admin
+      const estadoCli = cliente.getString('estado')
+      const standbyAteStr = cliente.getString('standby_ate')
+      let emStandby = false
+      if (standbyAteStr) {
+        const parsedStandby = new Date(standbyAteStr)
+        if (!isNaN(parsedStandby.getTime()) && parsedStandby.getTime() > new Date().getTime()) {
+          emStandby = true
+        }
+      }
+      if ((estadoCli === 'reativado' || emStandby) && emStandby && userRole !== 'admin') {
+        return e.json(400, {
+          error:
+            'Este cliente foi reativado e está no período de standby de 60 dias. Não pode ser transferido ou colocado como reagendado na fila.',
+        })
+      }
 
+      const estadoAnterior = cliente.getString('estado')
       // Configurar cliente como reagendado para HOJE com prioridade máxima para o operador de destino
       const now = new Date()
       const hojeIso = now.toISOString()

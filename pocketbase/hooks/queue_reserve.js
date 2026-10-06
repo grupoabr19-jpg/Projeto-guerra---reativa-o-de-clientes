@@ -371,8 +371,9 @@ routerAdd(
 
         // Filtro base limpo com novas bases separadas:
         // Exclui clientes ativo_fora_base, cliente_final, atacado_fora_mapa e sem_dono_equipe (para operadores)
-        let baseFilter =
-          "estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'"
+        // BLINDAGEM DE STANDBY: Garante que clientes com standby_ate vigente NUNCA sejam puxados
+        const nowIsoQueue = now.toISOString()
+        let baseFilter = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && !(standby_ate > '${nowIsoQueue}')`
 
         if (regiaoFilter) {
           baseFilter += ` && ${regiaoFilter}`
@@ -411,8 +412,7 @@ routerAdd(
           (userRole === 'operador' || userRole === 'lider')
         ) {
           try {
-            let broadFilter =
-              "estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'"
+            let broadFilter = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && !(standby_ate > '${nowIsoQueue}')`
             if (regiaoFilter) broadFilter += ` && ${regiaoFilter}`
             if (filtroSegmento && filtroSegmento !== 'todos')
               broadFilter += ` && segmento = '${filtroSegmento}'`
@@ -424,8 +424,7 @@ routerAdd(
         // Fallback: se pool na região estiver vazia e operador tiver filtro de segmento, tenta sem filtro de segmento
         if ((!pool || pool.length === 0) && filtroSegmento && filtroSegmento !== 'todos') {
           try {
-            let fallbackFilter =
-              "estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'"
+            let fallbackFilter = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && !(standby_ate > '${nowIsoQueue}')`
             if (regiaoFilter) fallbackFilter += ` && ${regiaoFilter}`
             if (!isAtacado && !isRepescagem && (userRole === 'operador' || userRole === 'lider')) {
               fallbackFilter += ' && sem_dono_equipe != true'

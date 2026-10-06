@@ -212,10 +212,14 @@ routerAdd(
       // Sanitiza termo de busca para SQLite filter
       const cleanTerm = termoBusca.replace(/['"\\]/g, '')
 
-      // Filtro base: busca clientes por nome (ou código) na base
-      // Exclui clientes ativo_fora_base que já saíram da base
+      // Filtro base: busca clientes por nome (ou código) na base.
+      // Exclui clientes ativo_fora_base que já saíram da base.
+      // Para operadores, líderes e supervisores: exclui clientes já reativados que ainda estão em standby válido!
       let filterExpr = `(nome ~ '${cleanTerm}' || codigo ~ '${cleanTerm}') && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'`
-
+      if (userRole !== 'admin') {
+        const nowIso = new Date().toISOString()
+        filterExpr += ` && !(estado = 'reativado' && standby_ate > '${nowIso}')`
+      }
       // Restrições de perfil/região
       if (isRepescagem) {
         filterExpr += " && (faixa = '90_plus' || dias_sem_faturar >= 90)"
@@ -253,6 +257,10 @@ routerAdd(
       ) {
         try {
           let broadExpr = `(nome ~ '${cleanTerm}' || codigo ~ '${cleanTerm}') && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'`
+          if (userRole !== 'admin') {
+            const nowIsoFallback = new Date().toISOString()
+            broadExpr += ` && !(estado = 'reativado' && standby_ate > '${nowIsoFallback}')`
+          }
           if (userRegioes.length > 0) {
             const parts = userRegioes.map((r) => buildRegiaoCondition(r))
             broadExpr += ` && (${parts.join(' || ')})`
@@ -261,7 +269,6 @@ routerAdd(
           pool = $app.findRecordsByFilter('clientes', broadExpr, '-score', 80, 0)
         } catch (_) {}
       }
-
       // Filtrar estritamente pela carteira no servidor
       let resultados = []
       if (pool && pool.length > 0) {
@@ -279,8 +286,25 @@ routerAdd(
         }
       }
 
+      // Filtrar resultados adicionais para garantir que se standby_ate estiver no futuro e não for admin, NUNCA apareça
+      let resultadosFiltrados = resultados
+      if (userRole !== 'admin') {
+        const nowTime = new Date().getTime()
+        resultadosFiltrados = resultados.filter((c) => {
+          const est = c.getString('estado')
+          const stStr = c.getString('standby_ate')
+          if (est === 'reativado' && stStr) {
+            const stDate = new Date(stStr)
+            if (!isNaN(stDate.getTime()) && stDate.getTime() > nowTime) {
+              return false
+            }
+          }
+          return true
+        })
+      }
+
       // Limitar a 20 resultados mais relevantes
-      const sliced = resultados.slice(0, 20)
+      const sliced = resultadosFiltrados.slice(0, 20)
 
       // Formatar saída enxuta para a lista de resultados da busca
       const itemsFormatados = sliced.map((c) => {
@@ -371,29 +395,30 @@ routerAdd(
         })
       }
 
-      // Blindagem de Standby: se o cliente está reativado e em período de standby de 60 dias
-      // Administrador pode abrir o cliente para consultar ou atender
+      // Blindagem de Standby estrita: se o cliente está reativado e em período de standby futuro
+      // OU se tem standby_ate no futuro mesmo que o estado tenha sido alterado indevidamente
       const estadoCli = cliente.getString('estado')
       const standbyAteStr = cliente.getString('standby_ate')
-      if (estadoCli === 'reativado') {
-        let emStandby = false
-        if (standbyAteStr) {
-          const parsedStandby = new Date(standbyAteStr)
-          if (!isNaN(parsedStandby.getTime()) && parsedStandby.getTime() > new Date().getTime()) {
-            emStandby = true
-          }
+      const reativadoEmStr = cliente.getString('reativado_em')
+      let emStandby = false
+      if (standbyAteStr) {
+        const parsedStandby = new Date(standbyAteStr)
+        if (!isNaN(parsedStandby.getTime()) && parsedStandby.getTime() > new Date().getTime()) {
+          emStandby = true
         }
-        if (emStandby && userRole !== 'admin') {
-          return e.json(400, {
-            error:
-              'Este cliente foi reativado recentemente e está no período de standby de 60 dias fora da fila.',
-            is_standby: true,
-            standby_ate: standbyAteStr,
-            cliente_id: cliente.id,
-            cliente_nome: cliente.getString('nome'),
-            cliente_codigo: cliente.getString('codigo'),
-          })
-        }
+      }
+
+      if ((estadoCli === 'reativado' || emStandby) && emStandby && userRole !== 'admin') {
+        return e.json(403, {
+          error:
+            'Este cliente foi reativado recentemente e está no período de standby de 60 dias fora da fila. Somente o administrador pode destravar ou acessar esta ficha.',
+          is_standby: true,
+          standby_ate: standbyAteStr,
+          reativado_em: reativadoEmStr,
+          cliente_id: cliente.id,
+          cliente_nome: cliente.getString('nome'),
+          cliente_codigo: cliente.getString('codigo'),
+        })
       }
 
       // Checa lock de 30 min

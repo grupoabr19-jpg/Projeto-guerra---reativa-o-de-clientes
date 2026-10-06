@@ -116,10 +116,48 @@ routerAdd(
               c.set('lock_timestamp', null)
               totalReconciliados++
             }
+            if (!c.getString('reativado_em')) {
+              const dataFatParsed = new Date(ultimaDataStr)
+              const dataReativado = !isNaN(dataFatParsed.getTime()) ? dataFatParsed : now
+              c.set('reativado_em', dataReativado.toISOString())
+            }
+            if (!c.getString('standby_ate')) {
+              const dataReatParsed = new Date(c.getString('reativado_em') || now.toISOString())
+              const baseMs = !isNaN(dataReatParsed.getTime()) ? dataReatParsed.getTime() : nowMs
+              const standbyDate = new Date(baseMs + 60 * 24 * 60 * 60 * 1000)
+              c.set('standby_ate', standbyDate.toISOString())
+            }
           } else if ((faixa === '60_89' || faixa === '90_plus') && estadoAtual === 'reativado') {
-            c.set('estado', 'na_base')
-            c.set('operador', '')
-            c.set('lock_timestamp', null)
+            // RESPEITAR O STANDBY DE 60 DIAS: se standby_ate estiver no futuro, NUNCA jogar para 'na_base'!
+            const standbyAteStr = c.getString('standby_ate')
+            let emStandby = false
+            if (standbyAteStr) {
+              const parsedStandby = new Date(standbyAteStr)
+              if (!isNaN(parsedStandby.getTime()) && parsedStandby.getTime() > nowMs) {
+                emStandby = true
+              }
+            }
+            if (!emStandby) {
+              const pedidoConfirmado = c.getBool('pedido_confirmado')
+              if (!pedidoConfirmado) {
+                c.set('estado', 'na_base')
+                c.set('operador', '')
+                c.set('lock_timestamp', null)
+                c.set('standby_ate', null)
+                c.set('reativado_em', null)
+              }
+            }
+          } else {
+            // Se estado não é reativado mas tem standby_ate no futuro:
+            const standbyAteStr = c.getString('standby_ate')
+            if (standbyAteStr) {
+              const parsedStandby = new Date(standbyAteStr)
+              if (!isNaN(parsedStandby.getTime()) && parsedStandby.getTime() > nowMs) {
+                c.set('estado', 'reativado')
+                c.set('operador', '')
+                c.set('lock_timestamp', null)
+              }
+            }
           }
 
           var sRecencia = Math.min(100, Math.round((dias / 180) * 100))

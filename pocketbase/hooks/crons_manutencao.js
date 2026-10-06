@@ -19,7 +19,20 @@ cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
     for (let i = 0; i < expiredLocks.length; i++) {
       const c = expiredLocks[i]
       const opAnterior = c.getString('operador')
-      c.set('estado', 'na_base')
+
+      // PRESERVAÇÃO DE STANDBY: se o cliente possui standby_ate no futuro,
+      // NUNCA deve virar 'na_base'! Deve voltar para 'reativado'!
+      const standbyAteStr = c.getString('standby_ate')
+      let emStandby = false
+      if (standbyAteStr) {
+        const parsedStandby = new Date(standbyAteStr)
+        if (!isNaN(parsedStandby.getTime()) && parsedStandby.getTime() > now.getTime()) {
+          emStandby = true
+        }
+      }
+
+      const novoEstado = emStandby ? 'reativado' : 'na_base'
+      c.set('estado', novoEstado)
       c.set('operador', '')
       c.set('lock_timestamp', null)
       $app.save(c)
@@ -32,6 +45,8 @@ cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
         ev.set('detalhes', {
           motivo: 'Inatividade superior a 30 minutos',
           operador_anterior: opAnterior,
+          restaurado_para: novoEstado,
+          em_standby: emStandby,
         })
         $app.save(ev)
       } catch (_) {}
@@ -80,21 +95,40 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
     let totalReconciliados = 0
     let totalLocksLiberados = 0
 
-    // 1. Timeout de 30 minutos para atendimentos abandonados em MASSA (SQL rápido)
+    // 1. Timeout de 30 minutos para atendimentos abandonados em MASSA (SQL rápido com proteção a standby)
     const timeoutMinutos = 30
     const cutoffLock = new Date(nowMs - timeoutMinutos * 60 * 1000).toISOString()
+    const nowIsoStr = now.toISOString()
     try {
+      // 1A. Quem NÃO está em standby no futuro volta para 'na_base'
       const resLock = $app
         .db()
         .newQuery(
           `UPDATE clientes 
          SET estado = 'na_base', operador = '', lock_timestamp = NULL 
          WHERE (estado = 'reservado' OR estado = 'em_atendimento') 
-           AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp < {:cutoff})`,
+           AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp < {:cutoff})
+           AND (standby_ate IS NULL OR standby_ate = '' OR datetime(standby_ate) <= datetime({:now}))`,
         )
-        .bind({ cutoff: cutoffLock })
+        .bind({ cutoff: cutoffLock, now: nowIsoStr })
         .execute()
       totalLocksLiberados = resLock && resLock.rowsAffected ? resLock.rowsAffected() : 0
+
+      // 1B. Quem ESTÁ em standby no futuro volta para 'reativado' (NUNCA para 'na_base')
+      const resLockStandby = $app
+        .db()
+        .newQuery(
+          `UPDATE clientes 
+         SET estado = 'reativado', operador = '', lock_timestamp = NULL 
+         WHERE (estado = 'reservado' OR estado = 'em_atendimento') 
+           AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp < {:cutoff})
+           AND standby_ate IS NOT NULL AND standby_ate != '' AND datetime(standby_ate) > datetime({:now})`,
+        )
+        .bind({ cutoff: cutoffLock, now: nowIsoStr })
+        .execute()
+      const totalStandbyRestaurados =
+        resLockStandby && resLockStandby.rowsAffected ? resLockStandby.rowsAffected() : 0
+      totalLocksLiberados += totalStandbyRestaurados
     } catch (lockErr) {
       console.log('[cron_3h] Fallback manual para liberação de locks: ' + lockErr.message)
       const abandonedLocks = $app.findRecordsByFilter(
@@ -106,7 +140,15 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
       )
       for (let l = 0; l < abandonedLocks.length; l++) {
         const lockCli = abandonedLocks[l]
-        lockCli.set('estado', 'na_base')
+        const stStr = lockCli.getString('standby_ate')
+        let emStandby = false
+        if (stStr) {
+          const parsedSt = new Date(stStr)
+          if (!isNaN(parsedSt.getTime()) && parsedSt.getTime() > nowMs) {
+            emStandby = true
+          }
+        }
+        lockCli.set('estado', emStandby ? 'reativado' : 'na_base')
         lockCli.set('operador', '')
         lockCli.set('lock_timestamp', null)
         $app.save(lockCli)
@@ -229,6 +271,7 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
         // Reconciliação com faturamento recente e regra de standby de 60 dias:
         const estadoAtual = c.getString('estado')
         if (faixa === 'recente' && ultimaDataStr) {
+          // REGRA: Cliente com compra recente (<60 dias)
           if (estadoAtual !== 'reativado') {
             c.set('estado', 'reativado')
             c.set('operador', '')
@@ -237,12 +280,17 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
             mudou = true
           }
           // Garante que reativado_em e standby_ate fiquem preenchidos caso estejam vazios
+          // Usar a data do último faturamento/compra se disponível para não marcar horário artificial do cron
           if (!c.getString('reativado_em')) {
-            c.set('reativado_em', now.toISOString())
+            const dataFatParsed = new Date(ultimaDataStr)
+            const dataReativado = !isNaN(dataFatParsed.getTime()) ? dataFatParsed : now
+            c.set('reativado_em', dataReativado.toISOString())
             mudou = true
           }
           if (!c.getString('standby_ate')) {
-            const standbyDate = new Date(nowMs + 60 * 24 * 60 * 60 * 1000)
+            const dataReatParsed = new Date(c.getString('reativado_em') || now.toISOString())
+            const baseMs = !isNaN(dataReatParsed.getTime()) ? dataReatParsed.getTime() : nowMs
+            const standbyDate = new Date(baseMs + 60 * 24 * 60 * 60 * 1000)
             c.set('standby_ate', standbyDate.toISOString())
             mudou = true
           }
@@ -286,6 +334,19 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
               c.set('lock_timestamp', null)
               c.set('standby_ate', null)
               c.set('reativado_em', null)
+              mudou = true
+            }
+          }
+        } else {
+          // Estado NÃO é 'reativado' (ex: na_base, reagendado, etc.) MAS possui standby_ate futuro ativo:
+          // CORREÇÃO PREVENTIVA CRÍTICA: se tem standby_ate no futuro, restaura estado para 'reativado'
+          const standbyAteStr = c.getString('standby_ate')
+          if (standbyAteStr) {
+            const parsedStandby = new Date(standbyAteStr)
+            if (!isNaN(parsedStandby.getTime()) && parsedStandby.getTime() > nowMs) {
+              c.set('estado', 'reativado')
+              c.set('operador', '')
+              c.set('lock_timestamp', null)
               mudou = true
             }
           }
