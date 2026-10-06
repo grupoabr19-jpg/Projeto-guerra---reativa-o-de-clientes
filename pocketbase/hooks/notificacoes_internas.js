@@ -8,6 +8,14 @@
  * 2. Lembretes operacionais: Resumo diário matinal às 7h (números do dia anterior e follow-ups de hoje).
  * 3. Parabenizações de Ranking: Conquista de novo título/badge (1:1 + Canal Geral para marcos relevantes).
  * 4. Regras invioláveis:
+ *    - Remetente oficial é estritamente a conta do Sistema (sistema@grupoabr.com.br); NUNCA recai sobre admin/Thiago.
+ *    - Destinatários de follow-up e resumo matinal são ESTRITAMENTE operadores ou líderes (role 'operador' ou 'lider').
+ *    - Admin e supervisor NUNCA recebem lembretes de follow-up ou resumos operacionais.
+ *    - Resolução do vendedor de origem:
+ *        1) reagendado_operador / operador se role for operador/lider;
+ *        2) campo 'vendedor' do cliente (carteira Varejo);
+ *        3) ATACADO pelo DDD (11/12/13 -> Larissa, 15/19 -> Julio, 14/16/17/18 -> Wilson);
+ *        4) Se ninguém elegível, NÃO envia nada (nunca cair no admin).
  *    - Expediente estrito das 07:00 às 17:00 (Brasília / UTC-3), Segunda a Sexta.
  *    - NUNCA pop-ups; notificações chegam no CA (chat) com badges discretos e contadores em tempo real.
  *    - Kommo em SOMENTE-LEITURA: nenhuma notificação escreve no Kommo.
@@ -65,12 +73,11 @@ routerAdd(
             newUser.set('role', 'admin')
             $app.save(newUser)
             return newUser
-          } catch (_) {
-            try {
-              return $app.findFirstRecordByData('users', 'email', 'thiago.almeida@grupoabr.com.br')
-            } catch (_) {
-              return null
-            }
+          } catch (createErr) {
+            console.log(
+              '[notificacoes_internas] Falha ao criar conta do sistema: ' + createErr.message,
+            )
+            return null
           }
         }
       }
@@ -78,6 +85,7 @@ routerAdd(
       function getOrCreateSistemaDm(destinatarioId) {
         const sistemaUser = getOrCreateSistemaUser()
         if (!sistemaUser || !destinatarioId) return null
+        if (destinatarioId === sistemaUser.id) return null
 
         const sistemaId = sistemaUser.id
         const pair = [sistemaId, destinatarioId].sort()
@@ -132,8 +140,136 @@ routerAdd(
         }
       }
 
+      function extrairDdd(clienteRec) {
+        const dddGravado = (clienteRec.getString('ddd_telefone') || '').trim()
+        if (dddGravado && dddGravado.length >= 2) return dddGravado.slice(0, 2)
+        const telRaw = (
+          clienteRec.getString('telefone') ||
+          clienteRec.getString('whatsapp') ||
+          ''
+        ).replace(/\D/g, '')
+        if (!telRaw) return ''
+        let s = telRaw
+        if (s.startsWith('0')) s = s.slice(1)
+        if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
+        return s.slice(0, 2)
+      }
+
+      function normalizarTexto(txt) {
+        return (txt || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase()
+          .trim()
+      }
+
+      function carregarOperadoresELideres() {
+        try {
+          return $app.findRecordsByFilter(
+            'users',
+            "role = 'operador' || role = 'lider'",
+            'name',
+            200,
+            0,
+          )
+        } catch (_) {
+          return []
+        }
+      }
+
+      // Resolução estrita do responsável operador/lider
+      function resolverOperadorResponsavel(c, equipeOperadores) {
+        if (!equipeOperadores || equipeOperadores.length === 0) return null
+
+        const opDiretoId = c.getString('reagendado_operador') || c.getString('operador')
+        if (opDiretoId) {
+          const matchDireto = equipeOperadores.find((u) => u.id === opDiretoId)
+          if (matchDireto) return matchDireto
+        }
+
+        // Resolução pela carteira Varejo (campo 'vendedor')
+        const vRaw = c.getString('vendedor') || ''
+        if (vRaw) {
+          let vNorm = normalizarTexto(vRaw)
+          const pfxList = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ', 'VARC - ']
+          for (let p = 0; p < pfxList.length; p++) {
+            const pfxNorm = normalizarTexto(pfxList[p])
+            if (vNorm.startsWith(pfxNorm)) {
+              vNorm = vNorm.slice(pfxNorm.length).trim()
+              break
+            }
+          }
+
+          // 1. Match exato ou substring de nome completo de operador/lider
+          for (let i = 0; i < equipeOperadores.length; i++) {
+            const u = equipeOperadores[i]
+            const uNome = normalizarTexto(u.getString('name'))
+            if (uNome && (uNome === vNorm || uNome.includes(vNorm) || vNorm.includes(uNome))) {
+              return u
+            }
+          }
+
+          // 2. Match pelo primeiro nome (mínimo 3 letras para evitar falsos positivos)
+          const primeiroNomeV = vNorm.split(' ')[0]
+          if (primeiroNomeV && primeiroNomeV.length >= 3) {
+            for (let i = 0; i < equipeOperadores.length; i++) {
+              const u = equipeOperadores[i]
+              const uPrimeiroNome = normalizarTexto(u.getString('name')).split(' ')[0]
+              if (uPrimeiroNome === primeiroNomeV) {
+                return u
+              }
+            }
+          }
+        }
+
+        // Resolução ATACADO por DDD
+        const regiaoNorm = normalizarTexto(c.getString('regiao'))
+        if (regiaoNorm === 'ATACADO') {
+          const ddd = extrairDdd(c)
+          let alvoNome = ''
+          if (['11', '12', '13'].includes(ddd)) {
+            alvoNome = 'LARISSA TERRA'
+          } else if (['15', '19'].includes(ddd)) {
+            alvoNome = 'JULIO MELO'
+          } else if (['14', '16', '17', '18'].includes(ddd)) {
+            alvoNome = 'WILSON NETO'
+          }
+
+          if (alvoNome) {
+            const opAtacado = equipeOperadores.find((u) =>
+              normalizarTexto(u.getString('name')).includes(alvoNome),
+            )
+            if (opAtacado) return opAtacado
+          }
+        }
+
+        // Se ninguém elegível, NÃO enviar para ninguém (nunca admin/supervisor)
+        return null
+      }
+
       function enviarNotificacao(params) {
+        if (!params.usuarioId) return false
         if (jaFoiEnviada(params.chaveDedupe)) return false
+
+        // Validar estritamente o destinatário: nunca admin ou supervisor
+        try {
+          const destRec = $app.findRecordById('users', params.usuarioId)
+          if (!destRec) return false
+          const role = destRec.getString('role')
+          if (role !== 'operador' && role !== 'lider') {
+            console.log(
+              '[notificacoes_internas] Bloqueado envio para usuário sem role de atendimento: ' +
+                destRec.getString('name') +
+                ' (' +
+                role +
+                ')',
+            )
+            return false
+          }
+        } catch (_) {
+          return false
+        }
+
         const sistemaUser = getOrCreateSistemaUser()
         if (!sistemaUser) return false
 
@@ -184,6 +320,8 @@ routerAdd(
       const userRole = authRecord.getString('role')
       if (bInfo.isExpediente || userRole === 'admin') {
         const hojeStr = bInfo.dateStr
+        const equipeOperadores = carregarOperadoresELideres()
+
         const clientes = $app.findRecordsByFilter(
           'clientes',
           "reagendado_para != '' && (estado = 'reagendado' || estado = 'na_base' || estado = 'contatado')",
@@ -197,8 +335,9 @@ routerAdd(
           const reagPara = c.getString('reagendado_para')
           if (!reagPara) continue
 
-          const opId = c.getString('reagendado_operador') || c.getString('operador')
-          if (!opId) continue
+          const operadorDest = resolverOperadorResponsavel(c, equipeOperadores)
+          if (!operadorDest) continue
+          const opId = operadorDest.id
 
           const pReag = getBrasiliaDateParts(reagPara)
           const reagDateStr = pReag.dateStr
@@ -340,12 +479,11 @@ routerAdd(
             newUser.set('role', 'admin')
             $app.save(newUser)
             return newUser
-          } catch (_) {
-            try {
-              return $app.findFirstRecordByData('users', 'email', 'thiago.almeida@grupoabr.com.br')
-            } catch (_) {
-              return null
-            }
+          } catch (createErr) {
+            console.log(
+              '[notificacoes_internas] Falha ao criar conta do sistema: ' + createErr.message,
+            )
+            return null
           }
         }
       }
@@ -353,6 +491,7 @@ routerAdd(
       function getOrCreateSistemaDm(destId) {
         const sistemaUser = getOrCreateSistemaUser()
         if (!sistemaUser || !destId) return null
+        if (destId === sistemaUser.id) return null
 
         const pair = [sistemaUser.id, destId].sort()
         const chaveDm = pair[0] + ':' + pair[1]
@@ -489,7 +628,7 @@ routerAdd(
         'ranking_conquista',
       )
 
-      // 2. Canal Geral se marco relevante ou solicitado
+      // 2. Canal Geral se marco relevante ou solicitado (Prata, Ouro, Platina, Diamante)
       const nivelRelevante =
         tituloNivel === 'PRATA' ||
         tituloNivel === 'OURO' ||
@@ -558,8 +697,19 @@ onRecordAfterCreateSuccess((e) => {
         return $app.findFirstRecordByData('users', 'email', 'sistema@grupoabr.com.br')
       } catch (_) {
         try {
-          return $app.findFirstRecordByData('users', 'email', 'thiago.almeida@grupoabr.com.br')
-        } catch (_) {
+          const colUsers = $app.findCollectionByNameOrId('_pb_users_auth_')
+          const newUser = new Record(colUsers)
+          newUser.setEmail('sistema@grupoabr.com.br')
+          newUser.setPassword('Skip@Pass987!')
+          newUser.setVerified(true)
+          newUser.set('name', 'Sistema Projeto Guerra')
+          newUser.set('role', 'admin')
+          $app.save(newUser)
+          return newUser
+        } catch (createErr) {
+          console.log(
+            '[notificacoes_internas] Falha ao criar conta do sistema: ' + createErr.message,
+          )
           return null
         }
       }
@@ -568,6 +718,7 @@ onRecordAfterCreateSuccess((e) => {
     function getOrCreateSistemaDm(destId) {
       const sistemaUser = getOrCreateSistemaUser()
       if (!sistemaUser || !destId) return null
+      if (destId === sistemaUser.id) return null
 
       const pair = [sistemaUser.id, destId].sort()
       const chaveDm = pair[0] + ':' + pair[1]
@@ -687,9 +838,13 @@ onRecordAfterCreateSuccess((e) => {
       $app.save(reg)
     } catch (_) {}
 
-    // Publicação no canal Geral para níveis ouro, platina, diamante ou >= 500 pts
+    // Publicação no canal Geral para níveis prata, ouro, platina, diamante ou >= 500 pts
     const nivelRelevante =
-      tituloNivel === 'OURO' || tituloNivel === 'PLATINA' || tituloNivel === 'DIAMANTE'
+      tituloNivel === 'PRATA' ||
+      tituloNivel === 'OURO' ||
+      tituloNivel === 'PLATINA' ||
+      tituloNivel === 'DIAMANTE'
+
     if (nivelRelevante || pontos >= 500) {
       const chaveGeral = 'ranking_conquista_geral:' + usuarioId + ':' + tituloId
       if (!jaFoiEnviada(chaveGeral)) {
@@ -780,8 +935,19 @@ cronAdd('crons_notificacoes_operacionais', '*/15 * * * *', () => {
         return $app.findFirstRecordByData('users', 'email', 'sistema@grupoabr.com.br')
       } catch (_) {
         try {
-          return $app.findFirstRecordByData('users', 'email', 'thiago.almeida@grupoabr.com.br')
-        } catch (_) {
+          const colUsers = $app.findCollectionByNameOrId('_pb_users_auth_')
+          const newUser = new Record(colUsers)
+          newUser.setEmail('sistema@grupoabr.com.br')
+          newUser.setPassword('Skip@Pass987!')
+          newUser.setVerified(true)
+          newUser.set('name', 'Sistema Projeto Guerra')
+          newUser.set('role', 'admin')
+          $app.save(newUser)
+          return newUser
+        } catch (createErr) {
+          console.log(
+            '[notificacoes_internas] Falha ao criar conta do sistema: ' + createErr.message,
+          )
           return null
         }
       }
@@ -790,6 +956,7 @@ cronAdd('crons_notificacoes_operacionais', '*/15 * * * *', () => {
     function getOrCreateSistemaDm(destId) {
       const sistemaUser = getOrCreateSistemaUser()
       if (!sistemaUser || !destId) return null
+      if (destId === sistemaUser.id) return null
 
       const pair = [sistemaUser.id, destId].sort()
       const chaveDm = pair[0] + ':' + pair[1]
@@ -841,8 +1008,136 @@ cronAdd('crons_notificacoes_operacionais', '*/15 * * * *', () => {
       }
     }
 
+    function extrairDdd(clienteRec) {
+      const dddGravado = (clienteRec.getString('ddd_telefone') || '').trim()
+      if (dddGravado && dddGravado.length >= 2) return dddGravado.slice(0, 2)
+      const telRaw = (
+        clienteRec.getString('telefone') ||
+        clienteRec.getString('whatsapp') ||
+        ''
+      ).replace(/\D/g, '')
+      if (!telRaw) return ''
+      let s = telRaw
+      if (s.startsWith('0')) s = s.slice(1)
+      if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
+      return s.slice(0, 2)
+    }
+
+    function normalizarTexto(txt) {
+      return (txt || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .trim()
+    }
+
+    function carregarOperadoresELideres() {
+      try {
+        return $app.findRecordsByFilter(
+          'users',
+          "role = 'operador' || role = 'lider'",
+          'name',
+          200,
+          0,
+        )
+      } catch (_) {
+        return []
+      }
+    }
+
+    // Resolução estrita do responsável operador/lider
+    function resolverOperadorResponsavel(c, equipeOperadores) {
+      if (!equipeOperadores || equipeOperadores.length === 0) return null
+
+      const opDiretoId = c.getString('reagendado_operador') || c.getString('operador')
+      if (opDiretoId) {
+        const matchDireto = equipeOperadores.find((u) => u.id === opDiretoId)
+        if (matchDireto) return matchDireto
+      }
+
+      // Resolução pela carteira Varejo (campo 'vendedor')
+      const vRaw = c.getString('vendedor') || ''
+      if (vRaw) {
+        let vNorm = normalizarTexto(vRaw)
+        const pfxList = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ', 'VARC - ']
+        for (let p = 0; p < pfxList.length; p++) {
+          const pfxNorm = normalizarTexto(pfxList[p])
+          if (vNorm.startsWith(pfxNorm)) {
+            vNorm = vNorm.slice(pfxNorm.length).trim()
+            break
+          }
+        }
+
+        // 1. Match exato ou substring de nome completo de operador/lider
+        for (let i = 0; i < equipeOperadores.length; i++) {
+          const u = equipeOperadores[i]
+          const uNome = normalizarTexto(u.getString('name'))
+          if (uNome && (uNome === vNorm || uNome.includes(vNorm) || vNorm.includes(uNome))) {
+            return u
+          }
+        }
+
+        // 2. Match pelo primeiro nome (mínimo 3 letras para evitar falsos positivos)
+        const primeiroNomeV = vNorm.split(' ')[0]
+        if (primeiroNomeV && primeiroNomeV.length >= 3) {
+          for (let i = 0; i < equipeOperadores.length; i++) {
+            const u = equipeOperadores[i]
+            const uPrimeiroNome = normalizarTexto(u.getString('name')).split(' ')[0]
+            if (uPrimeiroNome === primeiroNomeV) {
+              return u
+            }
+          }
+        }
+      }
+
+      // Resolução ATACADO por DDD
+      const regiaoNorm = normalizarTexto(c.getString('regiao'))
+      if (regiaoNorm === 'ATACADO') {
+        const ddd = extrairDdd(c)
+        let alvoNome = ''
+        if (['11', '12', '13'].includes(ddd)) {
+          alvoNome = 'LARISSA TERRA'
+        } else if (['15', '19'].includes(ddd)) {
+          alvoNome = 'JULIO MELO'
+        } else if (['14', '16', '17', '18'].includes(ddd)) {
+          alvoNome = 'WILSON NETO'
+        }
+
+        if (alvoNome) {
+          const opAtacado = equipeOperadores.find((u) =>
+            normalizarTexto(u.getString('name')).includes(alvoNome),
+          )
+          if (opAtacado) return opAtacado
+        }
+      }
+
+      // Se ninguém elegível, NÃO enviar para ninguém (nunca admin/supervisor)
+      return null
+    }
+
     function enviarNotificacao(params) {
+      if (!params.usuarioId) return false
       if (jaFoiEnviada(params.chaveDedupe)) return false
+
+      // Validar estritamente o destinatário: nunca admin ou supervisor
+      try {
+        const destRec = $app.findRecordById('users', params.usuarioId)
+        if (!destRec) return false
+        const role = destRec.getString('role')
+        if (role !== 'operador' && role !== 'lider') {
+          console.log(
+            '[notificacoes_internas] Bloqueado envio para usuário sem role de atendimento: ' +
+              destRec.getString('name') +
+              ' (' +
+              role +
+              ')',
+          )
+          return false
+        }
+      } catch (_) {
+        return false
+      }
+
       const sistemaUser = getOrCreateSistemaUser()
       if (!sistemaUser) return false
 
@@ -885,6 +1180,8 @@ cronAdd('crons_notificacoes_operacionais', '*/15 * * * *', () => {
       return true
     }
 
+    const equipeOperadores = carregarOperadoresELideres()
+
     // A. Follow-ups
     const clientes = $app.findRecordsByFilter(
       'clientes',
@@ -899,8 +1196,9 @@ cronAdd('crons_notificacoes_operacionais', '*/15 * * * *', () => {
       const reagPara = c.getString('reagendado_para')
       if (!reagPara) continue
 
-      const opId = c.getString('reagendado_operador') || c.getString('operador')
-      if (!opId) continue
+      const operadorDest = resolverOperadorResponsavel(c, equipeOperadores)
+      if (!operadorDest) continue
+      const opId = operadorDest.id
 
       const dParsed = new Date(reagPara)
       const dParsedBrtMs = dParsed.getTime() - 3 * 60 * 60 * 1000
@@ -1003,13 +1301,7 @@ cronAdd('crons_notificacoes_operacionais', '*/15 * * * *', () => {
       const oD = String(ontemBrt.getUTCDate()).padStart(2, '0')
       const ontemStr = oY + '-' + oM + '-' + oD
 
-      const operadores = $app.findRecordsByFilter(
-        'users',
-        "role = 'operador' || role = 'lider'",
-        'name',
-        100,
-        0,
-      )
+      const operadores = equipeOperadores
 
       for (let j = 0; j < operadores.length; j++) {
         const op = operadores[j]
