@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Phone,
   PhoneCall,
@@ -467,11 +467,13 @@ export default function AtendimentoPage() {
         cliente.estado !== 'reservado'
       if (isFechado) {
         setModoEdicaoAdmin(true)
-        if (cliente.desfecho || cliente.estado) {
-          setDesfechoFinal((cliente.desfecho || cliente.estado) as ClienteEstado)
+        const cliAny = cliente as unknown as Record<string, unknown>
+        const desfechoOuEstado = (cliAny.desfecho as string) || cliente.estado
+        if (desfechoOuEstado) {
+          setDesfechoFinal(desfechoOuEstado as ClienteEstado)
         }
-        if (cliente.observacoes) {
-          setObservacoes(cliente.observacoes)
+        if (cliAny.observacoes) {
+          setObservacoes(cliAny.observacoes as string)
         }
         // Puxar última resposta do formulário para carregar campos adicionais (valor, toneladas) se houver
         fetchUltimaRespostaFormulario(cliente.id).then((rf) => {
@@ -782,9 +784,47 @@ export default function AtendimentoPage() {
       return
     }
 
-    if (desfechoFinal === 'reativado' && !numeroPedido) {
-      setShowConfirmReativarSemPedido(true)
-      return
+    // Validação preventiva de duplicidade: se o cliente já foi reativado recentemente (< 30 dias) ou está em standby
+    if (desfechoFinal === 'reativado') {
+      const agora = new Date()
+      const agoraMs = agora.getTime()
+      let emStandby = false
+      if (cliente.standby_ate) {
+        const stDate = new Date(cliente.standby_ate)
+        if (!isNaN(stDate.getTime()) && stDate.getTime() > agoraMs) {
+          emStandby = true
+        }
+      }
+
+      let reativadoRecentemente = false
+      let reativadoDataFormatada = ''
+      if (cliente.reativado_em) {
+        const reatDate = new Date(cliente.reativado_em)
+        if (!isNaN(reatDate.getTime())) {
+          const diffDias = (agoraMs - reatDate.getTime()) / (1000 * 60 * 60 * 24)
+          if (diffDias >= 0 && diffDias < 30) {
+            reativadoRecentemente = true
+          }
+          const dia = String(reatDate.getDate()).padStart(2, '0')
+          const mes = String(reatDate.getMonth() + 1).padStart(2, '0')
+          reativadoDataFormatada = `${dia}/${mes}`
+        }
+      }
+
+      if ((emStandby || reativadoRecentemente) && user.role !== 'admin') {
+        const dataStr = reativadoDataFormatada || 'data recente'
+        toast({
+          variant: 'destructive',
+          title: 'Reativação duplicada bloqueada',
+          description: `Cliente já reativado em ${dataStr} — reativação duplicada bloqueada. Este cliente está protegido pelo período de standby de 60 dias.`,
+        })
+        return
+      }
+
+      if (!numeroPedido) {
+        setShowConfirmReativarSemPedido(true)
+        return
+      }
     }
 
     if (desfechoFinal === 'ativo_fora_base' && !motivoAtivoForaBase.trim()) {
@@ -1110,87 +1150,116 @@ export default function AtendimentoPage() {
                           </p>
                         </div>
                       ) : (
-                        resultadosBuscaCarteira.map((item) => (
-                          <div
-                            key={item.id}
-                            className="p-3 hover:bg-blue-50/60 transition-colors flex items-center justify-between gap-3 text-left group"
-                          >
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <div className="flex items-center gap-2">
-                                <Badge
-                                  variant="outline"
-                                  className="font-mono text-[10px] font-bold text-[#253575] bg-[#253575]/10 border-[#253575]/20 px-1.5 py-0"
-                                >
-                                  {item.codigo}
-                                </Badge>
-                                <span className="font-bold text-xs text-slate-900 truncate">
-                                  {item.nome}
-                                </span>
+                        resultadosBuscaCarteira.map((item) => {
+                          const isItemStandby = Boolean(
+                            item.em_standby ||
+                            (item.standby_ate &&
+                              new Date(item.standby_ate).getTime() > Date.now()) ||
+                            item.estado === 'reativado',
+                          )
+
+                          return (
+                            <div
+                              key={item.id}
+                              className={`p-3 transition-colors flex items-center justify-between gap-3 text-left group ${
+                                isItemStandby
+                                  ? 'bg-amber-50/40 border-l-2 border-amber-400'
+                                  : 'hover:bg-blue-50/60'
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1 space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Badge
+                                    variant="outline"
+                                    className="font-mono text-[10px] font-bold text-[#253575] bg-[#253575]/10 border-[#253575]/20 px-1.5 py-0"
+                                  >
+                                    {item.codigo}
+                                  </Badge>
+                                  <span className="font-bold text-xs text-slate-900 truncate">
+                                    {item.nome}
+                                  </span>
+                                  {isItemStandby && (
+                                    <Badge className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-medium">
+                                      Em standby — bloqueado
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                                  <span>
+                                    <strong>Região:</strong> {item.regiao}
+                                  </span>
+                                  <span>•</span>
+                                  <span
+                                    className={
+                                      item.faixa === '90_plus'
+                                        ? 'text-rose-600 font-semibold'
+                                        : 'text-amber-700 font-semibold'
+                                    }
+                                  >
+                                    {item.dias_sem_faturar
+                                      ? `${item.dias_sem_faturar} dias sem faturar`
+                                      : 'Inativo'}
+                                  </span>
+                                  <span>•</span>
+                                  <span>
+                                    <strong>Último contato/compra:</strong> {item.ultimo_contato}
+                                  </span>
+                                </div>
                               </div>
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
-                                <span>
-                                  <strong>Região:</strong> {item.regiao}
-                                </span>
-                                <span>•</span>
-                                <span
-                                  className={
-                                    item.faixa === '90_plus'
-                                      ? 'text-rose-600 font-semibold'
-                                      : 'text-amber-700 font-semibold'
-                                  }
-                                >
-                                  {item.dias_sem_faturar
-                                    ? `${item.dias_sem_faturar} dias sem faturar`
-                                    : 'Inativo'}
-                                </span>
-                                <span>•</span>
-                                <span>
-                                  <strong>Último contato/compra:</strong> {item.ultimo_contato}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              {user?.role === 'admin' && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setClienteParaDestravar({
-                                      id: item.id,
-                                      nome: item.nome,
-                                      codigo: item.codigo,
-                                    })
-                                    setShowConfirmDestravarStandby(true)
-                                  }}
-                                  className="text-amber-700 border-amber-300 hover:bg-amber-50 text-[11px] h-8 px-2.5 font-medium"
-                                  title="Destravar cliente em standby (admin)"
-                                >
-                                  <LockOpen className="h-3.5 w-3.5 mr-1 text-amber-600" />
-                                  Destravar
-                                </Button>
-                              )}
-                              <Button
-                                size="sm"
-                                onClick={() => handleSelecionarClienteBusca(item)}
-                                disabled={selecionandoClienteBusca === item.id}
-                                className="bg-[#253575] hover:bg-[#1d2b5e] text-white text-xs font-semibold h-8 px-3 shadow-xs"
-                              >
-                                {selecionandoClienteBusca === item.id ? (
-                                  <>
-                                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                                    Abrindo...
-                                  </>
-                                ) : (
-                                  <>
-                                    <PhoneCall className="h-3.5 w-3.5 mr-1" />
-                                    Atender
-                                  </>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {user?.role === 'admin' && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setClienteParaDestravar({
+                                        id: item.id,
+                                        nome: item.nome,
+                                        codigo: item.codigo,
+                                        standbyAte: item.standby_ate,
+                                      })
+                                      setShowConfirmDestravarStandby(true)
+                                    }}
+                                    className="text-amber-700 border-amber-300 hover:bg-amber-50 text-[11px] h-8 px-2.5 font-medium"
+                                    title="Destravar cliente em standby (admin)"
+                                  >
+                                    <LockOpen className="h-3.5 w-3.5 mr-1 text-amber-600" />
+                                    Destravar
+                                  </Button>
                                 )}
-                              </Button>
+                                {isItemStandby && user?.role !== 'admin' ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[11px] h-8 px-2.5 font-medium text-amber-800 bg-amber-50 border-amber-200"
+                                    title="Cliente em período de standby de 60 dias"
+                                  >
+                                    Bloqueado
+                                  </Badge>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleSelecionarClienteBusca(item)}
+                                    disabled={selecionandoClienteBusca === item.id}
+                                    className="bg-[#253575] hover:bg-[#1d2b5e] text-white text-xs font-semibold h-8 px-3 shadow-xs"
+                                  >
+                                    {selecionandoClienteBusca === item.id ? (
+                                      <>
+                                        <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                                        Abrindo...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <PhoneCall className="h-3.5 w-3.5 mr-1" />
+                                        Atender
+                                      </>
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        ))
+                          )
+                        })
                       )}
                     </div>
 
@@ -2698,11 +2767,13 @@ export default function AtendimentoPage() {
                   onClick={() => {
                     setShowConfirmEditarFechado(false)
                     setModoEdicaoAdmin(true)
-                    if (cliente?.desfecho || cliente?.estado) {
-                      setDesfechoFinal((cliente.desfecho || cliente.estado) as ClienteEstado)
+                    const cliAny = cliente as unknown as Record<string, unknown>
+                    const desfechoOuEstado = (cliAny?.desfecho as string) || cliente?.estado
+                    if (desfechoOuEstado) {
+                      setDesfechoFinal(desfechoOuEstado as ClienteEstado)
                     }
-                    if (cliente?.observacoes && !observacoes) {
-                      setObservacoes(cliente.observacoes)
+                    if (cliAny?.observacoes && !observacoes) {
+                      setObservacoes(cliAny.observacoes as string)
                     }
                     toast({
                       title: 'Modo de edição habilitado',

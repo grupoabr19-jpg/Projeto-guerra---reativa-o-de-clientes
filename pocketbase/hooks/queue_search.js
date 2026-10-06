@@ -325,6 +325,16 @@ routerAdd(
           }
         }
 
+        const stStr = c.getString('standby_ate')
+        const estStr = c.getString('estado')
+        let emStandby = false
+        if (stStr) {
+          const stDate = new Date(stStr)
+          if (!isNaN(stDate.getTime()) && stDate.getTime() > new Date().getTime()) {
+            emStandby = true
+          }
+        }
+
         return {
           id: c.id,
           codigo: c.getString('codigo'),
@@ -335,13 +345,16 @@ routerAdd(
           dias_sem_faturar: c.getInt('dias_sem_faturar'),
           faixa: c.getString('faixa'),
           score: c.getInt('score'),
-          estado: c.getString('estado'),
+          estado: estStr,
           operador: c.getString('operador'),
           lock_timestamp: c.getString('lock_timestamp'),
           ultimo_faturamento_data: ultFat || ultComp || '',
           ultimo_contato: ultimoContatoStr,
           telefone: c.getString('telefone'),
           whatsapp: c.getString('whatsapp'),
+          standby_ate: stStr,
+          reativado_em: c.getString('reativado_em'),
+          em_standby: emStandby,
         }
       })
 

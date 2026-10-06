@@ -14,6 +14,7 @@ import {
   Sparkles,
   ArrowRight,
   Loader2,
+  FileText,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -643,9 +644,12 @@ export default function ClientesPage() {
                     </div>
                     <p className="text-[11px] text-amber-900">
                       Este atendimento já foi finalizado (status:{' '}
-                      <strong>{selectedClient.desfecho || selectedClient.estado}</strong>). Como
-                      Administrador, você pode editar a ficha e as respostas mantendo a blindagem de
-                      standby intacta.
+                      <strong>
+                        {((selectedClient as unknown as Record<string, unknown>)
+                          .desfecho as string) || selectedClient.estado}
+                      </strong>
+                      ). Como Administrador, você pode editar a ficha e as respostas mantendo a
+                      blindagem de standby intacta.
                     </p>
                     <Button
                       size="sm"

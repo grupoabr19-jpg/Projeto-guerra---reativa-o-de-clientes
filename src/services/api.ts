@@ -339,6 +339,9 @@ export interface ClienteBuscaCarteiraItem {
   ultimo_contato: string
   telefone?: string
   whatsapp?: string
+  standby_ate?: string
+  reativado_em?: string
+  em_standby?: boolean
 }
 
 /**
