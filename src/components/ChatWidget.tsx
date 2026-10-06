@@ -830,16 +830,42 @@ export function ChatWidget() {
 
               {/* Mensagens com scroll linear */}
               <div ref={scrollAreaRef} className="flex-1 overflow-y-auto p-3 space-y-2.5 min-h-0">
+                {/* Banner dinâmico de boas-vindas no Canal Geral baseado no usuário logado */}
+                {activeConversa.tipo === 'geral' && (
+                  <div className="my-2 p-3.5 rounded-2xl bg-gradient-to-br from-white via-slate-50 to-blue-50/40 border border-[#253575]/20 shadow-xs space-y-1.5 animate-in fade-in-50 duration-200">
+                    <div className="flex items-center justify-between pb-1 border-b border-slate-200/70">
+                      <div className="flex items-center space-x-1.5">
+                        <span className="font-bold text-xs text-[#253575]">
+                          {user?.name || 'Colaborador'}
+                        </span>
+                        {user?.role && (
+                          <span className="text-[9px] uppercase px-1.5 py-0.2 rounded font-mono font-bold bg-[#253575]/10 text-[#253575]">
+                            {user.role}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-medium">Boas-vindas</span>
+                    </div>
+                    <p className="text-xs text-slate-700 leading-relaxed font-sans pt-0.5">
+                      Bem-vindo{user?.name ? `, ${user.name}` : ''} ao chat interno do Projeto
+                      Guerra! Aqui você pode trocar mensagens 1:1 com colegas da equipe, acompanhar
+                      avisos oficiais e conferir novidades da operação.
+                    </p>
+                  </div>
+                )}
+
                 {loadingMsgs && mensagens.length === 0 ? (
                   <div className="py-8 text-center text-xs text-slate-400 space-y-2">
                     <RefreshCw className="h-4 w-4 animate-spin mx-auto text-[#253575]" />
                     <p>Carregando histórico do chat...</p>
                   </div>
                 ) : mensagens.length === 0 ? (
-                  <div className="py-12 text-center text-xs text-slate-400 space-y-1">
+                  <div className="py-8 text-center text-xs text-slate-400 space-y-1">
                     <MessageSquare className="h-6 w-6 mx-auto text-slate-300" />
-                    <p className="font-semibold text-slate-600">Nenhuma mensagem ainda.</p>
-                    <p className="text-[11px]">Envie a primeira mensagem para iniciar!</p>
+                    <p className="font-semibold text-slate-600">Nenhuma mensagem recente.</p>
+                    <p className="text-[11px]">
+                      Envie uma mensagem abaixo para interagir no canal!
+                    </p>
                   </div>
                 ) : (
                   mensagens.map((msg) => {

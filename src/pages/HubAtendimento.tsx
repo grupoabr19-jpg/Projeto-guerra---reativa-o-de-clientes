@@ -905,6 +905,30 @@ export default function HubAtendimentoPage() {
 
                 {/* Área de Mensagens */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/50">
+                  {/* Banner dinâmico de boas-vindas no Canal Geral baseado no usuário autenticado */}
+                  {activeConversa.tipo === 'geral' && (
+                    <div className="p-4 rounded-2xl bg-gradient-to-br from-white via-slate-50 to-blue-50/40 border border-[#253575]/20 shadow-xs space-y-2">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/70">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-sm text-[#253575]">
+                            {user?.name || 'Colaborador'}
+                          </span>
+                          {user?.role && (
+                            <span className="text-[10px] uppercase px-2 py-0.5 rounded font-mono font-bold bg-[#253575]/10 text-[#253575]">
+                              {user.role}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-slate-400 font-medium">Boas-vindas</span>
+                      </div>
+                      <p className="text-xs text-slate-700 leading-relaxed">
+                        Bem-vindo{user?.name ? `, ${user.name}` : ''} ao chat interno do Projeto
+                        Guerra! Aqui você pode trocar mensagens 1:1 com colegas da equipe comercial
+                        e liderança, acompanhar avisos oficiais e novidades da operação.
+                      </p>
+                    </div>
+                  )}
+
                   {loadingMensagens && mensagens.length === 0 ? (
                     <div className="flex items-center justify-center h-full text-slate-400 text-xs">
                       <RefreshCw className="h-4 w-4 animate-spin text-[#253575] mr-2" />
@@ -913,9 +937,9 @@ export default function HubAtendimentoPage() {
                   ) : mensagens.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs space-y-2">
                       <MessageSquare className="h-8 w-8 text-slate-300" />
-                      <p>Nenhuma mensagem ainda nesta conversa.</p>
+                      <p>Nenhuma mensagem recente nesta conversa.</p>
                       <p className="text-[11px] text-slate-400">
-                        Envie uma mensagem abaixo para começar.
+                        Envie uma mensagem abaixo para interagir no canal.
                       </p>
                     </div>
                   ) : (
