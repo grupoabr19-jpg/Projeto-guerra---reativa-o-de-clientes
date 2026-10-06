@@ -730,408 +730,294 @@ cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
           console.log('[cron_kommo_sdr probe ' + lead.id + '] err: ' + probeErr.message)
         }
 
-        // CORREÇÃO 1 — Causa A: Buscar e sincronizar notas/mensagens do lead no Kommo para chat_mensagens
+        // Sincronizar mensagens usando o MOTOR NOVO unificado (Talks -> Events -> Notes)
         try {
-          const notesRes = $http.send({
-            url: `${baseUrl}/api/v4/leads/${lead.id}/notes?limit=10&order[created_at]=desc`,
-            method: 'GET',
-            headers: headers,
-            timeout: 5,
-          })
+          const mensagensUnificadas = fetchKommoLeadMessagesUnified(lead.id, contactName)
+          if (mensagensUnificadas && mensagensUnificadas.length > 0) {
+            const novasMsgs = upsertKommoMessagesIdempotent(conv, mensagensUnificadas, adminId)
+            const ultimaMsg = mensagensUnificadas[mensagensUnificadas.length - 1]
+            const ultimaNotaTexto = ultimaMsg ? ultimaMsg.texto || '' : ''
 
-          if (notesRes && notesRes.statusCode === 200 && notesRes.json?._embedded?.notes) {
-            const notes = notesRes.json._embedded.notes
-            let novasMsgs = 0
-            let ultimaNotaTexto = ''
-
-            for (let n = notes.length - 1; n >= 0; n--) {
-              const note = notes[n]
-              const noteText = (note.params?.text || note.params?.message || '').trim()
-              const noteType = note.note_type || ''
-              const isAttachment = noteType === 'attachment'
-              const fileName = (note.params?.file_name || note.params?.name || '').toLowerCase()
-
-              let isAudioNote = false
-              let isImageNote = false
-
-              if (isAttachment) {
-                if (
-                  fileName.endsWith('.ogg') ||
-                  fileName.endsWith('.mp3') ||
-                  fileName.endsWith('.wav') ||
-                  fileName.endsWith('.m4a') ||
-                  fileName.endsWith('.aac')
-                ) {
-                  isAudioNote = true
-                } else if (
-                  fileName.endsWith('.jpg') ||
-                  fileName.endsWith('.jpeg') ||
-                  fileName.endsWith('.png') ||
-                  fileName.endsWith('.webp') ||
-                  fileName.endsWith('.gif')
-                ) {
-                  isImageNote = true
-                }
-              }
-
-              if (!noteText && !isAttachment) continue
-
-              const msgId = `kommo_note_${note.id}`
-              let jaExiste = false
+            // Processamento do Bot SDR se houve novas mensagens de entrada e a conversa estiver com o Admin
+            if (
+              novasMsgs > 0 &&
+              ultimaMsg &&
+              ultimaMsg.direcao === 'entrada' &&
+              adminId &&
+              conv.getString('responsavel_id') === adminId &&
+              ultimaNotaTexto
+            ) {
               try {
-                const check = $app.findRecordsByFilter(
-                  'chat_mensagens',
-                  `kommo_message_id = '${msgId}'`,
-                  '-created',
-                  1,
-                )
-                if (check && check.length > 0) jaExiste = true
-              } catch (_) {}
-
-              if (!jaExiste) {
-                const textoSalvar =
-                  noteText ||
-                  (isAudioNote
-                    ? '🎙️ [Áudio recebido]'
-                    : isImageNote
-                      ? '🖼️ [Imagem recebida]'
-                      : '📎 [Arquivo recebido]')
-                const msg = new Record(msgCol)
-                msg.set('conversa', conv.id)
-                msg.set('autor', adminId || conv.getString('responsavel_id'))
-                msg.set('autor_nome', contactName || 'Cliente SDR')
-                msg.set('autor_role', 'operador')
-                msg.set('texto', textoSalvar)
-                msg.set('tipo', 'normal')
-                msg.set('direcao', 'entrada')
-                msg.set('kommo_status', 'recebida')
-                msg.set('kommo_message_id', msgId)
-                if (note.created_at) {
-                  msg.set('created', new Date(note.created_at * 1000).toISOString())
-                }
-                $app.save(msg)
-                novasMsgs++
-                ultimaNotaTexto = textoSalvar
-              }
-            }
-
-            if (novasMsgs > 0) {
-              const totalAtual = conv.getInt('total_mensagens') || 0
-              conv.set('total_mensagens', totalAtual + novasMsgs)
-              if (ultimaNotaTexto) {
-                conv.set('ultima_mensagem_texto', ultimaNotaTexto.slice(0, 97))
-                conv.set('ultimo_autor_nome', contactName || 'Cliente SDR')
-                conv.set('ultima_mensagem_tipo', 'normal')
-                conv.set('ultima_mensagem_data', new Date().toISOString())
-              }
-
-              // Checar re-superfície: se conversa é transferido e há nova mensagem do cliente sem resposta do vendedor há +24h
-              if (conv.getString('status_sdr') === 'transferido') {
-                const respId = conv.getString('responsavel_id')
-                let horasSemResposta = 999
+                let botAtivo = true
+                let botNome = 'SDR Virtual Grupo ABR'
+                let botPromptExtra = ''
+                let msgForaExpedienteCustom = ''
                 try {
-                  const msgsResp = $app.findRecordsByFilter(
-                    'chat_mensagens',
-                    `conversa = '${conv.id}' && autor = '${respId}' && direcao = 'saida'`,
-                    '-created',
-                    1,
-                  )
-                  if (msgsResp && msgsResp.length > 0) {
-                    const lastRespDate = new Date(msgsResp[0].getString('created'))
-                    horasSemResposta = (Date.now() - lastRespDate.getTime()) / (1000 * 60 * 60)
-                  } else {
-                    const transDate = conv.getString('transferido_em')
-                      ? new Date(conv.getString('transferido_em'))
-                      : new Date(conv.getString('created'))
-                    horasSemResposta = (Date.now() - transDate.getTime()) / (1000 * 60 * 60)
+                  const cfg = $app.findFirstRecordByData('configuracoes', 'chave', 'sdr_bot_config')
+                  if (cfg) {
+                    const v = cfg.get('valor') || {}
+                    if (v.ativo === false) botAtivo = false
+                    if (v.nome_sdr) botNome = v.nome_sdr
+                    if (v.instrucoes) botPromptExtra = ` Diretrizes do Admin: ${v.instrucoes}`
+                    if (v.mensagem_fora_expediente)
+                      msgForaExpedienteCustom = v.mensagem_fora_expediente
                   }
                 } catch (_) {}
 
-                if (horasSemResposta >= 24) {
-                  conv.set('status_sdr', 're_superficie')
-                }
-              }
+                // Verificação de expediente
+                const dataAgora = new Date()
+                const brtDate = new Date(dataAgora.getTime() - 3 * 60 * 60 * 1000)
+                const brtDay = brtDate.getUTCDay()
+                const brtHours = brtDate.getUTCHours()
+                const brtMonth = brtDate.getUTCMonth() + 1
+                const brtDayOfMonth = brtDate.getUTCDate()
+                const mmdd =
+                  (brtMonth < 10 ? '0' : '') +
+                  brtMonth +
+                  '-' +
+                  (brtDayOfMonth < 10 ? '0' : '') +
+                  brtDayOfMonth
 
-              $app.save(conv)
+                const feriadosFixos = [
+                  '01-01',
+                  '04-21',
+                  '05-01',
+                  '09-07',
+                  '10-12',
+                  '11-02',
+                  '11-15',
+                  '11-20',
+                  '12-25',
+                  '03-03',
+                  '03-04',
+                  '04-18',
+                  '06-19',
+                  '02-16',
+                  '02-17',
+                  '04-03',
+                  '06-04',
+                ]
+                const ehFimDeSemana = brtDay === 0 || brtDay === 6
+                const ehFeriado = feriadosFixos.indexOf(mmdd) !== -1
+                const ehForaHorario = brtHours < 7 || brtHours >= 18
+                const ehForaExpediente = ehFimDeSemana || ehFeriado || ehForaHorario
 
-              // Processamento do Bot SDR se a conversa estiver com o Admin
-              if (adminId && conv.getString('responsavel_id') === adminId && ultimaNotaTexto) {
-                try {
-                  let botAtivo = true
-                  let botNome = 'SDR Virtual Grupo ABR'
-                  let botPromptExtra = ''
-                  let msgForaExpedienteCustom = ''
-                  try {
-                    const cfg = $app.findFirstRecordByData(
-                      'configuracoes',
-                      'chave',
-                      'sdr_bot_config',
-                    )
-                    if (cfg) {
-                      const v = cfg.get('valor') || {}
-                      if (v.ativo === false) botAtivo = false
-                      if (v.nome_sdr) botNome = v.nome_sdr
-                      if (v.instrucoes) botPromptExtra = ` Diretrizes do Admin: ${v.instrucoes}`
-                      if (v.mensagem_fora_expediente)
-                        msgForaExpedienteCustom = v.mensagem_fora_expediente
-                    }
-                  } catch (_) {}
+                if (ehForaExpediente) {
+                  if (botAtivo) {
+                    const textoFora =
+                      msgForaExpedienteCustom ||
+                      'Olá! Nosso atendimento é de segunda a sexta, das 7h às 18h. Sua mensagem já foi registrada e retornaremos no início do próximo dia útil!'
 
-                  // Verificação de expediente
-                  const dataAgora = new Date()
-                  const brtDate = new Date(dataAgora.getTime() - 3 * 60 * 60 * 1000)
-                  const brtDay = brtDate.getUTCDay()
-                  const brtHours = brtDate.getUTCHours()
-                  const brtMonth = brtDate.getUTCMonth() + 1
-                  const brtDayOfMonth = brtDate.getUTCDate()
-                  const mmdd =
-                    (brtMonth < 10 ? '0' : '') +
-                    brtMonth +
-                    '-' +
-                    (brtDayOfMonth < 10 ? '0' : '') +
-                    brtDayOfMonth
+                    const foraMsg = new Record(msgCol)
+                    foraMsg.set('conversa', conv.id)
+                    foraMsg.set('autor', adminId)
+                    foraMsg.set('autor_nome', `${botNome} (Fora de Expediente)`)
+                    foraMsg.set('autor_role', 'supervisor')
+                    foraMsg.set('texto', textoFora)
+                    foraMsg.set('tipo', 'normal')
+                    foraMsg.set('direcao', 'saida')
+                    foraMsg.set('kommo_status', 'enviada')
+                    foraMsg.set('kommo_message_id', `sdr_cron_fora_${Date.now()}`)
+                    $app.save(foraMsg)
 
-                  const feriadosFixos = [
-                    '01-01',
-                    '04-21',
-                    '05-01',
-                    '09-07',
-                    '10-12',
-                    '11-02',
-                    '11-15',
-                    '11-20',
-                    '12-25',
-                    '03-03',
-                    '03-04',
-                    '04-18',
-                    '06-19',
-                    '02-16',
-                    '02-17',
-                    '04-03',
-                    '06-04',
-                  ]
-                  const ehFimDeSemana = brtDay === 0 || brtDay === 6
-                  const ehFeriado = feriadosFixos.indexOf(mmdd) !== -1
-                  const ehForaHorario = brtHours < 7 || brtHours >= 18
-                  const ehForaExpediente = ehFimDeSemana || ehFeriado || ehForaHorario
+                    conv.set('ultima_mensagem_texto', textoFora.slice(0, 97))
+                    conv.set('ultimo_autor_nome', botNome)
+                    conv.set('total_mensagens', (conv.getInt('total_mensagens') || 0) + 1)
+                    $app.save(conv)
 
-                  if (ehForaExpediente) {
-                    if (botAtivo) {
-                      const textoFora =
-                        msgForaExpedienteCustom ||
-                        'Olá! Nosso atendimento é de segunda a sexta, das 7h às 18h. Sua mensagem já foi registrada e retornaremos no início do próximo dia útil!'
+                    // Log de triagem
+                    try {
+                      const triCol = $app.findCollectionByNameOrId('sdr_triagens_log')
+                      const triRec = new Record(triCol)
+                      triRec.set('cliente_nome', contactName || 'Cliente WhatsApp SDR')
+                      triRec.set('telefone', contactPhone)
+                      triRec.set('telefone_limpo', cleanPhone)
+                      triRec.set('canal', 'WhatsApp SDR (35) 99770-9232')
+                      triRec.set('classificacao', 'FORA_EXPEDIENTE')
+                      triRec.set('regiao_nome', 'Aguardando Expediente')
+                      triRec.set('rota_destino', 'MATRIZ / ADMIN')
+                      triRec.set('operador_destino', adminId)
+                      triRec.set('operador_nome', 'Thiago Almeida (Admin)')
+                      triRec.set('conversa', conv.id)
+                      triRec.set(
+                        'motivo_decisao',
+                        'Mensagem sincronizada fora do expediente comercial (7h às 18h). Resposta automática enviada.',
+                      )
+                      triRec.set('regra_aplicada', 'Fora de Expediente')
+                      triRec.set('status_transferencia', 'agendado_proximo_expediente')
+                      triRec.set(
+                        'nota_kommo',
+                        `[SDR Grupo ABR]: Contato fora do expediente. Resposta automática enviada.`,
+                      )
+                      triRec.set(
+                        'conversa_resumo',
+                        `Cliente: ${ultimaNotaTexto}\nBot: ${textoFora}`,
+                      )
+                      triRec.set('eh_simulacao', false)
+                      $app.save(triRec)
+                    } catch (_) {}
 
-                      const foraMsg = new Record(msgCol)
-                      foraMsg.set('conversa', conv.id)
-                      foraMsg.set('autor', adminId)
-                      foraMsg.set('autor_nome', `${botNome} (Fora de Expediente)`)
-                      foraMsg.set('autor_role', 'supervisor')
-                      foraMsg.set('texto', textoFora)
-                      foraMsg.set('tipo', 'normal')
-                      foraMsg.set('direcao', 'saida')
-                      foraMsg.set('kommo_status', 'enviada')
-                      foraMsg.set('kommo_message_id', `sdr_cron_fora_${Date.now()}`)
-                      $app.save(foraMsg)
-
-                      conv.set('ultima_mensagem_texto', textoFora.slice(0, 97))
-                      conv.set('ultimo_autor_nome', botNome)
-                      conv.set('total_mensagens', (conv.getInt('total_mensagens') || 0) + 1)
-                      $app.save(conv)
-
-                      // Log de triagem
-                      try {
-                        const triCol = $app.findCollectionByNameOrId('sdr_triagens_log')
-                        const triRec = new Record(triCol)
-                        triRec.set('cliente_nome', contactName || 'Cliente WhatsApp SDR')
-                        triRec.set('telefone', contactPhone)
-                        triRec.set('telefone_limpo', cleanPhone)
-                        triRec.set('canal', 'WhatsApp SDR (35) 99770-9232')
-                        triRec.set('classificacao', 'FORA_EXPEDIENTE')
-                        triRec.set('regiao_nome', 'Aguardando Expediente')
-                        triRec.set('rota_destino', 'MATRIZ / ADMIN')
-                        triRec.set('operador_destino', adminId)
-                        triRec.set('operador_nome', 'Thiago Almeida (Admin)')
-                        triRec.set('conversa', conv.id)
-                        triRec.set(
-                          'motivo_decisao',
-                          'Mensagem sincronizada fora do expediente comercial (7h às 18h). Resposta automática enviada.',
-                        )
-                        triRec.set('regra_aplicada', 'Fora de Expediente')
-                        triRec.set('status_transferencia', 'agendado_proximo_expediente')
-                        triRec.set(
-                          'nota_kommo',
-                          `[SDR Grupo ABR]: Contato fora do expediente. Resposta automática enviada.`,
-                        )
-                        triRec.set(
-                          'conversa_resumo',
-                          `Cliente: ${ultimaNotaTexto}\nBot: ${textoFora}`,
-                        )
-                        triRec.set('eh_simulacao', false)
-                        $app.save(triRec)
-                      } catch (_) {}
-
-                      // Enviar nota ao Kommo
-                      try {
-                        $http.send({
-                          url: `${baseUrl}/api/v4/leads/${lead.id}/notes`,
-                          method: 'POST',
-                          headers: headers,
-                          data: JSON.stringify([
-                            {
-                              note_type: 'common',
-                              params: {
-                                text: `[Resposta SDR Grupo ABR - Fora de Expediente]:\n${textoFora}`,
-                              },
+                    // Enviar nota ao Kommo
+                    try {
+                      $http.send({
+                        url: `${baseUrl}/api/v4/leads/${lead.id}/notes`,
+                        method: 'POST',
+                        headers: headers,
+                        data: JSON.stringify([
+                          {
+                            note_type: 'common',
+                            params: {
+                              text: `[Resposta SDR Grupo ABR - Fora de Expediente]:\n${textoFora}`,
                             },
-                          ]),
-                          timeout: 5,
-                        })
-                      } catch (_) {}
-                    }
-                  } else if (botAtivo) {
-                    // Dentro do expediente e bot ativo:
-                    // Checar se a mensagem é áudio ou imagem sem texto
-                    const isAudio =
-                      ultimaNotaTexto.includes('[Áudio recebido]') ||
-                      ultimaNotaTexto.toLowerCase().startsWith('[áudio]')
-                    const isImage =
-                      ultimaNotaTexto.includes('[Imagem recebida]') ||
-                      ultimaNotaTexto.toLowerCase().startsWith('[imagem]')
+                          },
+                        ]),
+                        timeout: 5,
+                      })
+                    } catch (_) {}
+                  }
+                } else if (botAtivo) {
+                  // Dentro do expediente e bot ativo:
+                  // Checar se a mensagem é áudio ou imagem sem texto
+                  const isAudio =
+                    ultimaNotaTexto.includes('[Áudio recebido]') ||
+                    ultimaNotaTexto.toLowerCase().startsWith('[áudio]')
+                  const isImage =
+                    ultimaNotaTexto.includes('[Imagem recebida]') ||
+                    ultimaNotaTexto.toLowerCase().startsWith('[imagem]')
 
-                    if (isAudio || isImage) {
-                      let fallbackAudioConfig =
-                        'Recebi seu áudio! Para eu te atender mais rápido, pode me enviar por texto?'
-                      let fallbackImagemConfig =
-                        'Recebi sua imagem! Pode me descrever o que precisa por texto?'
-                      try {
-                        const cRec = $app.findFirstRecordByData(
-                          'configuracoes',
-                          'chave',
-                          'sdr_bot_config',
-                        )
-                        if (cRec) {
-                          const cv = cRec.get('valor') || {}
-                          if (cv.fallback_audio) fallbackAudioConfig = cv.fallback_audio
-                          if (cv.fallback_imagem) fallbackImagemConfig = cv.fallback_imagem
-                        }
-                      } catch (_) {}
-
-                      const fallbackTexto = isAudio ? fallbackAudioConfig : fallbackImagemConfig
-                      const rotulo = isAudio ? 'Áudio' : 'Imagem'
-
-                      const botMsg = new Record(msgCol)
-                      botMsg.set('conversa', conv.id)
-                      botMsg.set('autor', adminId)
-                      botMsg.set('autor_nome', `${botNome} (${rotulo})`)
-                      botMsg.set('autor_role', 'supervisor')
-                      botMsg.set('texto', fallbackTexto)
-                      botMsg.set('tipo', 'normal')
-                      botMsg.set('direcao', 'saida')
-                      botMsg.set('kommo_status', 'enviada')
-                      botMsg.set('kommo_message_id', `sdr_cron_fallback_${Date.now()}`)
-                      $app.save(botMsg)
-
-                      conv.set('ultima_mensagem_texto', fallbackTexto.slice(0, 97))
-                      conv.set('ultimo_autor_nome', botNome)
-                      conv.set('total_mensagens', (conv.getInt('total_mensagens') || 0) + 1)
-                      $app.save(conv)
-
-                      try {
-                        const triCol = $app.findCollectionByNameOrId('sdr_triagens_log')
-                        const triRec = new Record(triCol)
-                        triRec.set('cliente_nome', contactName || 'Cliente WhatsApp SDR')
-                        triRec.set('telefone', contactPhone)
-                        triRec.set('telefone_limpo', cleanPhone)
-                        triRec.set('canal', 'WhatsApp SDR (35) 99770-9232')
-                        triRec.set('classificacao', isAudio ? 'MIDIA_AUDIO' : 'MIDIA_IMAGEM')
-                        triRec.set('regiao_nome', 'MATRIZ / ADMIN')
-                        triRec.set('rota_destino', 'MATRIZ / ADMIN')
-                        triRec.set('operador_destino', adminId)
-                        triRec.set('operador_nome', 'Thiago Almeida (Admin)')
-                        triRec.set('conversa', conv.id)
-                        triRec.set(
-                          'motivo_decisao',
-                          `${rotulo} recebido do cliente (polling cron). Respondido com fallback garantido.`,
-                        )
-                        triRec.set('regra_aplicada', `Fallback Garantido de ${rotulo}`)
-                        triRec.set('status_transferencia', 'aguardando_texto_cliente')
-                        triRec.set(
-                          'nota_kommo',
-                          `[SDR Grupo ABR]: Respondido com fallback de ${rotulo.toLowerCase()}.`,
-                        )
-                        triRec.set(
-                          'conversa_resumo',
-                          `[ORIGEM: ${rotulo.toUpperCase()}]\nCliente: <${rotulo.toLowerCase()}>\nBot: ${fallbackTexto}`,
-                        )
-                        triRec.set('eh_simulacao', false)
-                        $app.save(triRec)
-                      } catch (_) {}
-
-                      try {
-                        $http.send({
-                          url: `${baseUrl}/api/v4/leads/${lead.id}/notes`,
-                          method: 'POST',
-                          headers: headers,
-                          data: JSON.stringify([
-                            {
-                              note_type: 'common',
-                              params: {
-                                text: `[Resposta SDR Grupo ABR - Fallback ${rotulo}]:\n${fallbackTexto}`,
-                              },
-                            },
-                          ]),
-                          timeout: 5,
-                        })
-                      } catch (_) {}
-                    } else {
-                      // Mensagem de texto normal: aciona o agente Skip Cloud nativo
-                      try {
-                        const agentRes = $ai.agent('sdr-triagem-bot').chat({
-                          user_id: adminId,
-                          message: `O cliente WhatsApp ${contactName || ''} enviou: "${ultimaNotaTexto}". Faça a triagem rápida de soluções siderúrgicas do Grupo ABR como ${botNome}. Qualifique se é Varejo ou Corporativo e a cidade/local de entrega.${botPromptExtra}`,
-                        })
-                        const aiReply = agentRes && agentRes.content ? agentRes.content.trim() : ''
-                        if (aiReply) {
-                          const botMsg = new Record(msgCol)
-                          botMsg.set('conversa', conv.id)
-                          botMsg.set('autor', adminId)
-                          botMsg.set('autor_nome', `${botNome} (IA)`)
-                          botMsg.set('autor_role', 'supervisor')
-                          botMsg.set('texto', aiReply)
-                          botMsg.set('tipo', 'normal')
-                          botMsg.set('direcao', 'saida')
-                          botMsg.set('kommo_status', 'enviada')
-                          botMsg.set('kommo_message_id', `sdr_cron_ai_${Date.now()}`)
-                          $app.save(botMsg)
-
-                          conv.set('ultima_mensagem_texto', aiReply.slice(0, 97))
-                          conv.set('ultimo_autor_nome', botNome)
-                          conv.set('total_mensagens', (conv.getInt('total_mensagens') || 0) + 1)
-                          $app.save(conv)
-
-                          try {
-                            $http.send({
-                              url: `${baseUrl}/api/v4/leads/${lead.id}/notes`,
-                              method: 'POST',
-                              headers: headers,
-                              data: JSON.stringify([
-                                {
-                                  note_type: 'common',
-                                  params: { text: `[Resposta SDR Virtual Grupo ABR]:\n${aiReply}` },
-                                },
-                              ]),
-                              timeout: 5,
-                            })
-                          } catch (_) {}
-                        }
-                      } catch (cronAiErr) {
-                        console.log('[cron_kommo_sdr] IA SDR fallback: ' + cronAiErr.message)
+                  if (isAudio || isImage) {
+                    let fallbackAudioConfig =
+                      'Recebi seu áudio! Para eu te atender mais rápido, pode me enviar por texto?'
+                    let fallbackImagemConfig =
+                      'Recebi sua imagem! Pode me descrever o que precisa por texto?'
+                    try {
+                      const cRec = $app.findFirstRecordByData(
+                        'configuracoes',
+                        'chave',
+                        'sdr_bot_config',
+                      )
+                      if (cRec) {
+                        const cv = cRec.get('valor') || {}
+                        if (cv.fallback_audio) fallbackAudioConfig = cv.fallback_audio
+                        if (cv.fallback_imagem) fallbackImagemConfig = cv.fallback_imagem
                       }
+                    } catch (_) {}
+
+                    const fallbackTexto = isAudio ? fallbackAudioConfig : fallbackImagemConfig
+                    const rotulo = isAudio ? 'Áudio' : 'Imagem'
+
+                    const botMsg = new Record(msgCol)
+                    botMsg.set('conversa', conv.id)
+                    botMsg.set('autor', adminId)
+                    botMsg.set('autor_nome', `${botNome} (${rotulo})`)
+                    botMsg.set('autor_role', 'supervisor')
+                    botMsg.set('texto', fallbackTexto)
+                    botMsg.set('tipo', 'normal')
+                    botMsg.set('direcao', 'saida')
+                    botMsg.set('kommo_status', 'enviada')
+                    botMsg.set('kommo_message_id', `sdr_cron_fallback_${Date.now()}`)
+                    $app.save(botMsg)
+
+                    conv.set('ultima_mensagem_texto', fallbackTexto.slice(0, 97))
+                    conv.set('ultimo_autor_nome', botNome)
+                    conv.set('total_mensagens', (conv.getInt('total_mensagens') || 0) + 1)
+                    $app.save(conv)
+
+                    try {
+                      const triCol = $app.findCollectionByNameOrId('sdr_triagens_log')
+                      const triRec = new Record(triCol)
+                      triRec.set('cliente_nome', contactName || 'Cliente WhatsApp SDR')
+                      triRec.set('telefone', contactPhone)
+                      triRec.set('telefone_limpo', cleanPhone)
+                      triRec.set('canal', 'WhatsApp SDR (35) 99770-9232')
+                      triRec.set('classificacao', isAudio ? 'MIDIA_AUDIO' : 'MIDIA_IMAGEM')
+                      triRec.set('regiao_nome', 'MATRIZ / ADMIN')
+                      triRec.set('rota_destino', 'MATRIZ / ADMIN')
+                      triRec.set('operador_destino', adminId)
+                      triRec.set('operador_nome', 'Thiago Almeida (Admin)')
+                      triRec.set('conversa', conv.id)
+                      triRec.set(
+                        'motivo_decisao',
+                        `${rotulo} recebido do cliente (polling cron). Respondido com fallback garantido.`,
+                      )
+                      triRec.set('regra_aplicada', `Fallback Garantido de ${rotulo}`)
+                      triRec.set('status_transferencia', 'aguardando_texto_cliente')
+                      triRec.set(
+                        'nota_kommo',
+                        `[SDR Grupo ABR]: Respondido com fallback de ${rotulo.toLowerCase()}.`,
+                      )
+                      triRec.set(
+                        'conversa_resumo',
+                        `[ORIGEM: ${rotulo.toUpperCase()}]\nCliente: <${rotulo.toLowerCase()}>\nBot: ${fallbackTexto}`,
+                      )
+                      triRec.set('eh_simulacao', false)
+                      $app.save(triRec)
+                    } catch (_) {}
+
+                    try {
+                      $http.send({
+                        url: `${baseUrl}/api/v4/leads/${lead.id}/notes`,
+                        method: 'POST',
+                        headers: headers,
+                        data: JSON.stringify([
+                          {
+                            note_type: 'common',
+                            params: {
+                              text: `[Resposta SDR Grupo ABR - Fallback ${rotulo}]:\n${fallbackTexto}`,
+                            },
+                          },
+                        ]),
+                        timeout: 5,
+                      })
+                    } catch (_) {}
+                  } else {
+                    // Mensagem de texto normal: aciona o agente Skip Cloud nativo
+                    try {
+                      const agentRes = $ai.agent('sdr-triagem-bot').chat({
+                        user_id: adminId,
+                        message: `O cliente WhatsApp ${contactName || ''} enviou: "${ultimaNotaTexto}". Faça a triagem rápida de soluções siderúrgicas do Grupo ABR como ${botNome}. Qualifique se é Varejo ou Corporativo e a cidade/local de entrega.${botPromptExtra}`,
+                      })
+                      const aiReply = agentRes && agentRes.content ? agentRes.content.trim() : ''
+                      if (aiReply) {
+                        const botMsg = new Record(msgCol)
+                        botMsg.set('conversa', conv.id)
+                        botMsg.set('autor', adminId)
+                        botMsg.set('autor_nome', `${botNome} (IA)`)
+                        botMsg.set('autor_role', 'supervisor')
+                        botMsg.set('texto', aiReply)
+                        botMsg.set('tipo', 'normal')
+                        botMsg.set('direcao', 'saida')
+                        botMsg.set('kommo_status', 'enviada')
+                        botMsg.set('kommo_message_id', `sdr_cron_ai_${Date.now()}`)
+                        $app.save(botMsg)
+
+                        conv.set('ultima_mensagem_texto', aiReply.slice(0, 97))
+                        conv.set('ultimo_autor_nome', botNome)
+                        conv.set('total_mensagens', (conv.getInt('total_mensagens') || 0) + 1)
+                        $app.save(conv)
+
+                        try {
+                          $http.send({
+                            url: `${baseUrl}/api/v4/leads/${lead.id}/notes`,
+                            method: 'POST',
+                            headers: headers,
+                            data: JSON.stringify([
+                              {
+                                note_type: 'common',
+                                params: { text: `[Resposta SDR Virtual Grupo ABR]:\n${aiReply}` },
+                              },
+                            ]),
+                            timeout: 5,
+                          })
+                        } catch (_) {}
+                      }
+                    } catch (cronAiErr) {
+                      console.log('[cron_kommo_sdr] IA SDR fallback: ' + cronAiErr.message)
                     }
                   }
-                } catch (sdrProcErr) {
-                  console.log('[cron_kommo_sdr] Erro no fluxo SDR: ' + sdrProcErr.message)
                 }
+              } catch (sdrProcErr) {
+                console.log('[cron_kommo_sdr] Erro no fluxo SDR: ' + sdrProcErr.message)
               }
             }
           }

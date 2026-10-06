@@ -260,7 +260,41 @@ export async function triggerKommoSdrSync(): Promise<{
   }
 }
 
-// 11. Enviar mensagem de resposta do Hub via Kommo WhatsApp
+// 11. Sincronizar mensagens do Kommo (WhatsApp Talks -> Events -> Notes) para uma conversa externa
+export async function syncLeadMessages(params: {
+  conversaId?: string
+  kommoLeadId?: number | string
+}): Promise<{
+  ok: boolean
+  total_mensagens_kommo?: number
+  novas_mensagens_inseridas?: number
+  total_conversa?: number
+  strategy?: string
+  error?: string
+}> {
+  try {
+    const res = await pb.send('/backend/v1/kommo/sync-lead-messages', {
+      method: 'POST',
+      body: {
+        conversation_id: params.conversaId,
+        kommo_lead_id: params.kommoLeadId,
+      },
+    })
+    return res as {
+      ok: boolean
+      total_mensagens_kommo?: number
+      novas_mensagens_inseridas?: number
+      total_conversa?: number
+      strategy?: string
+      error?: string
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { ok: false, error: msg }
+  }
+}
+
+// 12. Enviar mensagem de resposta do Hub via Kommo WhatsApp
 export async function sendKommoChatMessage(
   conversaId: string,
   texto: string,

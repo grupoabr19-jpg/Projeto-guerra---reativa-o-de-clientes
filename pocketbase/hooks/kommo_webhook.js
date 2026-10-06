@@ -1168,14 +1168,32 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
           '',
           lead.responsible_user_id,
         )
-        registrarMensagem(
-          conversa,
-          `[Lead Kommo] ${lead.name || 'Lead SDR'} (Etapa: ${lead.status_id || 'Entrada'})`,
-          contactName || 'Kommo SDR',
-          `webhook_lead_${lead.id}_${Date.now()}`,
-          clienteRecord,
-        )
-        eventosProcessados++
+        // Usar motor novo para sincronizar histórico/mensagens reais do lead se disponível
+        try {
+          const msgsUnified = fetchKommoLeadMessagesUnified(lead.id, contactName)
+          if (msgsUnified && msgsUnified.length > 0) {
+            const novas = upsertKommoMessagesIdempotent(conversa, msgsUnified, adminId)
+            eventosProcessados += novas
+          } else {
+            registrarMensagem(
+              conversa,
+              `[Lead Kommo] ${lead.name || 'Lead SDR'} (Etapa: ${lead.status_id || 'Entrada'})`,
+              contactName || 'Kommo SDR',
+              `webhook_lead_${lead.id}_${Date.now()}`,
+              clienteRecord,
+            )
+            eventosProcessados++
+          }
+        } catch (_) {
+          registrarMensagem(
+            conversa,
+            `[Lead Kommo] ${lead.name || 'Lead SDR'} (Etapa: ${lead.status_id || 'Entrada'})`,
+            contactName || 'Kommo SDR',
+            `webhook_lead_${lead.id}_${Date.now()}`,
+            clienteRecord,
+          )
+          eventosProcessados++
+        }
       }
     }
 

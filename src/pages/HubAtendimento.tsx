@@ -72,6 +72,7 @@ import {
   fetchKommoRecentActivity,
   sendKommoChatMessage,
   triggerKommoSdrSync,
+  syncLeadMessages,
   fetchKommoStatus,
 } from '@/services/hubAtendimento'
 import { fetchUsers } from '@/services/api'
@@ -203,6 +204,7 @@ export default function HubAtendimentoPage() {
   const [activeConversa, setActiveConversa] = useState<ChatConversa | null>(null)
   const [mensagens, setMensagens] = useState<ChatMensagem[]>([])
   const [loadingMensagens, setLoadingMensagens] = useState(false)
+  const [sincronizandoMensagensLead, setSincronizandoMensagensLead] = useState(false)
   const [novoTextoMsg, setNovoTextoMsg] = useState('')
   const [enviandoMsg, setEnviandoMsg] = useState(false)
   const [unreadCounts, setUnreadCounts] = useState<ChatUnreadCountsResponse>({
@@ -220,7 +222,7 @@ export default function HubAtendimentoPage() {
   const [filtroSdrStatus, setFiltroSdrStatus] = useState<'novos' | 'transferidos' | 'todos_sdr'>(
     'novos',
   )
-  const [filtroTipoContato, setFiltroTipoContato] = useState<'todos' | 'crm' | 'equipe'>('crm')
+  const [filtroTipoContato, setFiltroTipoContato] = useState<'crm' | 'equipe'>('crm')
   const [contatoSelecionadoId, setContatoSelecionadoId] = useState<string | null>(null)
   const [todosUsuarios, setTodosUsuarios] = useState<User[]>([])
 
@@ -322,7 +324,7 @@ export default function HubAtendimentoPage() {
     }
   }
 
-  const carregarMensagens = useCallback(async (conversaId: string) => {
+  const carregarMensagens = useCallback(async (conversaId: string): Promise<ChatMensagem[]> => {
     setLoadingMensagens(true)
     try {
       const res = await fetchMensagensConversa(conversaId, 1, 50)
@@ -338,8 +340,10 @@ export default function HubAtendimentoPage() {
           by_conversation: copy,
         }
       })
+      return res.items
     } catch (err) {
       console.error('Erro ao carregar mensagens:', err)
+      return []
     } finally {
       setLoadingMensagens(false)
     }
@@ -861,7 +865,30 @@ export default function HubAtendimentoPage() {
   const handleSelecionarConversa = async (c: ChatConversa) => {
     setActiveConversa(c)
     setContatoSelecionadoId(c.id)
-    await carregarMensagens(c.id)
+    const msgsCarregadas = await carregarMensagens(c.id)
+
+    // Se for conversa do Kommo WhatsApp e ainda não tem mensagens locais carregadas (ou tem total_mensagens > 0 mas 0 itens),
+    // dispara o motor novo imediatamente para sincronizar histórico real do WhatsApp (Talks -> Events -> Notes)
+    if (
+      c.tipo === 'kommo_whatsapp' &&
+      (msgsCarregadas.length === 0 ||
+        (c.total_mensagens && c.total_mensagens > 0 && msgsCarregadas.length === 0))
+    ) {
+      setSincronizandoMensagensLead(true)
+      try {
+        const syncRes = await syncLeadMessages({
+          conversaId: c.id,
+          kommoLeadId: c.kommo_lead_id || undefined,
+        })
+        if (syncRes.ok && (syncRes.novas_mensagens_inseridas || 0) > 0) {
+          await carregarMensagens(c.id)
+        }
+      } catch (syncErr) {
+        console.warn('Aviso ao sincronizar histórico da conversa Kommo:', syncErr)
+      } finally {
+        setSincronizandoMensagensLead(false)
+      }
+    }
   }
 
   const handleEnviarMensagem = async (e?: React.FormEvent) => {
@@ -1064,8 +1091,17 @@ export default function HubAtendimentoPage() {
   const contatosInternos: ContatoHubItem[] = []
 
   // 1. Contatos Externos (Kommo CRM e Conversas WhatsApp da Linha SDR 35 99770-9232)
+  // Permissões: Admin vê todas; Vendedor/Operador só acessa mensagens direcionadas a ele (ou onde ele é responsável)
   // 1.1 Conversas ativas de WhatsApp SDR no banco PocketBase
-  const conversasKommoSdr = conversas.filter((c) => c.tipo === 'kommo_whatsapp')
+  const conversasKommoSdr = conversas.filter((c) => {
+    if (c.tipo !== 'kommo_whatsapp') return false
+    if (user?.role === 'admin') return true
+    // Vendedor vê se é o responsável ou se está nos participantes
+    const isResp = c.responsavel_id === user?.id
+    const isPart = Array.isArray(c.participantes) && c.participantes.includes(user?.id || '')
+    return isResp || isPart
+  })
+
   for (const c of conversasKommoSdr) {
     const unread = unreadCounts.by_conversation[c.id] || 0
     const respUser = c.responsavel_id ? todosUsuarios.find((u) => u.id === c.responsavel_id) : null
@@ -1073,7 +1109,7 @@ export default function HubAtendimentoPage() {
 
     let badgeText = 'Novo Lead SDR'
     if (c.status_sdr === 're_superficie') {
-      badgeText = 'Sem resposta do vendedor (+24h)'
+      badgeText = 'Sem resposta (+24h)'
     } else if (c.status_sdr === 'transferido') {
       badgeText = respNome ? `Vendedor: ${respNome}` : 'Transferido'
     } else if (c.responsavel_id && c.responsavel_id !== user?.id && respNome) {
@@ -1094,9 +1130,18 @@ export default function HubAtendimentoPage() {
     })
   }
 
-  // 1.2 Leads recentes do Kommo CRM
+  // 1.2 Leads recentes do Kommo CRM (apenas se admin ou se lead atribuído ao vendedor via kommo_user_id)
   if (kommoData?.items) {
     for (const item of kommoData.items) {
+      // Filtrar por vendedor se não for admin
+      if (user?.role !== 'admin') {
+        const isMeuLead =
+          user?.kommo_user_id &&
+          item.responsible_user_id &&
+          String(user.kommo_user_id) === String(item.responsible_user_id)
+        if (!isMeuLead) continue
+      }
+
       // Cruzar se já existe conversa ativa para este lead ou telefone
       const conversaExistente = conversasKommoSdr.find(
         (c) =>
@@ -1109,7 +1154,11 @@ export default function HubAtendimentoPage() {
         continue
       }
 
-      // CORREÇÃO 1 — Causa B: contato do recent-activity sempre resolve conversaRef se existir
+      const vendedorObj = item.responsible_user_id
+        ? todosUsuarios.find((u) => u.kommo_user_id === item.responsible_user_id)
+        : null
+      const respNome = vendedorObj ? vendedorObj.name || vendedorObj.email : ''
+
       contatosExternos.push({
         id: `kommo_${item.id}`,
         tipo: 'kommo',
@@ -1118,33 +1167,38 @@ export default function HubAtendimentoPage() {
         telefone: item.telefone,
         email: item.email,
         canal: item.canal || (item.is_sdr_line ? 'WhatsApp SDR (35 99770-9232)' : 'Kommo CRM'),
-        badge: item.is_sdr_line ? 'SDR Line' : item.status_nome || 'Kommo',
+        badge: respNome
+          ? `Vendedor: ${respNome}`
+          : item.is_sdr_line
+            ? 'SDR Line'
+            : item.status_nome || 'Kommo',
         initials: (item.nome_contato || item.nome_lead || 'KM').slice(0, 2).toUpperCase(),
         kommoRef: item,
       })
     }
   }
 
-  // 2. Contatos Internos (Equipe do sistema + canais de rota/Geral, badge esmeralda)
-  // 2.1 Canais e DMs já existentes (excluindo tipo kommo_whatsapp que já está nos externos)
+  // 2. Contatos Internos: SOMENTE conversas 1:1 entre colaboradores + o canal Geral & Anúncios (com botão Aviso).
+  // Canais por rota foram completamente excluídos por ordem do usuário ("nada vê aquilo").
   const userIdsComDm = new Set<string>()
 
-  // Se o admin selecionou um vendedor para supervisão, filtramos as conversas pelo vendedor selecionado
-  const conversasFiltradasPorSupervisao = conversas.filter((c) => {
-    if (c.tipo === 'kommo_whatsapp') return false // Já tratado em contatos externos
-    if (!vendedorSupervisionadoId) return true
-    // Canais gerais/rota continuam acessíveis ou são filtrados se rota coincidir
-    if (c.tipo === 'geral' || c.tipo === 'canal_rota') return true
+  const conversasFiltradasInternas = conversas.filter((c) => {
+    if (c.tipo === 'kommo_whatsapp') return false // Tratado em contatos externos
+    if (c.tipo === 'canal_rota') return false // Excluído por completo
+    if (c.tipo === 'geral') return true
     if (c.tipo === 'dm') {
-      return Array.isArray(c.participantes) && c.participantes.includes(vendedorSupervisionadoId)
+      if (vendedorSupervisionadoId) {
+        return Array.isArray(c.participantes) && c.participantes.includes(vendedorSupervisionadoId)
+      }
+      return true
     }
-    return true
+    return false
   })
 
-  for (const c of conversasFiltradasPorSupervisao) {
+  for (const c of conversasFiltradasInternas) {
     const isDm = c.tipo === 'dm'
     const dmInfo = isDm ? getDmDisplay(c) : null
-    const nome = isDm ? dmInfo?.name || 'DM' : c.titulo || 'Canal'
+    const nome = isDm ? dmInfo?.name || 'DM' : c.titulo || 'Geral & Anúncios'
     const unread = unreadCounts.by_conversation[c.id] || 0
 
     if (isDm && Array.isArray(c.participantes)) {
@@ -1159,12 +1213,12 @@ export default function HubAtendimentoPage() {
       nome,
       subtitulo:
         c.ultima_mensagem_texto ||
-        (c.tipo === 'geral' ? 'Canal Geral de comunicados' : 'Canal por rota'),
-      canal: isDm ? '1:1 Equipe' : 'Canal Interno',
+        (c.tipo === 'geral' ? 'Avisos e comunicados gerais da empresa' : 'Conversa 1:1'),
+      canal: isDm ? '1:1 Equipe' : 'Geral & Anúncios',
       unreadCount: unread,
-      badge: c.tipo === 'geral' ? 'Geral' : c.tipo === 'canal_rota' ? 'Rota' : 'Equipe',
+      badge: c.tipo === 'geral' ? 'Geral' : 'Equipe',
       isOnline: isDm ? dmInfo?.isOnline : undefined,
-      initials: isDm ? dmInfo?.initials || 'DM' : '#',
+      initials: isDm ? dmInfo?.initials || 'DM' : '📣',
       conversaRef: c,
     })
   }
@@ -1251,13 +1305,8 @@ export default function HubAtendimentoPage() {
     (c) => c.conversaRef?.status_sdr === 'transferido',
   ).length
 
-  // Filtragem conforme o botão ativo: 'todos', 'crm' (externos) ou 'equipe' (internos)
-  const contatosFiltrados =
-    filtroTipoContato === 'crm'
-      ? externosFiltrados
-      : filtroTipoContato === 'equipe'
-        ? internosFiltrados
-        : [...externosFiltrados, ...internosFiltrados]
+  // Filtragem estrita pelas abas Externos / Internos
+  const contatosFiltrados = filtroTipoContato === 'crm' ? externosFiltrados : internosFiltrados
 
   // Clicar em um contato da barra fixa estilo WhatsApp
   const handleSelecionarContatoBarra = async (contato: ContatoHubItem) => {
@@ -1730,25 +1779,11 @@ export default function HubAtendimentoPage() {
                 ) : (
                   <div className="flex items-center justify-between px-1 text-[11px] text-slate-500">
                     <span className="text-[10px] uppercase tracking-wider font-semibold">
-                      {filtroTipoContato === 'equipe'
-                        ? 'Equipe & Canais do Sistema'
-                        : 'Lista Completa'}
+                      Equipe Interna (1:1 + Canal Geral)
                     </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setFiltroTipoContato((prev) => (prev === 'todos' ? 'crm' : 'todos'))
-                      }
-                      className={`text-[10px] font-semibold underline underline-offset-2 transition-colors ${
-                        filtroTipoContato === 'todos'
-                          ? 'text-[#253575] font-bold'
-                          : 'text-slate-400 hover:text-slate-700'
-                      }`}
-                    >
-                      {filtroTipoContato === 'todos'
-                        ? 'Voltar para Abas'
-                        : `Ver Todos (${contatosUnificados.length})`}
-                    </button>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {internosFiltrados.length} contato(s)
+                    </span>
                   </div>
                 )}
               </div>
@@ -1769,278 +1804,252 @@ export default function HubAtendimentoPage() {
               ) : (
                 <>
                   {/* SEÇÃO: CONTATOS EXTERNOS (KOMMO CRM) — Clientes/Leads */}
-                  {(filtroTipoContato === 'todos' || filtroTipoContato === 'crm') &&
-                    externosFiltrados.length > 0 && (
-                      <div className="space-y-1.5 pt-0.5 first:pt-0">
-                        {filtroTipoContato === 'todos' && (
-                          <div className="px-2.5 py-1 text-[10px] font-bold text-white bg-[#253575] rounded-lg flex items-center justify-between uppercase tracking-wider shadow-2xs">
-                            <span className="flex items-center gap-1.5">
-                              <span className="h-2 w-2 rounded-full bg-[#F18800]" />
-                              Externos (Kommo CRM — Clientes / Leads)
-                            </span>
-                            <span className="font-mono bg-white/20 px-1.5 py-0.2 rounded text-white font-semibold">
-                              {externosFiltrados.length}
-                            </span>
-                          </div>
-                        )}
-                        {externosFiltrados.map((contato) => {
-                          const isSelected = contatoSelecionadoId === contato.id
-                          const temCardVinculado = cards.some(
-                            (c) =>
-                              (contato.kommoRef && c.kommo_id === contato.kommoRef.id) ||
-                              c.contato_nome?.toLowerCase() === contato.nome.toLowerCase() ||
-                              c.titulo.toLowerCase().includes(contato.nome.toLowerCase()),
-                          )
+                  {filtroTipoContato === 'crm' && externosFiltrados.length > 0 && (
+                    <div className="space-y-1.5 pt-0.5 first:pt-0">
+                      {externosFiltrados.map((contato) => {
+                        const isSelected = contatoSelecionadoId === contato.id
+                        const temCardVinculado = cards.some(
+                          (c) =>
+                            (contato.kommoRef && c.kommo_id === contato.kommoRef.id) ||
+                            c.contato_nome?.toLowerCase() === contato.nome.toLowerCase() ||
+                            c.titulo.toLowerCase().includes(contato.nome.toLowerCase()),
+                        )
 
-                          return (
-                            <div
-                              key={contato.id}
-                              onClick={() => handleSelecionarContatoBarra(contato)}
-                              className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer group flex items-start space-x-2.5 border shadow-2xs ${
-                                isSelected
-                                  ? 'bg-[#253575] text-white border-[#253575] shadow-xs ring-2 ring-[#253575]/20'
-                                  : 'bg-white text-slate-800 border-slate-200/90 hover:bg-blue-50/60 hover:border-blue-300 hover:shadow-xs'
-                              }`}
-                            >
-                              <div className="relative shrink-0 mt-0.5">
-                                <div
-                                  className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-                                    isSelected
-                                      ? 'bg-white/20 text-white'
-                                      : 'bg-[#253575]/10 text-[#253575] border border-[#253575]/20 font-black group-hover:bg-[#253575]/15'
-                                  }`}
-                                >
-                                  {contato.initials}
-                                </div>
-                              </div>
-
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-1">
-                                  <span
-                                    className={`text-xs font-bold truncate ${
-                                      isSelected
-                                        ? 'text-white'
-                                        : 'text-slate-900 group-hover:text-[#253575]'
-                                    }`}
-                                  >
-                                    {contato.nome}
-                                  </span>
-                                  {/* Pílula de Não Lidas ou Badge de Status SDR / Kommo */}
-                                  {contato.unreadCount && contato.unreadCount > 0 ? (
-                                    <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center shrink-0 shadow-2xs">
-                                      {contato.unreadCount}
-                                    </span>
-                                  ) : contato.conversaRef?.status_sdr === 're_superficie' ? (
-                                    <Badge
-                                      className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
-                                        isSelected
-                                          ? 'bg-red-500 text-white'
-                                          : 'bg-red-600 text-white animate-pulse'
-                                      }`}
-                                    >
-                                      Sem resposta (+24h)
-                                    </Badge>
-                                  ) : contato.conversaRef?.status_sdr === 'transferido' ? (
-                                    <Badge
-                                      className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
-                                        isSelected
-                                          ? 'bg-white/25 text-white border-transparent'
-                                          : 'bg-slate-600 text-white hover:bg-slate-700'
-                                      }`}
-                                    >
-                                      {contato.badge || 'Transferido'}
-                                    </Badge>
-                                  ) : (
-                                    <Badge
-                                      className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
-                                        isSelected
-                                          ? 'bg-white/25 text-white border-transparent'
-                                          : 'bg-[#253575] text-white hover:bg-[#253575]'
-                                      }`}
-                                    >
-                                      {contato.badge || 'Novo Lead SDR'}
-                                    </Badge>
-                                  )}
-                                </div>
-
-                                <p
-                                  className={`text-[11px] truncate mt-0.5 ${
-                                    isSelected ? 'text-slate-200' : 'text-slate-500'
-                                  }`}
-                                >
-                                  {contato.subtitulo ||
-                                    contato.telefone ||
-                                    'Sem telefone cadastrado'}
-                                </p>
-
-                                <div className="flex items-center justify-between gap-1 mt-1.5 text-[10px]">
-                                  <span
-                                    className={`font-medium ${
-                                      isSelected ? 'text-slate-300' : 'text-slate-400'
-                                    }`}
-                                  >
-                                    {contato.canal}
-                                  </span>
-
-                                  <div className="flex items-center space-x-1 shrink-0">
-                                    {temCardVinculado ? (
-                                      <Badge
-                                        variant="outline"
-                                        className={`text-[9px] px-1.5 py-0 h-4 border ${
-                                          isSelected
-                                            ? 'bg-emerald-400/20 text-emerald-200 border-emerald-300/40'
-                                            : 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold'
-                                        }`}
-                                      >
-                                        Card no Funil ✓
-                                      </Badge>
-                                    ) : (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          handleAdicionarContatoAoFunil(contato)
-                                        }}
-                                        className={`text-[9px] font-semibold px-1.5 py-0.5 rounded transition-colors ${
-                                          isSelected
-                                            ? 'bg-white/20 text-white hover:bg-white/30'
-                                            : 'bg-slate-100 text-[#253575] hover:bg-slate-200 border border-slate-200'
-                                        }`}
-                                        title="Criar card no pipeline deste contato externo"
-                                      >
-                                        + Funil
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
+                        return (
+                          <div
+                            key={contato.id}
+                            onClick={() => handleSelecionarContatoBarra(contato)}
+                            className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer group flex items-start space-x-2.5 border shadow-2xs ${
+                              isSelected
+                                ? 'bg-[#253575] text-white border-[#253575] shadow-xs ring-2 ring-[#253575]/20'
+                                : 'bg-white text-slate-800 border-slate-200/90 hover:bg-blue-50/60 hover:border-blue-300 hover:shadow-xs'
+                            }`}
+                          >
+                            <div className="relative shrink-0 mt-0.5">
+                              <div
+                                className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+                                  isSelected
+                                    ? 'bg-white/20 text-white'
+                                    : 'bg-[#253575]/10 text-[#253575] border border-[#253575]/20 font-black group-hover:bg-[#253575]/15'
+                                }`}
+                              >
+                                {contato.initials}
                               </div>
                             </div>
-                          )
-                        })}
-                      </div>
-                    )}
 
-                  {/* SEÇÃO: CONTATOS INTERNOS (EQUIPE + CANAIS) */}
-                  {(filtroTipoContato === 'todos' || filtroTipoContato === 'equipe') &&
-                    internosFiltrados.length > 0 && (
-                      <div className="space-y-1.5 pt-1">
-                        {filtroTipoContato === 'todos' && (
-                          <div className="px-2.5 py-1 text-[10px] font-bold text-white bg-emerald-700 rounded-lg flex items-center justify-between uppercase tracking-wider shadow-2xs">
-                            <span className="flex items-center gap-1.5">
-                              <span className="h-2 w-2 rounded-full bg-emerald-300" />
-                              Internos (Equipe Guerra & Canais)
-                            </span>
-                            <span className="font-mono bg-white/20 px-1.5 py-0.2 rounded text-white font-semibold">
-                              {internosFiltrados.length}
-                            </span>
-                          </div>
-                        )}
-                        {internosFiltrados.map((contato) => {
-                          const isSelected = contatoSelecionadoId === contato.id
-                          const hasUnread = Boolean(contato.unreadCount && contato.unreadCount > 0)
-                          return (
-                            <div
-                              key={contato.id}
-                              onClick={() => handleSelecionarContatoBarra(contato)}
-                              className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer group flex items-start space-x-2.5 border shadow-2xs ${
-                                isSelected
-                                  ? 'bg-[#253575] text-white border-[#253575] shadow-xs ring-2 ring-[#253575]/20'
-                                  : hasUnread
-                                    ? 'bg-amber-50/80 text-slate-800 border-amber-300 hover:bg-amber-50 hover:border-amber-400 hover:shadow-xs'
-                                    : 'bg-white text-slate-800 border-slate-200/90 hover:bg-emerald-50/50 hover:border-emerald-300 hover:shadow-xs'
-                              }`}
-                            >
-                              <div className="relative shrink-0 mt-0.5">
-                                <div
-                                  className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-1">
+                                <span
+                                  className={`text-xs font-bold truncate ${
                                     isSelected
-                                      ? 'bg-white/20 text-white'
-                                      : hasUnread
-                                        ? 'bg-[#F18800]/15 text-[#F18800] border border-[#F18800]/30 font-black'
-                                        : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                      ? 'text-white'
+                                      : 'text-slate-900 group-hover:text-[#253575]'
                                   }`}
                                 >
-                                  {contato.initials}
-                                </div>
-                                {contato.isOnline !== undefined && (
-                                  <span
-                                    className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ${
-                                      isSelected ? 'ring-[#253575]' : 'ring-white'
-                                    } ${contato.isOnline ? 'bg-emerald-400' : 'bg-slate-300'}`}
-                                    title={contato.isOnline ? 'Online' : 'Offline'}
-                                  />
+                                  {contato.nome}
+                                </span>
+                                {/* Pílula de Não Lidas ou Badge de Status SDR / Kommo */}
+                                {contato.unreadCount && contato.unreadCount > 0 ? (
+                                  <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center shrink-0 shadow-2xs">
+                                    {contato.unreadCount}
+                                  </span>
+                                ) : contato.conversaRef?.status_sdr === 're_superficie' ? (
+                                  <Badge
+                                    className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
+                                      isSelected
+                                        ? 'bg-red-500 text-white'
+                                        : 'bg-red-600 text-white animate-pulse'
+                                    }`}
+                                  >
+                                    Sem resposta (+24h)
+                                  </Badge>
+                                ) : contato.conversaRef?.status_sdr === 'transferido' ? (
+                                  <Badge
+                                    className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
+                                      isSelected
+                                        ? 'bg-white/25 text-white border-transparent'
+                                        : 'bg-slate-600 text-white hover:bg-slate-700'
+                                    }`}
+                                  >
+                                    {contato.badge || 'Transferido'}
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
+                                      isSelected
+                                        ? 'bg-white/25 text-white border-transparent'
+                                        : 'bg-[#253575] text-white hover:bg-[#253575]'
+                                    }`}
+                                  >
+                                    {contato.badge || 'Novo Lead SDR'}
+                                  </Badge>
                                 )}
                               </div>
 
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-1">
-                                  <span
-                                    className={`text-xs font-bold truncate ${
-                                      isSelected
-                                        ? 'text-white'
-                                        : 'text-slate-900 group-hover:text-[#253575]'
-                                    }`}
-                                  >
-                                    {contato.nome}
-                                  </span>
-                                  {hasUnread ? (
-                                    <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center shrink-0 shadow-2xs">
-                                      {contato.unreadCount}
-                                    </span>
-                                  ) : (
-                                    /* Badge dos contatos internos */
-                                    <Badge
-                                      className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
-                                        isSelected
-                                          ? 'bg-white/25 text-white border-transparent'
-                                          : 'bg-emerald-600 text-white hover:bg-emerald-600'
-                                      }`}
-                                    >
-                                      {contato.badge || 'Interno'}
-                                    </Badge>
-                                  )}
-                                </div>
+                              <p
+                                className={`text-[11px] truncate mt-0.5 ${
+                                  isSelected ? 'text-slate-200' : 'text-slate-500'
+                                }`}
+                              >
+                                {contato.subtitulo || contato.telefone || 'Sem telefone cadastrado'}
+                              </p>
 
-                                <p
-                                  className={`text-[11px] truncate mt-0.5 ${
-                                    isSelected
-                                      ? 'text-slate-200'
-                                      : hasUnread
-                                        ? 'text-slate-700 font-medium'
-                                        : 'text-slate-500'
+                              <div className="flex items-center justify-between gap-1 mt-1.5 text-[10px]">
+                                <span
+                                  className={`font-medium ${
+                                    isSelected ? 'text-slate-300' : 'text-slate-400'
                                   }`}
                                 >
-                                  {contato.subtitulo || 'Conversa interna'}
-                                </p>
+                                  {contato.canal}
+                                </span>
 
-                                <div className="flex items-center justify-between gap-1 mt-1.5 text-[10px]">
-                                  <span
-                                    className={`font-medium ${
-                                      isSelected
-                                        ? 'text-slate-300'
-                                        : hasUnread
-                                          ? 'text-[#F18800] font-semibold'
-                                          : 'text-slate-400'
-                                    }`}
-                                  >
-                                    {contato.canal}
-                                  </span>
-
-                                  {contato.userId && !contato.conversaRef && (
-                                    <span
-                                      className={`text-[9px] font-semibold ${
-                                        isSelected ? 'text-amber-200' : 'text-emerald-800'
+                                <div className="flex items-center space-x-1 shrink-0">
+                                  {temCardVinculado ? (
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-[9px] px-1.5 py-0 h-4 border ${
+                                        isSelected
+                                          ? 'bg-emerald-400/20 text-emerald-200 border-emerald-300/40'
+                                          : 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold'
                                       }`}
                                     >
-                                      {user?.role === 'admin' ? 'Supervisionar' : 'Iniciar DM'}
-                                    </span>
+                                      Card no Funil ✓
+                                    </Badge>
+                                  ) : (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleAdicionarContatoAoFunil(contato)
+                                      }}
+                                      className={`text-[9px] font-semibold px-1.5 py-0.5 rounded transition-colors ${
+                                        isSelected
+                                          ? 'bg-white/20 text-white hover:bg-white/30'
+                                          : 'bg-slate-100 text-[#253575] hover:bg-slate-200 border border-slate-200'
+                                      }`}
+                                      title="Criar card no pipeline deste contato externo"
+                                    >
+                                      + Funil
+                                    </button>
                                   )}
                                 </div>
                               </div>
                             </div>
-                          )
-                        })}
-                      </div>
-                    )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* SEÇÃO: CONTATOS INTERNOS (EQUIPE + CANAL GERAL) */}
+                  {filtroTipoContato === 'equipe' && internosFiltrados.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      {internosFiltrados.map((contato) => {
+                        const isSelected = contatoSelecionadoId === contato.id
+                        const hasUnread = Boolean(contato.unreadCount && contato.unreadCount > 0)
+                        return (
+                          <div
+                            key={contato.id}
+                            onClick={() => handleSelecionarContatoBarra(contato)}
+                            className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer group flex items-start space-x-2.5 border shadow-2xs ${
+                              isSelected
+                                ? 'bg-[#253575] text-white border-[#253575] shadow-xs ring-2 ring-[#253575]/20'
+                                : hasUnread
+                                  ? 'bg-amber-50/80 text-slate-800 border-amber-300 hover:bg-amber-50 hover:border-amber-400 hover:shadow-xs'
+                                  : 'bg-white text-slate-800 border-slate-200/90 hover:bg-emerald-50/50 hover:border-emerald-300 hover:shadow-xs'
+                            }`}
+                          >
+                            <div className="relative shrink-0 mt-0.5">
+                              <div
+                                className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+                                  isSelected
+                                    ? 'bg-white/20 text-white'
+                                    : hasUnread
+                                      ? 'bg-[#F18800]/15 text-[#F18800] border border-[#F18800]/30 font-black'
+                                      : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                }`}
+                              >
+                                {contato.initials}
+                              </div>
+                              {contato.isOnline !== undefined && (
+                                <span
+                                  className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ${
+                                    isSelected ? 'ring-[#253575]' : 'ring-white'
+                                  } ${contato.isOnline ? 'bg-emerald-400' : 'bg-slate-300'}`}
+                                  title={contato.isOnline ? 'Online' : 'Offline'}
+                                />
+                              )}
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-1">
+                                <span
+                                  className={`text-xs font-bold truncate ${
+                                    isSelected
+                                      ? 'text-white'
+                                      : 'text-slate-900 group-hover:text-[#253575]'
+                                  }`}
+                                >
+                                  {contato.nome}
+                                </span>
+                                {hasUnread ? (
+                                  <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center shrink-0 shadow-2xs">
+                                    {contato.unreadCount}
+                                  </span>
+                                ) : (
+                                  /* Badge dos contatos internos */
+                                  <Badge
+                                    className={`text-[9px] px-1.5 py-0 rounded font-semibold uppercase shrink-0 ${
+                                      isSelected
+                                        ? 'bg-white/25 text-white border-transparent'
+                                        : 'bg-emerald-600 text-white hover:bg-emerald-600'
+                                    }`}
+                                  >
+                                    {contato.badge || 'Interno'}
+                                  </Badge>
+                                )}
+                              </div>
+
+                              <p
+                                className={`text-[11px] truncate mt-0.5 ${
+                                  isSelected
+                                    ? 'text-slate-200'
+                                    : hasUnread
+                                      ? 'text-slate-700 font-medium'
+                                      : 'text-slate-500'
+                                }`}
+                              >
+                                {contato.subtitulo || 'Conversa interna'}
+                              </p>
+
+                              <div className="flex items-center justify-between gap-1 mt-1.5 text-[10px]">
+                                <span
+                                  className={`font-medium ${
+                                    isSelected
+                                      ? 'text-slate-300'
+                                      : hasUnread
+                                        ? 'text-[#F18800] font-semibold'
+                                        : 'text-slate-400'
+                                  }`}
+                                >
+                                  {contato.canal}
+                                </span>
+
+                                {contato.userId && !contato.conversaRef && (
+                                  <span
+                                    className={`text-[9px] font-semibold ${
+                                      isSelected ? 'text-amber-200' : 'text-emerald-800'
+                                    }`}
+                                  >
+                                    {user?.role === 'admin' ? 'Supervisionar' : 'Iniciar DM'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -2103,9 +2112,9 @@ export default function HubAtendimentoPage() {
                       <p className="text-[11px] text-slate-300 truncate">
                         {activeConversa
                           ? activeConversa.tipo === 'geral'
-                            ? 'Canal Geral de comunicados para toda a equipe'
-                            : activeConversa.tipo === 'canal_rota'
-                              ? `Canal de colaboração da rota ${activeConversa.regiao_nome}`
+                            ? 'Canal Geral & Anúncios para toda a equipe'
+                            : activeConversa.tipo === 'kommo_whatsapp'
+                              ? `WhatsApp SDR (${activeConversa.kommo_phone || '35 99770-9232'})`
                               : 'Conversa direta e privada 1:1'
                           : 'Escolha um canal ou contato para iniciar o diálogo'}
                       </p>
@@ -2157,8 +2166,14 @@ export default function HubAtendimentoPage() {
               </CardHeader>
 
               {/* Área das Mensagens com Bolhas Estilo WhatsApp */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#e5ddd5]/20 bg-pattern">
-                {loadingMensagens ? (
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#e5ddd5]/20 bg-pattern relative">
+                {sincronizandoMensagensLead && (
+                  <div className="sticky top-0 z-10 mx-auto max-w-xs flex items-center justify-center gap-2 py-1 px-3 bg-white/90 backdrop-blur-xs text-[#253575] text-[11px] font-semibold rounded-full shadow-xs border border-blue-200 animate-in fade-in">
+                    <RefreshCw className="h-3 w-3 animate-spin text-[#F18800]" />
+                    <span>Sincronizando WhatsApp Kommo...</span>
+                  </div>
+                )}
+                {loadingMensagens && mensagens.length === 0 ? (
                   <div className="flex items-center justify-center h-full text-xs text-slate-400">
                     <RefreshCw className="h-4 w-4 animate-spin mr-2 text-[#253575]" />
                     Carregando histórico da conversa...
@@ -2169,10 +2184,14 @@ export default function HubAtendimentoPage() {
                       <MessageSquare className="h-6 w-6" />
                     </div>
                     <p className="text-xs font-semibold text-slate-600">
-                      Nenhuma mensagem enviada nesta conversa.
+                      {sincronizandoMensagensLead
+                        ? 'Buscando histórico de WhatsApp...'
+                        : 'Nenhuma mensagem nesta conversa.'}
                     </p>
                     <p className="text-[11px] text-slate-400 max-w-sm text-center">
-                      Envie um recado, diretriz operacional ou aviso oficial abaixo.
+                      {sincronizandoMensagensLead
+                        ? 'Aguarde um momento enquanto conectamos com o Kommo CRM.'
+                        : 'Envie um recado, diretriz operacional ou resposta abaixo.'}
                     </p>
                   </div>
                 ) : (

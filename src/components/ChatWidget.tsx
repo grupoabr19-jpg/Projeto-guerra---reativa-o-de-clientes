@@ -329,10 +329,9 @@ export function ChatWidget() {
 
   // Separar conversas por seções:
   // 1. Geral (Canal oficial de avisos)
-  // 2. Canais de Rota (da região do usuário)
-  // 3. DMs (1:1)
+  // 2. DMs (1:1 entre colaboradores)
+  // (Canais por rota foram completamente excluídos por ordem do usuário)
   const canalGeral = conversas.find((c) => c.tipo === 'geral')
-  const canaisRota = conversas.filter((c) => c.tipo === 'canal_rota')
   const conversasDm = conversas.filter((c) => c.tipo === 'dm')
 
   // Filtrar pela busca
@@ -341,14 +340,12 @@ export function ChatWidget() {
     const term = buscaConversa.toLowerCase()
     return list.filter((c) => {
       const t = (c.titulo || '').toLowerCase()
-      const r = (c.regiao_nome || '').toLowerCase()
       const u = (c.ultimo_autor_nome || '').toLowerCase()
       const m = (c.ultima_mensagem_texto || '').toLowerCase()
-      return t.includes(term) || r.includes(term) || u.includes(term) || m.includes(term)
+      return t.includes(term) || u.includes(term) || m.includes(term)
     })
   }
 
-  const canaisRotaFiltrados = filtrarPorTermo(canaisRota)
   const dmsFiltradas = filtrarPorTermo(conversasDm)
 
   // Colaboradores filtrados no modal de nova DM
@@ -459,20 +456,13 @@ export function ChatWidget() {
                       Todos
                     </Badge>
                   )}
-                  {activeConversa?.tipo === 'canal_rota' && (
-                    <Badge className="bg-[#253575] border border-blue-400/40 text-blue-100 text-[9px] px-1 py-0 h-4">
-                      Rota
-                    </Badge>
-                  )}
                 </div>
                 <p className="text-[10px] text-slate-300 truncate">
                   {activeConversa
                     ? activeConversa.tipo === 'dm'
                       ? 'Conversa direta 1:1'
-                      : activeConversa.tipo === 'canal_rota'
-                        ? `Colaboradores da rota ${activeConversa.regiao_nome}`
-                        : 'Avisos, comunicados e comunicados gerais'
-                    : '1:1 • Rotas • Geral • Grupo ABR'}
+                      : 'Avisos, comunicados e comunicados gerais'
+                    : '1:1 • Geral & Anúncios • Grupo ABR'}
                 </p>
               </div>
             </div>
@@ -585,47 +575,7 @@ export function ChatWidget() {
                   </div>
                 )}
 
-                {/* 2. CANAIS POR ROTA */}
-                {canaisRotaFiltrados.length > 0 && (
-                  <div className="space-y-1 pt-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 block">
-                      Canais por Rota ({canaisRotaFiltrados.length})
-                    </span>
-                    <div className="space-y-1">
-                      {canaisRotaFiltrados.map((cr) => {
-                        const unread = unreadCounts.by_conversation[cr.id] || 0
-                        return (
-                          <button
-                            key={cr.id}
-                            onClick={() => handleSelectConversa(cr)}
-                            className="w-full text-left p-2 rounded-lg bg-white hover:bg-slate-100/80 border border-slate-200/70 transition-colors flex items-center space-x-2.5"
-                          >
-                            <div className="h-8 w-8 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 shrink-0">
-                              <Hash className="h-4 w-4 text-[#253575]" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between">
-                                <span className="font-semibold text-xs text-slate-800 truncate">
-                                  {cr.titulo}
-                                </span>
-                                {unread > 0 && (
-                                  <span className="h-4 min-w-4 px-1 rounded-full bg-[#F18800] text-white text-[10px] font-bold flex items-center justify-center">
-                                    {unread}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-slate-500 truncate">
-                                {cr.ultima_mensagem_texto || 'Canal aberto'}
-                              </p>
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* 3. CONVERSAS 1:1 (DMs) */}
+                {/* 2. CONVERSAS 1:1 (DMs) */}
                 <div className="space-y-1 pt-2">
                   <div className="flex items-center justify-between px-2">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
