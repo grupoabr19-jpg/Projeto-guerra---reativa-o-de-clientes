@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-06T19:46:14.544Z",
+  "generatedAt": "2026-10-06T19:58:46.456Z",
   "collections": [
     {
       "name": "users",
@@ -2071,8 +2071,8 @@
         "list": "@request.auth.id != '' && (usuario = @request.auth.id || @request.auth.role = 'admin')",
         "view": "@request.auth.id != '' && (usuario = @request.auth.id || @request.auth.role = 'admin')",
         "create": "@request.auth.id != ''",
-        "update": "@request.auth.id != '' && @request.auth.role = 'admin'",
-        "delete": "@request.auth.id != '' && @request.auth.role = 'admin'"
+        "update": "@request.auth.id != '' && (usuario = @request.auth.id || @request.auth.role = 'admin')",
+        "delete": "@request.auth.id != '' && (usuario = @request.auth.id || @request.auth.role = 'admin')"
       },
       "fields": [
         {
@@ -2140,12 +2140,43 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "titulo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "texto",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "lida",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "descartada",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "lida_em",
+          "type": "date",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
         "CREATE UNIQUE INDEX idx_notif_chave_dedupe ON notificacoes_enviadas (chave_dedupe)",
         "CREATE INDEX idx_notif_usuario_tipo ON notificacoes_enviadas (usuario, tipo)",
-        "CREATE INDEX idx_notif_created ON notificacoes_enviadas (created DESC)"
+        "CREATE INDEX idx_notif_created ON notificacoes_enviadas (created DESC)",
+        "CREATE INDEX `idx_notif_usuario_efemero` ON `notificacoes_enviadas` (usuario, descartada, created)"
       ]
     }
   ]

@@ -510,6 +510,15 @@ export default function HubAtendimentoPage() {
   const userIdsComDm = new Set<string>()
 
   const conversasFiltradasInternas = conversas.filter((c) => {
+    const titulo = (c.titulo || '').toLowerCase()
+    // Filtro de segurança rigoroso: não listar conversas do Sistema no CA
+    if (
+      titulo.startsWith('sistema &') ||
+      titulo.endsWith('& sistema') ||
+      titulo.includes('sistema projeto guerra')
+    ) {
+      return false
+    }
     if (c.tipo === 'geral') return true
     if (c.tipo === 'dm') return true
     return false

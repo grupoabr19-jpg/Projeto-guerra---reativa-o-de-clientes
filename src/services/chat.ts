@@ -1,12 +1,20 @@
 import pb from '@/lib/pocketbase/client'
-import type { ChatConversa, ChatMensagem, ChatUnreadCountsResponse, User } from '@/types'
+import type {
+  ChatConversa,
+  ChatMensagem,
+  ChatUnreadCountsResponse,
+  NotificacaoSistema,
+  User,
+} from '@/types'
 
 /**
- * Service do Chat Interno do Projeto Guerra.
- * Gerencia canais, DMs 1:1, avisos broadcast de admin, contagem de não-lidas e realtime.
+ * Service do Chat Interno e Notificações Efêmeras do Projeto Guerra.
+ * Gerencia canais, DMs 1:1, avisos broadcast de admin, contagem de não-lidas e painel efêmero.
  */
 
 // 1. Buscar todas as conversas disponíveis para o usuário
+// NOTA v0.0.92: DMs do "Sistema" foram migradas para o Painel Efêmero de Notificações
+// e são rigorosamente filtradas para não poluir a barra lateral do CA.
 export async function fetchConversasUsuario(
   userRole: string,
   userRegioes: string[] = [],
@@ -18,12 +26,17 @@ export async function fetchConversasUsuario(
     expand: 'participantes,regiao',
   })
 
-  // Filtrar de acordo com o escopo:
-  // - 'geral': todos veem
-  // - 'canal_rota': admin e supervisor veem todas; operador/lider veem se a região pertencer a eles
-  // - 'dm': admin tem visão de supervisão total (pode ver e auditar conversas de qualquer vendedor);
-  //         não-admin (operador, líder, supervisor) acessa APENAS conversas onde é participante
   return allConversas.filter((c) => {
+    // Filtrar conversas residuais do Sistema (se houver alguma) para nunca poluir a sidebar do CA
+    const titulo = (c.titulo || '').toLowerCase()
+    if (
+      titulo.startsWith('sistema &') ||
+      titulo.endsWith('& sistema') ||
+      titulo.includes('sistema projeto guerra')
+    ) {
+      return false
+    }
+
     if (c.tipo === 'geral') return true
     if (c.tipo === 'canal_rota') {
       if (userRole === 'admin' || userRole === 'supervisor') return true
@@ -207,5 +220,95 @@ export async function fetchCanalGeral(): Promise<ChatConversa | null> {
     return geral
   } catch {
     return null
+  }
+}
+
+// ============================================================================
+// 9. Painel Efêmero de Notificações do Sistema ("Estilo Escondidinho")
+// ============================================================================
+
+/**
+ * Busca as notificações ativas (não descartadas) para o usuário logado.
+ * Retorna as mais recentes primeiro.
+ */
+export async function fetchNotificacoesEfemeras(userId: string): Promise<NotificacaoSistema[]> {
+  try {
+    const list = await pb.collection('notificacoes_enviadas').getFullList<NotificacaoSistema>({
+      filter: `usuario = '${userId}' && descartada != true`,
+      sort: '-created',
+      expand: 'cliente_id',
+    })
+    return list
+  } catch (err) {
+    console.warn('Falha ao buscar notificações efêmeras:', err)
+    return []
+  }
+}
+
+/**
+ * Marca uma notificação individual como lida.
+ * No fluxo efêmero: se o usuário preferir descartar ao ler, ela some da visualização.
+ */
+export async function marcarNotificacaoLida(
+  notificacaoId: string,
+  descartarTambem = true,
+): Promise<boolean> {
+  try {
+    await pb.collection('notificacoes_enviadas').update(notificacaoId, {
+      lida: true,
+      descartada: descartarTambem,
+      lida_em: new Date().toISOString(),
+    })
+    return true
+  } catch (err) {
+    console.warn('Falha ao marcar notificação como lida:', err)
+    return false
+  }
+}
+
+/**
+ * Descarta uma notificação individual (some do painel efêmero).
+ */
+export async function descartarNotificacao(notificacaoId: string): Promise<boolean> {
+  try {
+    await pb.collection('notificacoes_enviadas').update(notificacaoId, {
+      descartada: true,
+      lida: true,
+      lida_em: new Date().toISOString(),
+    })
+    return true
+  } catch (err) {
+    console.warn('Falha ao descartar notificação:', err)
+    return false
+  }
+}
+
+/**
+ * Limpa/descarta todas as notificações efêmeras pendentes do usuário.
+ */
+export async function limparTodasNotificacoes(userId: string): Promise<number> {
+  try {
+    const pendentes = await pb.collection('notificacoes_enviadas').getFullList<NotificacaoSistema>({
+      filter: `usuario = '${userId}' && descartada != true`,
+      fields: 'id',
+    })
+    const nowIso = new Date().toISOString()
+    let count = 0
+    for (const n of pendentes) {
+      try {
+        await pb.collection('notificacoes_enviadas').update(n.id, {
+          descartada: true,
+          lida: true,
+          lida_em: nowIso,
+        })
+        count++
+      } catch {
+        /* intentionally ignored */
+      }
+    }
+    return count
+  } catch (err) {
+    console.warn('Falha ao limpar todas notificações:', err)
+    return 0
   }
 }

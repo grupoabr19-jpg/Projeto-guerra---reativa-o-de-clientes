@@ -441,10 +441,18 @@ export function ChatWidget() {
 
   // Separar conversas por seções:
   // 1. Geral (Canal oficial de avisos)
-  // 2. DMs (1:1 entre colaboradores)
-  // (Canais por rota foram completamente excluídos por ordem do usuário)
+  // 2. DMs (1:1 entre colaboradores reais)
+  // Nota: Notificações do Sistema agora residem exclusivamente no painel efêmero (sininho da topbar)
   const canalGeral = conversas.find((c) => c.tipo === 'geral')
-  const conversasDm = conversas.filter((c) => c.tipo === 'dm')
+  const conversasDm = conversas.filter((c) => {
+    if (c.tipo !== 'dm') return false
+    const titulo = (c.titulo || '').toLowerCase()
+    return (
+      !titulo.startsWith('sistema &') &&
+      !titulo.endsWith('& sistema') &&
+      !titulo.includes('sistema projeto guerra')
+    )
+  })
 
   // Filtrar pela busca
   const filtrarPorTermo = (list: ChatConversa[]) => {

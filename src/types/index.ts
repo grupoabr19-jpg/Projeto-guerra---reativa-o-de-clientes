@@ -733,6 +733,36 @@ export interface ChatUnreadCountsResponse {
   by_conversation: Record<string, number>
 }
 
+// Notificações Efêmeras do Sistema
+export type NotificacaoSistemaTipo =
+  | 'followup_dia'
+  | 'followup_atrasado'
+  | 'resumo_matinal'
+  | 'ranking_conquista'
+  | 'ranking_subida'
+  | 'cliente_devolvido'
+  | 'aviso_admin'
+
+export interface NotificacaoSistema {
+  id: string
+  chave_dedupe: string
+  tipo: NotificacaoSistemaTipo
+  usuario: string
+  cliente_id?: string
+  titulo?: string
+  texto?: string
+  lida?: boolean
+  descartada?: boolean
+  lida_em?: string
+  dados?: Record<string, unknown>
+  created: string
+  updated: string
+  expand?: {
+    usuario?: User
+    cliente_id?: Cliente
+  }
+}
+
 // ==========================================
 // Hub de Atendimento — Fase 1 (Exclusivo Admin)
 // ==========================================

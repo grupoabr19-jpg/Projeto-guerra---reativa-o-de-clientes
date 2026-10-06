@@ -31,6 +31,7 @@ import { LogoAbr } from '@/components/LogoAbr'
 import { usePresence } from '@/hooks/usePresence'
 import { ChatWidget } from '@/components/ChatWidget'
 import { UpdateBanner } from '@/components/UpdateBanner'
+import { NotificacoesDropdown } from '@/components/NotificacoesDropdown'
 
 export default function Layout() {
   const { user, logout, hasRole } = useAuth()
@@ -575,6 +576,9 @@ export default function Layout() {
 
             {/* Indicador de status do Expediente */}
             <ExpedienteStatusBadge showHorarioAtual className="hidden sm:inline-flex" />
+
+            {/* Sininho discreto com Painel Efêmero de Notificações do Sistema (Lê e Some) */}
+            <NotificacoesDropdown />
 
             {/* Contador discreto no Header para Admin / Supervisor */}
             {(user.role === 'admin' || user.role === 'supervisor') && presenceData && (
