@@ -91,11 +91,41 @@ routerAdd(
 
       const contactName = conversa.getString('titulo') || 'Cliente WhatsApp SDR'
 
+      // Carregar funções do helper de mensagens com fallback seguro via require
+      let fetchKommoLeadMessagesUnifiedFn =
+        typeof fetchKommoLeadMessagesUnified !== 'undefined' ? fetchKommoLeadMessagesUnified : null
+      let upsertKommoMessagesIdempotentFn =
+        typeof upsertKommoMessagesIdempotent !== 'undefined' ? upsertKommoMessagesIdempotent : null
+
+      if (!fetchKommoLeadMessagesUnifiedFn || !upsertKommoMessagesIdempotentFn) {
+        try {
+          const msgHelper = require(`${__hooks}/kommo_messages_helper.js`)
+          if (msgHelper) {
+            if (!fetchKommoLeadMessagesUnifiedFn && msgHelper.fetchKommoLeadMessagesUnified) {
+              fetchKommoLeadMessagesUnifiedFn = msgHelper.fetchKommoLeadMessagesUnified
+            }
+            if (!upsertKommoMessagesIdempotentFn && msgHelper.upsertKommoMessagesIdempotent) {
+              upsertKommoMessagesIdempotentFn = msgHelper.upsertKommoMessagesIdempotent
+            }
+          }
+        } catch (reqErr) {
+          console.log(
+            '[kommo_sync_lead_messages] Aviso ao requerer kommo_messages_helper: ' + reqErr.message,
+          )
+        }
+      }
+
+      if (!fetchKommoLeadMessagesUnifiedFn || !upsertKommoMessagesIdempotentFn) {
+        throw new Error(
+          'Helper kommo_messages_helper não disponível no endpoint sync-lead-messages',
+        )
+      }
+
       // 1. Extração unificada de mensagens via talks / events / notes
-      const mensagens = fetchKommoLeadMessagesUnified(effectiveLeadId, contactName)
+      const mensagens = fetchKommoLeadMessagesUnifiedFn(effectiveLeadId, contactName)
 
       // 2. Gravação idempotente por id externo
-      const novasGravadas = upsertKommoMessagesIdempotent(conversa, mensagens, adminId)
+      const novasGravadas = upsertKommoMessagesIdempotentFn(conversa, mensagens, adminId)
 
       // 3. Se gravou novas mensagens de entrada e a conversa está com o Admin, processar SDR bot
       if (novasGravadas > 0 && adminId && conversa.getString('responsavel_id') === adminId) {

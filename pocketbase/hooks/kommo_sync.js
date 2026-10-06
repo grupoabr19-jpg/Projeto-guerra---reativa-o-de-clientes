@@ -261,9 +261,40 @@ routerAdd(
 
           // Buscar e sincronizar mensagens usando o MOTOR NOVO unificado (Talks -> Events -> Notes)
           try {
-            const mensagensUnificadas = fetchKommoLeadMessagesUnified(lead.id, contactName)
+            let fetchKommoLeadMessagesUnifiedFn =
+              typeof fetchKommoLeadMessagesUnified !== 'undefined'
+                ? fetchKommoLeadMessagesUnified
+                : null
+            let upsertKommoMessagesIdempotentFn =
+              typeof upsertKommoMessagesIdempotent !== 'undefined'
+                ? upsertKommoMessagesIdempotent
+                : null
+
+            if (!fetchKommoLeadMessagesUnifiedFn || !upsertKommoMessagesIdempotentFn) {
+              try {
+                const msgHelper = require(`${__hooks}/kommo_messages_helper.js`)
+                if (msgHelper) {
+                  if (!fetchKommoLeadMessagesUnifiedFn && msgHelper.fetchKommoLeadMessagesUnified) {
+                    fetchKommoLeadMessagesUnifiedFn = msgHelper.fetchKommoLeadMessagesUnified
+                  }
+                  if (!upsertKommoMessagesIdempotentFn && msgHelper.upsertKommoMessagesIdempotent) {
+                    upsertKommoMessagesIdempotentFn = msgHelper.upsertKommoMessagesIdempotent
+                  }
+                }
+              } catch (reqErr) {
+                console.log(
+                  '[kommo_sync] Aviso ao requerer kommo_messages_helper: ' + reqErr.message,
+                )
+              }
+            }
+
+            if (!fetchKommoLeadMessagesUnifiedFn || !upsertKommoMessagesIdempotentFn) {
+              throw new Error('Helper kommo_messages_helper não disponível no escopo de kommo_sync')
+            }
+
+            const mensagensUnificadas = fetchKommoLeadMessagesUnifiedFn(lead.id, contactName)
             if (mensagensUnificadas && mensagensUnificadas.length > 0) {
-              const novas = upsertKommoMessagesIdempotent(conversa, mensagensUnificadas, adminId)
+              const novas = upsertKommoMessagesIdempotentFn(conversa, mensagensUnificadas, adminId)
               totalProcessadas += novas
 
               // Se houve novas mensagens e a conversa está sob o admin, aciona o bot SDR para a última se for de entrada

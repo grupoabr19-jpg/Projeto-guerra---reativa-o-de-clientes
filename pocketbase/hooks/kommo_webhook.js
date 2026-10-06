@@ -1170,10 +1170,48 @@ routerAdd('POST', '/backend/v1/kommo/webhook', (e) => {
         )
         // Usar motor novo para sincronizar histórico/mensagens reais do lead se disponível
         try {
-          const msgsUnified = fetchKommoLeadMessagesUnified(lead.id, contactName)
-          if (msgsUnified && msgsUnified.length > 0) {
-            const novas = upsertKommoMessagesIdempotent(conversa, msgsUnified, adminId)
-            eventosProcessados += novas
+          let fetchKommoLeadMessagesUnifiedFn =
+            typeof fetchKommoLeadMessagesUnified !== 'undefined'
+              ? fetchKommoLeadMessagesUnified
+              : null
+          let upsertKommoMessagesIdempotentFn =
+            typeof upsertKommoMessagesIdempotent !== 'undefined'
+              ? upsertKommoMessagesIdempotent
+              : null
+
+          if (!fetchKommoLeadMessagesUnifiedFn || !upsertKommoMessagesIdempotentFn) {
+            try {
+              const msgHelper = require(`${__hooks}/kommo_messages_helper.js`)
+              if (msgHelper) {
+                if (!fetchKommoLeadMessagesUnifiedFn && msgHelper.fetchKommoLeadMessagesUnified) {
+                  fetchKommoLeadMessagesUnifiedFn = msgHelper.fetchKommoLeadMessagesUnified
+                }
+                if (!upsertKommoMessagesIdempotentFn && msgHelper.upsertKommoMessagesIdempotent) {
+                  upsertKommoMessagesIdempotentFn = msgHelper.upsertKommoMessagesIdempotent
+                }
+              }
+            } catch (reqErr) {
+              console.log(
+                '[kommo_webhook] Aviso ao requerer kommo_messages_helper: ' + reqErr.message,
+              )
+            }
+          }
+
+          if (fetchKommoLeadMessagesUnifiedFn && upsertKommoMessagesIdempotentFn) {
+            const msgsUnified = fetchKommoLeadMessagesUnifiedFn(lead.id, contactName)
+            if (msgsUnified && msgsUnified.length > 0) {
+              const novas = upsertKommoMessagesIdempotentFn(conversa, msgsUnified, adminId)
+              eventosProcessados += novas
+            } else {
+              registrarMensagem(
+                conversa,
+                `[Lead Kommo] ${lead.name || 'Lead SDR'} (Etapa: ${lead.status_id || 'Entrada'})`,
+                contactName || 'Kommo SDR',
+                `webhook_lead_${lead.id}_${Date.now()}`,
+                clienteRecord,
+              )
+              eventosProcessados++
+            }
           } else {
             registrarMensagem(
               conversa,

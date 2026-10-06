@@ -700,41 +700,60 @@ cronAdd('kommo_sdr_polling_fallback', '*/2 * * * *', () => {
           if (mudou) $app.save(conv)
         }
 
-        // TESTE INSPECT LEAD NO PRIMEIRO LEAD DA CRON
-        try {
-          const testInsp = $http.send({
-            url: `${baseUrl}/api/v4/talks?filter[entity_type]=lead&filter[entity_id][]=${lead.id}`,
-            method: 'GET',
-            headers: headers,
-            timeout: 5,
-          })
-          console.log(
-            '[cron_kommo_sdr probe ' +
-              lead.id +
-              '] talks: ' +
-              JSON.stringify(testInsp.json || testInsp.raw).slice(0, 400),
-          )
-          const testEv = $http.send({
-            url: `${baseUrl}/api/v4/events?filter[entity]=lead&filter[entity_id]=${lead.id}&filter[type][]=incoming_chat_message&filter[type][]=outgoing_chat_message`,
-            method: 'GET',
-            headers: headers,
-            timeout: 5,
-          })
-          console.log(
-            '[cron_kommo_sdr probe ' +
-              lead.id +
-              '] events: ' +
-              JSON.stringify(testEv.json || testEv.raw).slice(0, 400),
-          )
-        } catch (probeErr) {
-          console.log('[cron_kommo_sdr probe ' + lead.id + '] err: ' + probeErr.message)
-        }
-
         // Sincronizar mensagens usando o MOTOR NOVO unificado (Talks -> Events -> Notes)
         try {
-          const mensagensUnificadas = fetchKommoLeadMessagesUnified(lead.id, contactName)
+          let fetchKommoLeadMessagesUnifiedFn = null
+          let upsertKommoMessagesIdempotentFn = null
+
+          if (typeof globalThis !== 'undefined') {
+            if (typeof globalThis.fetchKommoLeadMessagesUnified === 'function') {
+              fetchKommoLeadMessagesUnifiedFn = globalThis.fetchKommoLeadMessagesUnified
+            }
+            if (typeof globalThis.upsertKommoMessagesIdempotent === 'function') {
+              upsertKommoMessagesIdempotentFn = globalThis.upsertKommoMessagesIdempotent
+            }
+          }
+
+          if (!fetchKommoLeadMessagesUnifiedFn || !upsertKommoMessagesIdempotentFn) {
+            try {
+              const msgHelper = require(`${__hooks}/kommo_messages_helper.js`)
+              if (msgHelper) {
+                if (
+                  !fetchKommoLeadMessagesUnifiedFn &&
+                  typeof msgHelper.fetchKommoLeadMessagesUnified === 'function'
+                ) {
+                  fetchKommoLeadMessagesUnifiedFn = msgHelper.fetchKommoLeadMessagesUnified
+                }
+                if (
+                  !upsertKommoMessagesIdempotentFn &&
+                  typeof msgHelper.upsertKommoMessagesIdempotent === 'function'
+                ) {
+                  upsertKommoMessagesIdempotentFn = msgHelper.upsertKommoMessagesIdempotent
+                }
+              }
+            } catch (reqErr) {
+              console.log('[cron_kommo_sdr] Aviso require kommo_messages_helper: ' + reqErr.message)
+            }
+          }
+
+          if (!fetchKommoLeadMessagesUnifiedFn || !upsertKommoMessagesIdempotentFn) {
+            throw new Error('Helper kommo_messages_helper não disponível no escopo do cron')
+          }
+
+          const mensagensUnificadas = fetchKommoLeadMessagesUnifiedFn(lead.id, contactName)
           if (mensagensUnificadas && mensagensUnificadas.length > 0) {
-            const novasMsgs = upsertKommoMessagesIdempotent(conv, mensagensUnificadas, adminId)
+            const novasMsgs = upsertKommoMessagesIdempotentFn(conv, mensagensUnificadas, adminId)
+            console.log(
+              '[cron_kommo_sdr] Lead ' +
+                lead.id +
+                ' (' +
+                (contactName || cleanPhone || 'Sem Nome') +
+                '): ' +
+                mensagensUnificadas.length +
+                ' msg(s) encontradas, ' +
+                novasMsgs +
+                ' nova(s) gravada(s) em chat_mensagens.',
+            )
             const ultimaMsg = mensagensUnificadas[mensagensUnificadas.length - 1]
             const ultimaNotaTexto = ultimaMsg ? ultimaMsg.texto || '' : ''
 

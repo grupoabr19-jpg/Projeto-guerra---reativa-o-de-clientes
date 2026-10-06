@@ -473,3 +473,12 @@ function upsertKommoMessagesIdempotent(conversa, mensagens, adminIdFallback) {
 
   return novasGravadas
 }
+
+// Exportação CommonJS compatível com require(`${__hooks}/kommo_messages_helper.js`)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    getKommoApiConfig: getKommoApiConfig,
+    fetchKommoLeadMessagesUnified: fetchKommoLeadMessagesUnified,
+    upsertKommoMessagesIdempotent: upsertKommoMessagesIdempotent,
+  }
+}
