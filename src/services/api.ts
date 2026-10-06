@@ -193,6 +193,18 @@ export async function saveRespostasFormulario(data: {
   return pb.collection('respostas_formulario').create<RespostaFormulario>(data)
 }
 
+export async function fetchUltimaRespostaFormulario(clienteId: string) {
+  try {
+    const list = await pb.collection('respostas_formulario').getList<RespostaFormulario>(1, 1, {
+      filter: `cliente = '${clienteId}'`,
+      sort: '-created',
+    })
+    return list.items[0] || null
+  } catch {
+    return null
+  }
+}
+
 export async function fetchImportacoes() {
   return pb.collection('importacoes').getFullList<Importacao>({
     sort: '-created',
@@ -427,6 +439,41 @@ export async function destravarClienteStandby(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || err.message || 'Falha ao destravar cliente em standby')
+  }
+  return res.json()
+}
+
+export interface EditarAtendimentoFechadoAdminData {
+  cliente_id: string
+  respostas: Record<string, unknown>
+  desfecho: string
+  observacoes?: string
+  motivo_edicao: string
+  valor_potencial?: number
+  toneladas_potencial?: number
+}
+
+/**
+ * Edita a ficha e desfecho de um atendimento já concluído/fechado (exclusivo admin).
+ * Preserva o status de standby/fora da fila intacto e grava rastro de auditoria dupla.
+ */
+export async function editarAtendimentoFechadoAdmin(
+  data: EditarAtendimentoFechadoAdminData,
+): Promise<{ ok: boolean; message: string; cliente: Cliente }> {
+  const res = await fetch(
+    `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/queue/editar-atendimento-fechado`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: pb.authStore.token,
+      },
+      body: JSON.stringify(data),
+    },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || err.message || 'Falha ao editar atendimento fechado')
   }
   return res.json()
 }

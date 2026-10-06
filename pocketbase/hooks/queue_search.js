@@ -699,3 +699,190 @@ routerAdd(
   },
   $apis.requireAuth(),
 )
+
+/**
+ * Endpoint para EDITAR ATENDIMENTO FECHADO (incluso em standby)
+ * Exclusivo para role = 'admin' (operador, líder e supervisor recebem 403).
+ * NÃO altera NEM zera standby_ate / reativado_em — preserva a blindagem intacta.
+ * Atualiza o último registro em respostas_formulario (ou cria caso não exista)
+ * e os campos derivados em clientes (desfecho, rascunho_respostas, observacoes).
+ * Grava auditoria dupla: eventos_log e interacoes com tipo 'edicao_admin'.
+ */
+routerAdd(
+  'POST',
+  '/backend/v1/queue/editar-atendimento-fechado',
+  (e) => {
+    try {
+      const authRecord = e.auth
+      if (!authRecord || !authRecord.id) {
+        return e.json(401, { error: 'Autenticação obrigatória' })
+      }
+
+      const userRole = authRecord.getString('role')
+      if (userRole !== 'admin') {
+        return e.json(403, {
+          error: 'Permissão negada. Apenas administradores podem editar atendimentos fechados.',
+        })
+      }
+
+      let body = {}
+      try {
+        body = e.requestInfo().body || {}
+      } catch (_) {}
+
+      const clienteId = (body.cliente_id || '').trim()
+      if (!clienteId) {
+        return e.json(400, { error: 'cliente_id é obrigatório' })
+      }
+
+      const motivoEdicao = (body.motivo_edicao || '').trim()
+      if (!motivoEdicao) {
+        return e.json(400, { error: 'motivo_edicao é obrigatório' })
+      }
+
+      const cliente = $app.findRecordById('clientes', clienteId)
+      if (!cliente) {
+        return e.json(404, { error: 'Cliente não encontrado' })
+      }
+
+      const desfechoAnterior = cliente.getString('desfecho') || ''
+      const desfechoNovo = (body.desfecho || desfechoAnterior || '').trim()
+      const observacoes =
+        body.observacoes !== undefined
+          ? String(body.observacoes || '')
+          : cliente.getString('observacoes')
+      const respostas = body.respostas && typeof body.respostas === 'object' ? body.respostas : {}
+
+      let valorPotencial = undefined
+      if (
+        body.valor_potencial !== undefined &&
+        body.valor_potencial !== null &&
+        body.valor_potencial !== ''
+      ) {
+        const num = Number(body.valor_potencial)
+        if (!isNaN(num)) valorPotencial = num
+      }
+
+      let toneladasPotencial = undefined
+      if (
+        body.toneladas_potencial !== undefined &&
+        body.toneladas_potencial !== null &&
+        body.toneladas_potencial !== ''
+      ) {
+        const num = Number(body.toneladas_potencial)
+        if (!isNaN(num)) toneladasPotencial = num
+      }
+
+      const adminId = authRecord.id
+      const adminNome =
+        authRecord.getString('name') || authRecord.getString('email') || 'Administrador'
+
+      // Buscar último registro em respostas_formulario deste cliente
+      let ultResp = null
+      try {
+        const respList = $app.findRecordsByFilter(
+          'respostas_formulario',
+          `cliente = '${cliente.id}'`,
+          '-created',
+          1,
+          0,
+        )
+        if (respList && respList.length > 0) {
+          ultResp = respList[0]
+        }
+      } catch (rfErr) {
+        console.log('[queue_search] Aviso ao buscar respostas_formulario: ' + rfErr.message)
+      }
+
+      if (ultResp) {
+        if (body.desfecho) ultResp.set('desfecho', desfechoNovo)
+        ultResp.set('respostas', respostas)
+        if (valorPotencial !== undefined) ultResp.set('valor_potencial', valorPotencial)
+        if (toneladasPotencial !== undefined) ultResp.set('toneladas_potencial', toneladasPotencial)
+        $app.save(ultResp)
+      } else {
+        try {
+          const colRf = $app.findCollectionByNameOrId('respostas_formulario')
+          const novaResp = new Record(colRf)
+          novaResp.set('cliente', cliente.id)
+          novaResp.set('operador', adminId)
+          novaResp.set('desfecho', desfechoNovo)
+          novaResp.set('respostas', respostas)
+          if (valorPotencial !== undefined) novaResp.set('valor_potencial', valorPotencial)
+          if (toneladasPotencial !== undefined)
+            novaResp.set('toneladas_potencial', toneladasPotencial)
+          $app.save(novaResp)
+        } catch (rfCreateErr) {
+          console.log('[queue_search] Aviso ao criar respostas_formulario: ' + rfCreateErr.message)
+        }
+      }
+
+      // Atualiza campos derivados em clientes SEM MEXER em standby_ate, reativado_em, estado ou fluxo da fila
+      if (body.desfecho) {
+        cliente.set('desfecho', desfechoNovo)
+      }
+      cliente.set('rascunho_respostas', respostas)
+      if (body.observacoes !== undefined) {
+        cliente.set('observacoes', observacoes)
+      }
+      $app.save(cliente)
+
+      const timestamp = new Date().toISOString()
+
+      // 1. Auditoria eventos_log
+      try {
+        const colEv = $app.findCollectionByNameOrId('eventos_log')
+        const ev = new Record(colEv)
+        ev.set('cliente', cliente.id)
+        ev.set('usuario', adminId)
+        ev.set('acao', 'edicao_atendimento_fechado_admin')
+        ev.set('detalhes', {
+          cliente_id: cliente.id,
+          codigo: cliente.getString('codigo'),
+          nome: cliente.getString('nome'),
+          desfecho_anterior: desfechoAnterior,
+          desfecho_novo: desfechoNovo,
+          admin_id: adminId,
+          admin_nome: adminNome,
+          motivo_edicao: motivoEdicao,
+          timestamp: timestamp,
+        })
+        $app.save(ev)
+      } catch (evErr) {
+        console.log('[queue_search] Aviso ao registrar auditoria eventos_log: ' + evErr.message)
+      }
+
+      // 2. Auditoria interacoes (tipo 'edicao_admin')
+      try {
+        const colIt = $app.findCollectionByNameOrId('interacoes')
+        const it = new Record(colIt)
+        it.set('cliente', cliente.id)
+        it.set('operador', adminId)
+        it.set('tipo', 'edicao_admin')
+        it.set('desfecho', desfechoNovo)
+        it.set('motivo', motivoEdicao)
+        it.set(
+          'conteudo',
+          `Atendimento editado pelo Administrador ${adminNome}. Desfecho: ${desfechoAnterior || 'nenhum'} → ${desfechoNovo}. Motivo: ${motivoEdicao}.`,
+        )
+        if (body.observacoes !== undefined) {
+          it.set('observacoes', observacoes)
+        }
+        $app.save(it)
+      } catch (itErr) {
+        console.log('[queue_search] Aviso ao registrar interacao de edicao: ' + itErr.message)
+      }
+
+      return e.json(200, {
+        ok: true,
+        message: 'Atendimento fechado editado com sucesso pelo administrador.',
+        cliente: cliente,
+      })
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err)
+      console.error('[queue_search] Erro ao editar atendimento fechado: ' + msg)
+      return e.json(500, { error: 'Falha ao editar atendimento: ' + msg })
+    }
+  },
+  $apis.requireAuth(),
+)

@@ -28,6 +28,7 @@ import {
   X,
   AlertCircle,
   Headphones,
+  Pencil,
 } from 'lucide-react'
 import {
   Card,
@@ -62,6 +63,8 @@ import {
   searchClientesCarteira,
   reserveSpecificQueueClient,
   destravarClienteStandby,
+  editarAtendimentoFechadoAdmin,
+  fetchUltimaRespostaFormulario,
   type ReserveSpecificError,
   transferClienteOperador,
   fetchUsers,
@@ -90,6 +93,7 @@ import { useVersion } from '@/contexts/VersionContext'
 
 export default function AtendimentoPage() {
   const { clientId } = useParams<{ clientId?: string }>()
+  const [searchParams] = useSearchParams()
   const { user } = useAuth()
   const navigate = useNavigate()
   const { setAtendimentoAtivo } = useVersion()
@@ -97,6 +101,13 @@ export default function AtendimentoPage() {
   const [cliente, setCliente] = useState<Cliente | null>(null)
   const [interacoes, setInteracoes] = useState<Interacao[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Modo de Edição de Atendimento Fechado (Exclusivo Admin)
+  const [modoEdicaoAdmin, setModoEdicaoAdmin] = useState(false)
+  const [showConfirmEditarFechado, setShowConfirmEditarFechado] = useState(false)
+  const [showModalMotivoEdicao, setShowModalMotivoEdicao] = useState(false)
+  const [motivoEdicaoAdmin, setMotivoEdicaoAdmin] = useState('')
+  const [salvandoEdicaoAdmin, setSalvandoEdicaoAdmin] = useState(false)
 
   // Filtros da nova experiência do Operador
   const [filtroSegmento, setFiltroSegmento] = useState<string>('todos')
@@ -386,8 +397,11 @@ export default function AtendimentoPage() {
       const c = await fetchClienteById(id)
       setCliente(c)
 
-      // Se o cliente estiver com status 'na_base' ou 'reservado', mudar para 'em_atendimento'
-      if (c.estado !== 'em_atendimento' && user) {
+      // Se o cliente for aberto em modo_edicao_admin ou já estiver fechado, NÃO mudar para 'em_atendimento'
+      const isFechado =
+        c.estado !== 'em_atendimento' && c.estado !== 'na_base' && c.estado !== 'reservado'
+
+      if (!isFechado && c.estado !== 'em_atendimento' && user) {
         await updateCliente(c.id, {
           estado: 'em_atendimento',
           operador: user.id,
@@ -441,6 +455,133 @@ export default function AtendimentoPage() {
     if (s === 'EXTREMA') return 'EXTREMA'
     if (s === 'ATACADO') return 'ATACADO'
     return s
+  }
+
+  // Detectar parâmetro modo=edicao_admin na URL
+  useEffect(() => {
+    const modo = searchParams.get('modo')
+    if (modo === 'edicao_admin' && user?.role === 'admin' && cliente && !modoEdicaoAdmin) {
+      const isFechado =
+        cliente.estado !== 'em_atendimento' &&
+        cliente.estado !== 'na_base' &&
+        cliente.estado !== 'reservado'
+      if (isFechado) {
+        setModoEdicaoAdmin(true)
+        if (cliente.desfecho || cliente.estado) {
+          setDesfechoFinal((cliente.desfecho || cliente.estado) as ClienteEstado)
+        }
+        if (cliente.observacoes) {
+          setObservacoes(cliente.observacoes)
+        }
+        // Puxar última resposta do formulário para carregar campos adicionais (valor, toneladas) se houver
+        fetchUltimaRespostaFormulario(cliente.id).then((rf) => {
+          if (rf) {
+            setAnswers((prev) => ({
+              ...prev,
+              ...(rf.respostas as Record<string, string | number>),
+              ...(rf.valor_potencial !== undefined ? { q15: rf.valor_potencial } : {}),
+              ...(rf.toneladas_potencial !== undefined ? { q16: rf.toneladas_potencial } : {}),
+            }))
+          }
+        })
+      }
+    }
+  }, [searchParams, user, cliente, modoEdicaoAdmin])
+
+  // Desempacotar perguntas com "Outros: <texto>" quando cliente carrega
+  useEffect(() => {
+    if (!cliente) return
+    const chaves = ['q3', 'q5', 'q6', 'q9', 'q12', 'q13']
+    const rascunho = (cliente.rascunho_respostas as Record<string, string | number>) || {}
+    const updates: Record<string, string | number> = {}
+    chaves.forEach((key) => {
+      const val = String(answers[key] ?? rascunho[key] ?? '')
+      if (val.startsWith('Outros: ')) {
+        const textoLivre = val.replace(/^Outros:\s*/, '')
+        updates[key] = 'Outros'
+        updates[`${key}_outros`] = textoLivre
+      }
+    })
+    if (Object.keys(updates).length > 0) {
+      setAnswers((prev) => ({ ...prev, ...updates }))
+    }
+  }, [cliente?.id])
+
+  // Salvar Edição de Atendimento Fechado pelo Administrador
+  const handleSalvarEdicaoAdmin = async () => {
+    if (!cliente || !user) return
+    if (!desfechoFinal) {
+      toast({
+        variant: 'destructive',
+        title: 'Desfecho obrigatório',
+        description: 'Selecione o desfecho do atendimento.',
+      })
+      return
+    }
+    if (!motivoEdicaoAdmin.trim()) {
+      setShowModalMotivoEdicao(true)
+      return
+    }
+
+    setSalvandoEdicaoAdmin(true)
+    try {
+      const valorPotencial =
+        parseFloat(
+          String(answers.q15 || 0)
+            .replace(/[^\d.,]/g, '')
+            .replace(',', '.'),
+        ) || 0
+      const toneladasPotencial =
+        parseFloat(
+          String(answers.q16 || 0)
+            .replace(/[^\d.,]/g, '')
+            .replace(',', '.'),
+        ) || 0
+
+      // Consolidar respostas com "Outros: <texto>"
+      const chavesOutros = ['q3', 'q5', 'q6', 'q9', 'q12', 'q13']
+      const respostasConsolidadas: Record<string, unknown> = { ...answers }
+      chavesOutros.forEach((key) => {
+        if (answers[key] === 'Outros') {
+          const texto = String(answers[`${key}_outros`] || '').trim()
+          respostasConsolidadas[key] = texto ? `Outros: ${texto}` : 'Outros'
+        }
+      })
+
+      const res = await editarAtendimentoFechadoAdmin({
+        cliente_id: cliente.id,
+        respostas: respostasConsolidadas,
+        desfecho: desfechoFinal,
+        observacoes: observacoes,
+        motivo_edicao: motivoEdicaoAdmin.trim(),
+        valor_potencial: valorPotencial,
+        toneladas_potencial: toneladasPotencial,
+      })
+
+      toast({
+        title: 'Edição salva com sucesso!',
+        description: res.message || 'Ficha do atendimento atualizada pelo administrador.',
+      })
+
+      setShowModalMotivoEdicao(false)
+      setModoEdicaoAdmin(false)
+      setMotivoEdicaoAdmin('')
+
+      // Recarregar cliente e timeline
+      const c = await fetchClienteById(cliente.id)
+      setCliente(c)
+      const tl = await fetchInteracoesByCliente(cliente.id)
+      setInteracoes(tl)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao salvar edição do atendimento'
+      toast({
+        variant: 'destructive',
+        title: 'Erro na edição',
+        description: msg,
+      })
+    } finally {
+      setSalvandoEdicaoAdmin(false)
+    }
   }
 
   // Carregar colegas da MESMA região/rota para o dropdown de transferência
@@ -626,6 +767,12 @@ export default function AtendimentoPage() {
       return
     }
 
+    // Se estiver em modo de edição de atendimento fechado pelo admin:
+    if (modoEdicaoAdmin && user?.role === 'admin') {
+      setShowModalMotivoEdicao(true)
+      return
+    }
+
     if (desfechoFinal === 'reagendado' && !reagendarData) {
       toast({
         variant: 'destructive',
@@ -671,10 +818,20 @@ export default function AtendimentoPage() {
             .replace(',', '.'),
         ) || 0
 
+      // Consolidar respostas com "Outros: <texto>"
+      const chavesOutros = ['q3', 'q5', 'q6', 'q9', 'q12', 'q13']
+      const respostasConsolidadas: Record<string, unknown> = { ...answers }
+      chavesOutros.forEach((key) => {
+        if (answers[key] === 'Outros') {
+          const texto = String(answers[`${key}_outros`] || '').trim()
+          respostasConsolidadas[key] = texto ? `Outros: ${texto}` : 'Outros'
+        }
+      })
+
       await saveRespostasFormulario({
         cliente: cliente.id,
         operador: user.id,
-        respostas: answers,
+        respostas: respostasConsolidadas,
         desfecho: desfechoFinal,
         valor_potencial: valorPotencial,
         toneladas_potencial: toneladasPotencial,
@@ -1148,6 +1305,45 @@ export default function AtendimentoPage() {
         </Card>
       ) : (
         <>
+          {/* Alerta de Modo Edição de Atendimento Fechado Ativo */}
+          {modoEdicaoAdmin && (
+            <div className="bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-transparent border border-amber-400/80 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-amber-500 text-[#142758] rounded-lg">
+                  <Pencil className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-amber-950 flex items-center gap-1.5">
+                    <span>Modo de Edição de Atendimento Concluído Ativo</span>
+                    <Badge className="bg-amber-600 text-white text-[10px]">Exclusivo Admin</Badge>
+                  </h4>
+                  <p className="text-xs text-amber-900/80">
+                    Você está editando a ficha e as respostas de um cliente com atendimento já
+                    fechado. O status de standby/fora da base <strong>NÃO</strong> será alterado.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setModoEdicaoAdmin(false)}
+                  className="text-xs border-amber-300 text-amber-950 hover:bg-amber-100"
+                >
+                  Cancelar Edição
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => setShowModalMotivoEdicao(true)}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs"
+                >
+                  <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                  Salvar Alterações
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Ficha Completa do Cliente Pré-Preenchida + Gatilhos de Fechamento (Pedido 1b e 3c) */}
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
@@ -1200,6 +1396,31 @@ export default function AtendimentoPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                {/* Se o cliente estiver com atendimento fechado e o usuário for Admin: Botão de Edição de Atendimento Fechado */}
+                {user?.role === 'admin' &&
+                  cliente.estado !== 'em_atendimento' &&
+                  cliente.estado !== 'na_base' &&
+                  cliente.estado !== 'reservado' && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (modoEdicaoAdmin) {
+                          // Se já estiver em modo edição, aciona o modal para salvar
+                          setShowModalMotivoEdicao(true)
+                        } else {
+                          setShowConfirmEditarFechado(true)
+                        }
+                      }}
+                      className="bg-amber-500 hover:bg-amber-600 text-[#142758] font-bold text-xs h-9 px-3.5 shadow-sm border border-amber-400"
+                      title="Editar atendimento concluído (exclusivo admin)"
+                    >
+                      <Pencil className="h-4 w-4 mr-1.5" />
+                      {modoEdicaoAdmin
+                        ? 'Salvar Edição do Atendimento'
+                        : 'Editar atendimento fechado'}
+                    </Button>
+                  )}
+
                 {/* Se o cliente estiver em standby ativo e o usuário logado for Admin: Botão de Destrave Direto */}
                 {user?.role === 'admin' &&
                   cliente.standby_ate &&
@@ -1234,11 +1455,17 @@ export default function AtendimentoPage() {
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => setShowQuestionarioModal(true)}
+                  onClick={() => {
+                    if (modoEdicaoAdmin) {
+                      setShowModalMotivoEdicao(true)
+                    } else {
+                      setShowQuestionarioModal(true)
+                    }
+                  }}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-4 shadow-sm"
                 >
                   <CheckCircle2 className="h-4 w-4 mr-1.5" />
-                  Confirmar Atendimento
+                  {modoEdicaoAdmin ? 'Salvar Edição' : 'Confirmar Atendimento'}
                 </Button>
                 <Button
                   variant="outline"
@@ -1451,8 +1678,27 @@ export default function AtendimentoPage() {
                           <SelectItem value="Encerrou as atividades">
                             Encerrou as atividades
                           </SelectItem>
+                          <SelectItem value="Outros">Outros</SelectItem>
                         </SelectContent>
                       </Select>
+                      {answers.q3 === 'Outros' && (
+                        <div className="mt-2 space-y-1.5 p-3 rounded-lg bg-amber-50/60 border border-amber-200">
+                          <Label className="text-xs font-semibold text-amber-950">
+                            Especifique os detalhes para &apos;Outros&apos;: *
+                          </Label>
+                          <Input
+                            placeholder="Descreva a situação operacional do cliente..."
+                            value={String(answers.q3_outros || '')}
+                            onChange={(e) => setAnswers({ ...answers, q3_outros: e.target.value })}
+                            className="bg-white text-xs"
+                          />
+                          {!answers.q3_outros && (
+                            <p className="text-[11px] text-amber-800 font-medium">
+                              ⚠️ Por favor, preencha o detalhamento do campo Outros.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1487,9 +1733,27 @@ export default function AtendimentoPage() {
                           <SelectItem value="Queda de produção interna">
                             Queda de produção interna
                           </SelectItem>
-                          <SelectItem value="Outro">Outro</SelectItem>
+                          <SelectItem value="Outros">Outros</SelectItem>
                         </SelectContent>
                       </Select>
+                      {answers.q5 === 'Outros' && (
+                        <div className="mt-2 space-y-1.5 p-3 rounded-lg bg-amber-50/60 border border-amber-200">
+                          <Label className="text-xs font-semibold text-amber-950">
+                            Especifique os detalhes para &apos;Outros&apos;: *
+                          </Label>
+                          <Input
+                            placeholder="Descreva o motivo da inatividade..."
+                            value={String(answers.q5_outros || '')}
+                            onChange={(e) => setAnswers({ ...answers, q5_outros: e.target.value })}
+                            className="bg-white text-xs"
+                          />
+                          {!answers.q5_outros && (
+                            <p className="text-[11px] text-amber-800 font-medium">
+                              ⚠️ Por favor, preencha o detalhamento do campo Outros.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1518,8 +1782,27 @@ export default function AtendimentoPage() {
                           <SelectItem value="Baixa (prioriza pontualidade e especificação técnica)">
                             Baixa (prioriza pontualidade e especificação técnica)
                           </SelectItem>
+                          <SelectItem value="Outros">Outros</SelectItem>
                         </SelectContent>
                       </Select>
+                      {answers.q6 === 'Outros' && (
+                        <div className="mt-2 space-y-1.5 p-3 rounded-lg bg-amber-50/60 border border-amber-200">
+                          <Label className="text-xs font-semibold text-amber-950">
+                            Especifique os detalhes para &apos;Outros&apos;: *
+                          </Label>
+                          <Input
+                            placeholder="Descreva a sensibilidade a preço do cliente..."
+                            value={String(answers.q6_outros || '')}
+                            onChange={(e) => setAnswers({ ...answers, q6_outros: e.target.value })}
+                            className="bg-white text-xs"
+                          />
+                          {!answers.q6_outros && (
+                            <p className="text-[11px] text-amber-800 font-medium">
+                              ⚠️ Por favor, preencha o detalhamento do campo Outros.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1588,11 +1871,27 @@ export default function AtendimentoPage() {
                           <SelectItem value="Erro em nota fiscal / boleto">
                             Erro em nota fiscal / boleto
                           </SelectItem>
-                          <SelectItem value="Outro problema operacional">
-                            Outro problema operacional
-                          </SelectItem>
+                          <SelectItem value="Outros">Outros</SelectItem>
                         </SelectContent>
                       </Select>
+                      {answers.q9 === 'Outros' && (
+                        <div className="mt-2 space-y-1.5 p-3 rounded-lg bg-amber-50/60 border border-amber-200">
+                          <Label className="text-xs font-semibold text-amber-950">
+                            Especifique os detalhes para &apos;Outros&apos;: *
+                          </Label>
+                          <Input
+                            placeholder="Descreva o tipo de problema operacional ocorrido..."
+                            value={String(answers.q9_outros || '')}
+                            onChange={(e) => setAnswers({ ...answers, q9_outros: e.target.value })}
+                            className="bg-white text-xs"
+                          />
+                          {!answers.q9_outros && (
+                            <p className="text-[11px] text-amber-800 font-medium">
+                              ⚠️ Por favor, preencha o detalhamento do campo Outros.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1676,8 +1975,27 @@ export default function AtendimentoPage() {
                           <SelectItem value="Recusou formalmente qualquer negociação">
                             Recusou formalmente qualquer negociação
                           </SelectItem>
+                          <SelectItem value="Outros">Outros</SelectItem>
                         </SelectContent>
                       </Select>
+                      {answers.q12 === 'Outros' && (
+                        <div className="mt-2 space-y-1.5 p-3 rounded-lg bg-amber-50/60 border border-amber-200">
+                          <Label className="text-xs font-semibold text-amber-950">
+                            Especifique os detalhes para &apos;Outros&apos;: *
+                          </Label>
+                          <Input
+                            placeholder="Descreva a disposição de retorno do cliente..."
+                            value={String(answers.q12_outros || '')}
+                            onChange={(e) => setAnswers({ ...answers, q12_outros: e.target.value })}
+                            className="bg-white text-xs"
+                          />
+                          {!answers.q12_outros && (
+                            <p className="text-[11px] text-amber-800 font-medium">
+                              ⚠️ Por favor, preencha o detalhamento do campo Outros.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1703,8 +2021,27 @@ export default function AtendimentoPage() {
                           <SelectItem value="Visita de Representante">
                             Visita de Representante
                           </SelectItem>
+                          <SelectItem value="Outros">Outros</SelectItem>
                         </SelectContent>
                       </Select>
+                      {answers.q13 === 'Outros' && (
+                        <div className="mt-2 space-y-1.5 p-3 rounded-lg bg-amber-50/60 border border-amber-200">
+                          <Label className="text-xs font-semibold text-amber-950">
+                            Especifique os detalhes para &apos;Outros&apos;: *
+                          </Label>
+                          <Input
+                            placeholder="Descreva o canal preferencial..."
+                            value={String(answers.q13_outros || '')}
+                            onChange={(e) => setAnswers({ ...answers, q13_outros: e.target.value })}
+                            className="bg-white text-xs"
+                          />
+                          {!answers.q13_outros && (
+                            <p className="text-[11px] text-amber-800 font-medium">
+                              ⚠️ Por favor, preencha o detalhamento do campo Outros.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1914,7 +2251,7 @@ export default function AtendimentoPage() {
                                   value="outro motivo de cliente ativo"
                                   className="text-xs"
                                 >
-                                  Outro motivo (especificar abaixo)
+                                  Outros (especificar abaixo)
                                 </SelectItem>
                               </SelectContent>
                             </Select>
@@ -1922,7 +2259,13 @@ export default function AtendimentoPage() {
 
                           <div className="space-y-1">
                             <Label className="text-xs font-semibold text-slate-700">
-                              Observações Complementares / Detalhes (Livre)
+                              {motivoAtivoForaBase === 'outro motivo de cliente ativo' ? (
+                                <span className="text-amber-950 font-bold">
+                                  Especifique os detalhes para &apos;Outros&apos;: *
+                                </span>
+                              ) : (
+                                'Observações Complementares / Detalhes (Livre)'
+                              )}
                             </Label>
                             <Textarea
                               placeholder="Descreva detalhes: qual terceiro compra, qual vendedor acompanha, etc..."
@@ -1931,6 +2274,12 @@ export default function AtendimentoPage() {
                               rows={2}
                               className="text-xs bg-white"
                             />
+                            {motivoAtivoForaBase === 'outro motivo de cliente ativo' &&
+                              !obsAtivoForaBase.trim() && (
+                                <p className="text-[11px] text-amber-800 font-medium">
+                                  ⚠️ Por favor, preencha o detalhamento do campo Outros.
+                                </p>
+                              )}
                           </div>
                         </div>
                       )}
@@ -2319,6 +2668,140 @@ export default function AtendimentoPage() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+
+          {/* AlertDialog de Confirmação de Abertura de Edição de Atendimento Fechado (Exclusivo Admin) */}
+          <AlertDialog open={showConfirmEditarFechado} onOpenChange={setShowConfirmEditarFechado}>
+            <AlertDialogContent className="max-w-md">
+              <AlertDialogHeader>
+                <div className="flex items-center space-x-2 text-amber-600">
+                  <Pencil className="h-5 w-5" />
+                  <AlertDialogTitle>Editar Atendimento Fechado?</AlertDialogTitle>
+                </div>
+                <AlertDialogDescription className="text-xs text-slate-600 space-y-2 pt-2">
+                  <p>
+                    Você está prestes a editar a ficha de um atendimento já concluído de{' '}
+                    <strong className="text-slate-900">{cliente?.nome}</strong> (
+                    <span className="font-mono">{cliente?.codigo}</span>).
+                  </p>
+                  <p className="bg-amber-50 border border-amber-200 text-amber-900 p-2.5 rounded-md">
+                    Esta ação manterá o status de standby/fora da base e registrará a auditoria com
+                    o seu usuário.
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    A blindagem e os prazos originais permanecerão intactos.
+                  </p>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="text-xs">Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    setShowConfirmEditarFechado(false)
+                    setModoEdicaoAdmin(true)
+                    if (cliente?.desfecho || cliente?.estado) {
+                      setDesfechoFinal((cliente.desfecho || cliente.estado) as ClienteEstado)
+                    }
+                    if (cliente?.observacoes && !observacoes) {
+                      setObservacoes(cliente.observacoes)
+                    }
+                    toast({
+                      title: 'Modo de edição habilitado',
+                      description: 'Altere as respostas da ficha ou o desfecho e clique em Salvar.',
+                    })
+                  }}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs"
+                >
+                  <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                  Habilitar Edição
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* Modal para Informar o Motivo Obrigatório da Edição Admin antes de Salvar */}
+          {showModalMotivoEdicao && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                <div className="p-4 bg-[#142758] text-white flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Pencil className="h-5 w-5 text-amber-400" />
+                    <div>
+                      <h3 className="font-bold text-sm">Salvar Edição do Atendimento</h3>
+                      <p className="text-[11px] text-slate-300">
+                        Auditoria Obrigatória de Administrador
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowModalMotivoEdicao(false)}
+                    disabled={salvandoEdicaoAdmin}
+                    className="text-slate-300 hover:text-white text-xs px-2 py-1 rounded bg-slate-800"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1">
+                    <p className="font-semibold text-slate-800">
+                      {cliente.codigo} • {cliente.nome}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      Desfecho selecionado:{' '}
+                      <strong className="text-slate-900">{desfechoFinal.toUpperCase()}</strong>
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-slate-800">
+                      Motivo da edição (Obrigatório para a auditoria): *
+                    </Label>
+                    <Textarea
+                      placeholder="Ex: Correção das respostas da qualificação a pedido do vendedor..."
+                      value={motivoEdicaoAdmin}
+                      onChange={(e) => setMotivoEdicaoAdmin(e.target.value)}
+                      rows={3}
+                      className="text-xs"
+                    />
+                    {!motivoEdicaoAdmin.trim() && (
+                      <p className="text-[11px] text-amber-700">
+                        Informe o motivo da alteração para constar na timeline e no log.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowModalMotivoEdicao(false)}
+                    disabled={salvandoEdicaoAdmin}
+                    className="text-xs"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleSalvarEdicaoAdmin}
+                    disabled={salvandoEdicaoAdmin || !motivoEdicaoAdmin.trim()}
+                    className="bg-[#253575] hover:bg-[#1d2b5e] text-white text-xs font-semibold"
+                  >
+                    {salvandoEdicaoAdmin ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Salvando auditoria...
+                      </>
+                    ) : (
+                      'Confirmar e Gravar Edição'
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Modal / Dialog de Confirmação do Atendimento quando o operador clica em "Confirmar Atendimento" */}
           {showQuestionarioModal && (

@@ -628,6 +628,40 @@ export default function ClientesPage() {
                 </div>
               </div>
 
+              {/* Ações Exclusivas de Admin: Editar Atendimento Fechado e Destravar Standby */}
+              {user?.role === 'admin' &&
+                selectedClient.estado !== 'em_atendimento' &&
+                selectedClient.estado !== 'na_base' &&
+                selectedClient.estado !== 'reservado' && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-400/80 rounded-lg space-y-2">
+                    <div className="text-xs font-bold text-amber-950 flex items-center justify-between">
+                      <div className="flex items-center space-x-1">
+                        <FileText className="h-3.5 w-3.5 mr-1 text-amber-700" />
+                        <span>Controle Admin: Atendimento Concluído</span>
+                      </div>
+                      <Badge className="bg-amber-600 text-white text-[10px]">Exclusivo Admin</Badge>
+                    </div>
+                    <p className="text-[11px] text-amber-900">
+                      Este atendimento já foi finalizado (status:{' '}
+                      <strong>{selectedClient.desfecho || selectedClient.estado}</strong>). Como
+                      Administrador, você pode editar a ficha e as respostas mantendo a blindagem de
+                      standby intacta.
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const cid = selectedClient.id
+                        setSelectedClient(null)
+                        navigate(`/atendimento/${cid}?modo=edicao_admin`)
+                      }}
+                      className="bg-amber-500 hover:bg-amber-600 text-[#142758] text-xs font-bold h-8 w-full shadow-xs border border-amber-400"
+                    >
+                      <FileText className="h-3.5 w-3.5 mr-1.5" />
+                      Editar atendimento fechado
+                    </Button>
+                  </div>
+                )}
+
               {/* Ação Exclusiva de Admin: Destravar Standby de 60 dias */}
               {user?.role === 'admin' &&
                 selectedClient.standby_ate &&
