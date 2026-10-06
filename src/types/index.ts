@@ -633,7 +633,7 @@ export interface ReportsAnalyticsResponse {
   }
 }
 
-// Chat Interno e Bridge Kommo WhatsApp
+// Chat Interno
 export type ChatConversaTipo = 'geral' | 'canal_rota' | 'dm' | 'kommo_whatsapp'
 export type ChatMensagemTipo = 'normal' | 'aviso'
 
@@ -761,137 +761,14 @@ export interface AtendimentoFunil {
   etapas?: AtendimentoFunilEtapa[]
 }
 
-export interface KommoBridgeItem {
-  id: string
-  nome_lead: string
-  nome_contato: string
-  canal: string
-  telefone?: string
-  is_sdr_line?: boolean
-  email?: string
-  valor?: number
-  pipeline_id: string
-  pipeline_nome: string
-  status_id: string
-  status_nome: string
-  status_cor?: string
-  ultima_atividade: string
-  criado_em: string
-  responsible_user_id?: string
-}
-
-export interface KommoBridgeResponse {
-  ok: boolean
-  configured: boolean
-  somente_leitura: boolean
-  escrita_habilitada?: boolean
-  subdomain?: string
-  sdr_phone?: string
-  items: KommoBridgeItem[]
-  total: number
-  consultado_em?: string
-  error_code?: string
-  message?: string
-}
-
 export interface KommoStatusResponse {
   ok: boolean
   configured: boolean
   somente_leitura: boolean
   escrita_habilitada: boolean
   subdomain?: string
-  sdr_phone: string
-  sdr_phone_formatted: string
-  webhook_endpoint: string
   ping_ok: boolean
   ping_latency_ms: number
   ping_error?: string
-  total_conversas_sdr: number
   checado_em: string
-}
-
-export interface KommoSendMessageResponse {
-  ok: boolean
-  message: string
-  endpoint_utilizado?: string
-  mensagem?: ChatMensagem
-  error?: string
-  detalhe?: string
-}
-
-// ==========================================
-// Bot SDR Triagem e Treinamento
-// ==========================================
-
-export interface SdrRotaRegra {
-  especialista: string
-  corporativo: string
-  externo?: string
-}
-
-export interface SdrAtacadoDddRegra {
-  operador_nome: string
-  ddds: string[]
-}
-
-export interface SdrBotConfig {
-  ativo: boolean
-  nome_sdr: string
-  saudacao: string
-  tom: string
-  instrucoes: string
-  mensagem_fora_expediente?: string
-  fallback_audio?: string
-  fallback_imagem?: string
-  transcrever_audio_ativo?: boolean
-  regras_rotas: Record<string, SdrRotaRegra>
-  regras_atacado_ddd: Record<string, SdrAtacadoDddRegra>
-  fallback_admin?: { nome: string; role: string }
-}
-
-export interface SdrTriagemLogItem {
-  id: string
-  cliente_nome: string
-  telefone: string
-  telefone_limpo: string
-  documento?: string
-  canal: string
-  classificacao: 'VARE' | 'VCORP' | 'ATACADO' | 'SEM_ROTA' | string
-  regiao_nome: string
-  rota_destino: string
-  operador_destino?: string
-  operador_nome: string
-  kommo_user_id?: string
-  kommo_lead_id?: string
-  motivo_decisao: string
-  regra_aplicada: string
-  status_transferencia: string
-  nota_kommo?: string
-  conversa_resumo?: string
-  eh_simulacao: boolean
-  created: string
-}
-
-export interface SdrSimulacaoDecisao {
-  classificacao: 'VARE' | 'VCORP' | 'ATACADO' | 'SEM_ROTA' | string
-  rota_destino: string
-  operador_destino_id?: string
-  operador_destino_nome: string
-  kommo_user_id?: string
-  regra_aplicada: string
-  motivo_decisao: string
-  nota_kommo_preview?: string
-  status_transferencia: string
-}
-
-export interface SdrSimulacaoResponse {
-  ok: boolean
-  simulacao: boolean
-  resposta_sdr: string
-  decisao: SdrSimulacaoDecisao
-  log_id?: string
-  origem_midia?: 'texto' | 'audio' | 'imagem'
-  transcricao_sucesso?: boolean
-  gateway_transcricao_disponivel?: boolean
-  error?: string
 }

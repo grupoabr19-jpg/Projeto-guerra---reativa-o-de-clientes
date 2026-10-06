@@ -15,7 +15,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/hooks/use-toast'
 import { usePresence, derivePresenceStatus } from '@/hooks/usePresence'
-import { pb } from '@/lib/pocketbase/client'
+import pb from '@/lib/pocketbase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -123,9 +123,7 @@ export default function HubAtendimentoPage() {
         ])
 
         // Filtra estritamente apenas conversas internas
-        const internas = list.filter(
-          (c) => c.tipo === 'geral' || c.tipo === 'dm' || c.tipo === 'canal_geral',
-        )
+        const internas = list.filter((c) => c.tipo === 'geral' || c.tipo === 'dm')
         setConversas(internas)
 
         if (usuariosList && usuariosList.length > 0) {
@@ -681,7 +679,7 @@ export default function HubAtendimentoPage() {
                 })
               )}
             </div>
-          </div>
+          </Card>
         </div>
 
         {/* Janela de Mensagens */}

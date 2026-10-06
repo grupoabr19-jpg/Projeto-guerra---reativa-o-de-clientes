@@ -3014,7 +3014,7 @@ export default function ConfiguracoesPage() {
                     <strong>Integração Segura & Somente-Leitura: </strong>
                     Nenhuma credencial ou token é exposto no navegador. Nenhuma alteração é gravada
                     na Kommo CRM. O vínculo associa o ID do operador para cruzamento de dados e
-                    auditoria de conversas externas no Hub de Atendimento.
+                    auditoria em modo somente-leitura.
                   </div>
                 </div>
 

@@ -146,7 +146,6 @@ const App = () => (
                   </RoleRoute>
                 }
               />
-              <Route path="/treinamento-sdr" element={<Navigate to="/configuracoes" replace />} />
               <Route
                 path="/configuracoes"
                 element={

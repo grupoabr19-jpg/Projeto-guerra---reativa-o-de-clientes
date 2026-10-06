@@ -591,7 +591,7 @@ export async function testKommoConnection() {
 }
 
 /**
- * Consulta a lista de usuários do Kommo CRM em cache ou via bridge somente-leitura.
+ * Consulta a lista de usuários do Kommo CRM em cache ou via endpoint somente-leitura.
  * Nunca grava no CRM.
  */
 export async function fetchKommoUsers(): Promise<import('@/types').KommoUserItem[]> {
@@ -612,27 +612,7 @@ export async function fetchKommoUsers(): Promise<import('@/types').KommoUserItem
     /* fallback */
   }
 
-  // 2. Tentar obter via kommo_bridge recent-activity
-  try {
-    const res = await fetch(
-      `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/kommo/recent-activity`,
-      {
-        headers: {
-          Authorization: pb.authStore.token,
-        },
-      },
-    )
-    if (res.ok) {
-      const data = await res.json()
-      if (Array.isArray(data.kommo_users) && data.kommo_users.length > 0) {
-        return data.kommo_users
-      }
-    }
-  } catch {
-    /* fallback to config */
-  }
-
-  // 3. Fallback: ler do registro 'kommo_config' em configuracoes (inspecao.users)
+  // 2. Fallback: ler do registro 'kommo_config' em configuracoes (inspecao.users)
   try {
     const cfg = await pb
       .collection('configuracoes')

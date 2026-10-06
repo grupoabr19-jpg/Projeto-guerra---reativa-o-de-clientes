@@ -114,7 +114,7 @@ export default function Layout() {
     }
   }, [user])
 
-  // Contagem dinâmica de mensagens não lidas para o Hub de Atendimento
+  // Contagem dinâmica de mensagens não lidas para o CA - Comunicação Interna
   useEffect(() => {
     if (!user || user.role !== 'admin') return
 
@@ -387,9 +387,9 @@ export default function Layout() {
                       {item.badgeCount > 99 ? '99+' : item.badgeCount}
                     </span>
                   )}
-                {!isCollapsed && 'badgeText' in item && item.badgeText && (
+                {!isCollapsed && 'badgeText' in item && Boolean(item.badgeText) && (
                   <span className="text-[10px] uppercase font-bold text-[#F18800] bg-[#F18800]/15 border border-[#F18800]/30 px-1.5 py-0.2 rounded shrink-0">
-                    {item.badgeText}
+                    {String(item.badgeText)}
                   </span>
                 )}
               </NavLink>
@@ -405,7 +405,9 @@ export default function Layout() {
                       typeof item.badgeCount === 'number' &&
                       item.badgeCount > 0 &&
                       ` (${item.badgeCount} não lidas)`}
-                    {'badgeText' in item && item.badgeText && ` (${item.badgeText})`}
+                    {'badgeText' in item &&
+                      Boolean(item.badgeText) &&
+                      ` (${String(item.badgeText)})`}
                   </TooltipContent>
                 </Tooltip>
               )
