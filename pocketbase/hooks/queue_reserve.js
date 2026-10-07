@@ -128,32 +128,58 @@ routerAdd(
       const endOfToday = new Date(endOfTodayBrtUtcMs).toISOString()
 
       // Constrói filtro de regiões exato e rápido com suporte a variações de grafia
+      // Normalização robusta de região (sem acento, maiúsculas, trim)
+      const normalizarRegiaoTexto = (r) => {
+        return String(r || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase()
+          .trim()
+      }
+
+      // Constrói filtro SQL PocketBase com todas as variantes conhecidas sem acento/com acento
       const buildRegiaoCondition = (regiaoStr) => {
-        const upper = String(regiaoStr).trim().toUpperCase()
-        if (upper === 'BRAGANÇA' || upper === 'BRAGANCA') {
-          return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA')"
-        }
-        if (upper === 'CAMBUÍ' || upper === 'CAMBUI') {
-          return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao = 'MICRO REGIAO')"
+        const norm = normalizarRegiaoTexto(regiaoStr)
+        if (norm === 'BRAGANCA' || norm === 'BRAGANCA PAULISTA' || norm.includes('BRAGANCA')) {
+          return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA' || regiao ~ 'BRAGANCA' || regiao ~ 'BRAGANÇA')"
         }
         if (
-          upper === 'POÇOS DE CALDAS' ||
-          upper === 'POCOS DE CALDAS' ||
-          upper === 'POÇOS CALDAS' ||
-          upper === 'POCOS CALDAS'
+          norm === 'CAMBUI' ||
+          norm === 'MICRO-REGIAO' ||
+          norm === 'MICRO REGIAO' ||
+          norm.includes('CAMBUI')
         ) {
-          return "(regiao = 'POÇOS DE CALDAS' || regiao = 'POCOS DE CALDAS' || regiao = 'POÇOS CALDAS' || regiao = 'POCOS CALDAS')"
+          return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao = 'MICRO REGIAO' || regiao ~ 'CAMBUI' || regiao ~ 'CAMBUÍ')"
         }
-        if (upper === 'JUNDIAÍ' || upper === 'JUNDIAI') {
-          return "(regiao = 'JUNDIAÍ' || regiao = 'JUNDIAI')"
+        if (
+          norm === 'POCOS DE CALDAS' ||
+          norm === 'POCOS CALDAS' ||
+          norm === 'POCOS' ||
+          norm.includes('POCOS') ||
+          norm.includes('CALDAS')
+        ) {
+          return "(regiao = 'POÇOS DE CALDAS' || regiao = 'POCOS DE CALDAS' || regiao = 'POÇOS CALDAS' || regiao = 'POCOS CALDAS' || regiao ~ 'POCOS' || regiao ~ 'POÇOS')"
         }
-        if (upper === 'ITAJUBÁ' || upper === 'ITAJUBA') {
-          return "(regiao = 'ITAJUBÁ' || regiao = 'ITAJUBA')"
+        if (norm === 'JUNDIAI' || norm.includes('JUNDIAI')) {
+          return "(regiao = 'JUNDIAÍ' || regiao = 'JUNDIAI' || regiao ~ 'JUNDIAI' || regiao ~ 'JUNDIAÍ')"
         }
-        if (upper === 'ATACADO') {
+        if (norm === 'ITAJUBA' || norm.includes('ITAJUBA')) {
+          return "(regiao = 'ITAJUBÁ' || regiao = 'ITAJUBA' || regiao ~ 'ITAJUBA' || regiao ~ 'ITAJUBÁ')"
+        }
+        if (norm === 'VARGINHA' || norm.includes('VARGINHA')) {
+          return "(regiao = 'VARGINHA' || regiao ~ 'VARGINHA')"
+        }
+        if (norm === 'POUSO ALEGRE' || norm.includes('POUSO')) {
+          return "(regiao = 'POUSO ALEGRE' || regiao ~ 'POUSO ALEGRE')"
+        }
+        if (norm === 'EXTREMA' || norm.includes('EXTREMA')) {
+          return "(regiao = 'EXTREMA' || regiao ~ 'EXTREMA')"
+        }
+        if (norm === 'ATACADO') {
           return "regiao = 'ATACADO'"
         }
-        return `regiao = '${upper}'`
+        const upper = String(regiaoStr).trim().toUpperCase()
+        return `(regiao = '${upper}' || regiao ~ '${norm}')`
       }
 
       let regiaoFilter = ''
@@ -421,18 +447,40 @@ routerAdd(
           } catch (_) {}
         }
 
-        // Fallback: se pool na região estiver vazia e operador tiver filtro de segmento, tenta sem filtro de segmento
-        if ((!pool || pool.length === 0) && filtroSegmento && filtroSegmento !== 'todos') {
+        // Se o operador filtrou por segmento, calcular quantos clientes existem na carteira sem o filtro de segmento
+        // para enriquecer a resposta caso o filtro de segmento gere resultado vazio.
+        let contagemCarteiraSemFiltroSegmento = 0
+        if (filtroSegmento && filtroSegmento !== 'todos') {
           try {
-            let fallbackFilter = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && !(standby_ate > '${nowIsoQueue}')`
-            if (regiaoFilter) fallbackFilter += ` && ${regiaoFilter}`
+            let countFilter = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && !(standby_ate > '${nowIsoQueue}')`
+            if (regiaoFilter) countFilter += ` && ${regiaoFilter}`
             if (!isAtacado && !isRepescagem && (userRole === 'operador' || userRole === 'lider')) {
-              fallbackFilter += ' && sem_dono_equipe != true'
+              countFilter += ' && sem_dono_equipe != true'
               if (userFirstNameClean && userFirstNameClean.length >= 3) {
-                fallbackFilter += ` && vendedor ~ '${userFirstNameClean.toUpperCase()}'`
+                countFilter += ` && vendedor ~ '${userFirstNameClean.toUpperCase()}'`
               }
             }
-            pool = $app.findRecordsByFilter('clientes', fallbackFilter, sortExpr, 500, 0)
+            const poolSemFiltro = $app.findRecordsByFilter(
+              'clientes',
+              countFilter,
+              '-score',
+              500,
+              0,
+            )
+            if (poolSemFiltro && poolSemFiltro.length > 0) {
+              if (isAtacado && (userRole === 'operador' || userRole === 'lider')) {
+                contagemCarteiraSemFiltroSegmento = poolSemFiltro.filter((c) => {
+                  const ddd = extrairDdd(c)
+                  return atacadoDddsPermitidos.includes(ddd)
+                }).length
+              } else if (!isRepescagem && (userRole === 'operador' || userRole === 'lider')) {
+                contagemCarteiraSemFiltroSegmento = poolSemFiltro.filter((c) =>
+                  matchesCarteiraVendedor(c),
+                ).length
+              } else {
+                contagemCarteiraSemFiltroSegmento = poolSemFiltro.length
+              }
+            }
           } catch (_) {}
         }
 
@@ -475,31 +523,84 @@ routerAdd(
 
             if (poolCarteiraOperador.length > 0) {
               if (ordenacaoEscolhida === 'antigos') {
+                // Ordenação explícita por mais antigos: maior dias_sem_faturar primeiro
+                poolCarteiraOperador.sort(
+                  (a, b) => b.getInt('dias_sem_faturar') - a.getInt('dias_sem_faturar'),
+                )
+                cand = poolCarteiraOperador[0]
+              } else if (ordenacaoEscolhida === 'novos') {
+                poolCarteiraOperador.sort(
+                  (a, b) => a.getInt('dias_sem_faturar') - b.getInt('dias_sem_faturar'),
+                )
                 cand = poolCarteiraOperador[0]
               } else {
-                // Prioridade idêntica: 60–89 primeiro; 90+ só depois ou por filtro 'antigos'
+                // Padrão: faixa 60–89 primeiro (por score desc);
+                // esgotada a 60–89, trazer os 90+ ordenados pelos MAIS ANTIGOS (maior dias_sem_faturar desc)
                 const faixa60 = poolCarteiraOperador.filter((c) => {
                   const f = c.getString('faixa')
                   const d = c.getInt('dias_sem_faturar')
                   return f === '60_89' || (d >= 60 && d <= 89)
                 })
-                cand = faixa60.length > 0 ? faixa60[0] : poolCarteiraOperador[0]
+                if (faixa60.length > 0) {
+                  cand = faixa60[0]
+                } else {
+                  // Fallback 90+: ordenado pelos MAIS ANTIGOS (maior dias_sem_faturar primeiro)
+                  const faixa90 = poolCarteiraOperador.filter((c) => {
+                    const f = c.getString('faixa')
+                    const d = c.getInt('dias_sem_faturar')
+                    return f === '90_plus' || d >= 90
+                  })
+                  if (faixa90.length > 0) {
+                    faixa90.sort(
+                      (a, b) => b.getInt('dias_sem_faturar') - a.getInt('dias_sem_faturar'),
+                    )
+                    cand = faixa90[0]
+                  } else {
+                    cand = poolCarteiraOperador[0]
+                  }
+                }
               }
             }
           } else {
-            // Supervisor ou admin atendendo: prioriza 60-89
+            // Supervisor ou admin atendendo: prioriza 60-89; esgotada, 90+ pelos mais antigos
             const faixa60 = pool.filter((c) => {
               const f = c.getString('faixa')
               const d = c.getInt('dias_sem_faturar')
               return f === '60_89' || (d >= 60 && d <= 89)
             })
-            cand = faixa60.length > 0 ? faixa60[0] : pool[0]
+            if (faixa60.length > 0) {
+              cand = faixa60[0]
+            } else {
+              const faixa90 = pool.filter((c) => {
+                const f = c.getString('faixa')
+                const d = c.getInt('dias_sem_faturar')
+                return f === '90_plus' || d >= 90
+              })
+              if (faixa90.length > 0) {
+                faixa90.sort((a, b) => b.getInt('dias_sem_faturar') - a.getInt('dias_sem_faturar'))
+                cand = faixa90[0]
+              } else {
+                cand = pool[0]
+              }
+            }
           }
         }
       }
 
       // Se nenhum candidato elegível foi encontrado:
       if (!cand) {
+        // Se havia filtro de segmento selecionado e existem clientes na carteira sem o filtro de segmento:
+        const temFiltroSegmentoAtivo = filtroSegmento && filtroSegmento !== 'todos'
+        if (temFiltroSegmentoAtivo && contagemCarteiraSemFiltroSegmento > 0) {
+          return e.json(200, {
+            cliente: null,
+            carteira_esgotada: false,
+            segmento_zerado: true,
+            total_carteira_sem_filtro: contagemCarteiraSemFiltroSegmento,
+            message: `Nenhum cliente disponível no segmento selecionado. Selecione 'Todos os Segmentos' para acessar os ${contagemCarteiraSemFiltroSegmento} clientes da sua carteira.`,
+          })
+        }
+
         const isCarteiraVazia = userRole === 'operador' || userRole === 'lider'
         let msg = 'Fila de atendimento vazia para as regiões atribuídas no momento.'
 
@@ -515,6 +616,8 @@ routerAdd(
         return e.json(200, {
           cliente: null,
           carteira_esgotada: isCarteiraVazia,
+          segmento_zerado: false,
+          total_carteira_sem_filtro: 0,
           message: msg,
         })
       }

@@ -114,6 +114,10 @@ export default function AtendimentoPage() {
   const [filtroOrdenacao, setFiltroOrdenacao] = useState<'score' | 'antigos' | 'novos'>('score')
   const [reservandoNovo, setReservandoNovo] = useState(false)
   const [showQuestionarioModal, setShowQuestionarioModal] = useState(false)
+  const [avisoSegmentoZerado, setAvisoSegmentoZerado] = useState<{
+    segmento: string
+    totalCarteiraSemFiltro: number
+  } | null>(null)
 
   // Busca por nome na carteira do operador
   const [termoBuscaCarteira, setTermoBuscaCarteira] = useState('')
@@ -321,10 +325,19 @@ export default function AtendimentoPage() {
         ordenacao: filtroOrdenacao,
       })
       if (res.cliente) {
+        setAvisoSegmentoZerado(null)
         setCliente(res.cliente)
         loadCliente(res.cliente.id)
       } else {
         setCliente(null)
+        if (res.segmento_zerado && filtroSegmento !== 'todos') {
+          setAvisoSegmentoZerado({
+            segmento: filtroSegmento,
+            totalCarteiraSemFiltro: res.total_carteira_sem_filtro || 0,
+          })
+        } else {
+          setAvisoSegmentoZerado(null)
+        }
       }
     } catch (_) {
       setCliente(null)
@@ -341,6 +354,7 @@ export default function AtendimentoPage() {
         ordenacao: filtroOrdenacao,
       })
       if (res.cliente) {
+        setAvisoSegmentoZerado(null)
         await loadCliente(res.cliente.id)
         navigate(`/atendimento/${res.cliente.id}`, { replace: true })
         if (res.ja_reservado) {
@@ -356,16 +370,31 @@ export default function AtendimentoPage() {
           })
         }
       } else {
-        // Distingue carteira esgotada / fila vazia de erro de forma clara e amigável
-        toast({
-          variant: res.carteira_esgotada ? 'destructive' : 'default',
-          title: res.carteira_esgotada
-            ? 'Carteira esgotada'
-            : 'Nenhum cliente elegível na sua fila',
-          description:
-            res.message ||
-            'Não encontramos nenhum cliente elegível disponível na sua rota no momento. Tente trocar os filtros ou tente novamente mais tarde.',
-        })
+        // Distingue carteira esgotada real de filtro de segmento ativo que zerou a busca
+        if (res.segmento_zerado && filtroSegmento !== 'todos') {
+          setAvisoSegmentoZerado({
+            segmento: filtroSegmento,
+            totalCarteiraSemFiltro: res.total_carteira_sem_filtro || 0,
+          })
+          toast({
+            variant: 'default',
+            title: 'Filtro de segmento sem resultados',
+            description:
+              res.message ||
+              `Nenhum cliente disponível no segmento selecionado. Selecione 'Todos os Segmentos' para acessar os ${res.total_carteira_sem_filtro || 0} clientes da sua carteira.`,
+          })
+        } else {
+          setAvisoSegmentoZerado(null)
+          toast({
+            variant: res.carteira_esgotada ? 'destructive' : 'default',
+            title: res.carteira_esgotada
+              ? 'Carteira esgotada'
+              : 'Nenhum cliente elegível na sua fila',
+            description:
+              res.message ||
+              'Não encontramos nenhum cliente elegível disponível na sua rota no momento. Tente trocar os filtros ou tente novamente mais tarde.',
+          })
+        }
       }
     } catch (err: unknown) {
       const rawMsg = err instanceof Error ? err.message : String(err)
@@ -1024,7 +1053,15 @@ export default function AtendimentoPage() {
                 <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider block">
                   Filtrar por Segmento
                 </span>
-                <Select value={filtroSegmento} onValueChange={(val) => setFiltroSegmento(val)}>
+                <Select
+                  value={filtroSegmento}
+                  onValueChange={(val) => {
+                    setFiltroSegmento(val)
+                    if (val === 'todos') {
+                      setAvisoSegmentoZerado(null)
+                    }
+                  }}
+                >
                   <SelectTrigger className="h-8 text-xs w-44 bg-white border-slate-300">
                     <SelectValue placeholder="Todos os Segmentos" />
                   </SelectTrigger>
@@ -1348,16 +1385,47 @@ export default function AtendimentoPage() {
       {/* Se não houver cliente selecionado */}
       {!cliente ? (
         <Card className="border-dashed border-2 border-slate-200 text-center p-12 bg-slate-50/50">
-          <CardContent className="space-y-3 flex flex-col items-center justify-center p-0">
+          <CardContent className="space-y-4 flex flex-col items-center justify-center p-0">
             <div className="h-14 w-14 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shadow-inner">
               <PhoneCall className="h-7 w-7" />
             </div>
             <h3 className="text-base font-bold text-slate-800">Pronto para Iniciar Contatos</h3>
-            <p className="text-xs text-slate-500 max-w-md">
-              {user?.regioes?.includes('REPESCAGEM')
-                ? 'Operador da fila transversal Repescagem: o sistema buscará clientes com 90+ dias sem faturar de qualquer região, exceto os contatados pelo vendedor original da rota. Ou busque um cliente pelo nome acima.'
-                : 'Puxe o próximo cliente da sua fila pelo botão laranja ou use a barra de busca acima para localizar um cliente específico da sua carteira (ex.: clientes que você já atende semanalmente) para abrir a ficha e eliminá-los da base via "Cliente Ativo — Fora da Base".'}
-            </p>
+
+            {avisoSegmentoZerado ? (
+              <div className="bg-amber-50 border border-amber-300 text-amber-900 rounded-xl p-4 max-w-lg text-left shadow-xs space-y-2">
+                <div className="flex items-center gap-2 font-bold text-xs text-amber-950">
+                  <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                  <span>Nenhum cliente disponível no segmento selecionado</span>
+                </div>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  Sua carteira possui{' '}
+                  <strong>{avisoSegmentoZerado.totalCarteiraSemFiltro} clientes elegíveis</strong>{' '}
+                  disponíveis, mas nenhum deles pertence ao segmento{' '}
+                  <em>"{avisoSegmentoZerado.segmento}"</em>.
+                </p>
+                <div className="pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setFiltroSegmento('todos')
+                      setAvisoSegmentoZerado(null)
+                    }}
+                    className="bg-white hover:bg-amber-100 text-amber-950 border-amber-300 font-semibold text-xs h-8 px-3"
+                  >
+                    Selecionar "Todos os Segmentos" ({avisoSegmentoZerado.totalCarteiraSemFiltro}{' '}
+                    clientes)
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500 max-w-md">
+                {user?.regioes?.includes('REPESCAGEM')
+                  ? 'Operador da fila transversal Repescagem: o sistema buscará clientes com 90+ dias sem faturar de qualquer região, exceto os contatados pelo vendedor original da rota. Ou busque um cliente pelo nome acima.'
+                  : 'Puxe o próximo cliente da sua fila pelo botão laranja ou use a barra de busca acima para localizar um cliente específico da sua carteira (ex.: clientes que você já atende semanalmente) para abrir a ficha e eliminá-los da base via "Cliente Ativo — Fora da Base".'}
+              </p>
+            )}
+
             <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
               <Button
                 onClick={handlePuxarNovoAtendimento}
@@ -1369,6 +1437,19 @@ export default function AtendimentoPage() {
                   ? 'Puxar Próximo Repescagem (90+ dias)'
                   : 'Puxar Próximo da Minha Rota'}
               </Button>
+              {avisoSegmentoZerado && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setFiltroSegmento('todos')
+                    setAvisoSegmentoZerado(null)
+                  }}
+                  className="text-xs border-slate-300"
+                >
+                  Limpar filtro de segmento
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>

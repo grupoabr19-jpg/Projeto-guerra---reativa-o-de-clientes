@@ -181,32 +181,57 @@ routerAdd(
       }
 
       // Constrói filtro de regiões exato e rápido com suporte a variações de grafia
+      // Normalização robusta de região (sem acento, maiúsculas, trim)
+      const normalizarRegiaoTexto = (r) => {
+        return String(r || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase()
+          .trim()
+      }
+
       const buildRegiaoCondition = (regiaoStr) => {
-        const upper = String(regiaoStr).trim().toUpperCase()
-        if (upper === 'BRAGANÇA' || upper === 'BRAGANCA') {
-          return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA')"
-        }
-        if (upper === 'CAMBUÍ' || upper === 'CAMBUI') {
-          return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao = 'MICRO REGIAO')"
+        const norm = normalizarRegiaoTexto(regiaoStr)
+        if (norm === 'BRAGANCA' || norm === 'BRAGANCA PAULISTA' || norm.includes('BRAGANCA')) {
+          return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA' || regiao ~ 'BRAGANCA' || regiao ~ 'BRAGANÇA')"
         }
         if (
-          upper === 'POÇOS DE CALDAS' ||
-          upper === 'POCOS DE CALDAS' ||
-          upper === 'POÇOS CALDAS' ||
-          upper === 'POCOS CALDAS'
+          norm === 'CAMBUI' ||
+          norm === 'MICRO-REGIAO' ||
+          norm === 'MICRO REGIAO' ||
+          norm.includes('CAMBUI')
         ) {
-          return "(regiao = 'POÇOS DE CALDAS' || regiao = 'POCOS DE CALDAS' || regiao = 'POÇOS CALDAS' || regiao = 'POCOS CALDAS')"
+          return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao = 'MICRO REGIAO' || regiao ~ 'CAMBUI' || regiao ~ 'CAMBUÍ')"
         }
-        if (upper === 'JUNDIAÍ' || upper === 'JUNDIAI') {
-          return "(regiao = 'JUNDIAÍ' || regiao = 'JUNDIAI')"
+        if (
+          norm === 'POCOS DE CALDAS' ||
+          norm === 'POCOS CALDAS' ||
+          norm === 'POCOS' ||
+          norm.includes('POCOS') ||
+          norm.includes('CALDAS')
+        ) {
+          return "(regiao = 'POÇOS DE CALDAS' || regiao = 'POCOS DE CALDAS' || regiao = 'POÇOS CALDAS' || regiao = 'POCOS CALDAS' || regiao ~ 'POCOS' || regiao ~ 'POÇOS')"
         }
-        if (upper === 'ITAJUBÁ' || upper === 'ITAJUBA') {
-          return "(regiao = 'ITAJUBÁ' || regiao = 'ITAJUBA')"
+        if (norm === 'JUNDIAI' || norm.includes('JUNDIAI')) {
+          return "(regiao = 'JUNDIAÍ' || regiao = 'JUNDIAI' || regiao ~ 'JUNDIAI' || regiao ~ 'JUNDIAÍ')"
         }
-        if (upper === 'ATACADO') {
+        if (norm === 'ITAJUBA' || norm.includes('ITAJUBA')) {
+          return "(regiao = 'ITAJUBÁ' || regiao = 'ITAJUBA' || regiao ~ 'ITAJUBA' || regiao ~ 'ITAJUBÁ')"
+        }
+        if (norm === 'VARGINHA' || norm.includes('VARGINHA')) {
+          return "(regiao = 'VARGINHA' || regiao ~ 'VARGINHA')"
+        }
+        if (norm === 'POUSO ALEGRE' || norm.includes('POUSO')) {
+          return "(regiao = 'POUSO ALEGRE' || regiao ~ 'POUSO ALEGRE')"
+        }
+        if (norm === 'EXTREMA' || norm.includes('EXTREMA')) {
+          return "(regiao = 'EXTREMA' || regiao ~ 'EXTREMA')"
+        }
+        if (norm === 'ATACADO') {
           return "regiao = 'ATACADO'"
         }
-        return `regiao = '${upper}'`
+        const upper = String(regiaoStr).trim().toUpperCase()
+        return `(regiao = '${upper}' || regiao ~ '${norm}')`
       }
 
       // Sanitiza termo de busca para SQLite filter

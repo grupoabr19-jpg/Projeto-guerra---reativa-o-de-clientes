@@ -59,18 +59,31 @@ routerAdd(
           .replace(/[\u0300-\u036f]/g, '')
           .toUpperCase()
           .trim()
-        if (s === 'BRAGANCA PAULISTA' || s === 'BRAGANCA') return 'BRAGANCA'
-        if (s === 'POCOS DE CALDAS' || s === 'POCOS CALDAS' || s === 'POCOS') {
+        if (s === 'BRAGANCA PAULISTA' || s === 'BRAGANCA' || s.includes('BRAGANCA'))
+          return 'BRAGANCA'
+        if (
+          s === 'POCOS DE CALDAS' ||
+          s === 'POCOS CALDAS' ||
+          s === 'POCOS' ||
+          s.includes('POCOS') ||
+          s.includes('CALDAS')
+        ) {
           return 'POCOS DE CALDAS'
         }
-        if (s === 'CAMBUI' || s === 'MICRO-REGIAO' || s === 'MICRO REGIAO' || s === 'MICROREGIAO') {
+        if (
+          s === 'CAMBUI' ||
+          s === 'MICRO-REGIAO' ||
+          s === 'MICRO REGIAO' ||
+          s === 'MICROREGIAO' ||
+          s.includes('CAMBUI')
+        ) {
           return 'CAMBUI'
         }
-        if (s === 'JUNDIAI') return 'JUNDIAI'
-        if (s === 'ITAJUBA') return 'ITAJUBA'
-        if (s === 'POUSO ALEGRE') return 'POUSO ALEGRE'
-        if (s === 'VARGINHA') return 'VARGINHA'
-        if (s === 'EXTREMA') return 'EXTREMA'
+        if (s === 'JUNDIAI' || s.includes('JUNDIAI')) return 'JUNDIAI'
+        if (s === 'ITAJUBA' || s.includes('ITAJUBA')) return 'ITAJUBA'
+        if (s === 'POUSO ALEGRE' || s.includes('POUSO')) return 'POUSO ALEGRE'
+        if (s === 'VARGINHA' || s.includes('VARGINHA')) return 'VARGINHA'
+        if (s === 'EXTREMA' || s.includes('EXTREMA')) return 'EXTREMA'
         if (s === 'ATACADO') return 'ATACADO'
         return s
       }

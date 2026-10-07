@@ -318,6 +318,8 @@ export async function reserveNextQueueClient(options?: {
     cliente: Cliente | null
     ja_reservado: boolean
     carteira_esgotada?: boolean
+    segmento_zerado?: boolean
+    total_carteira_sem_filtro?: number
     message: string
   }>
 }
