@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-07T17:23:13.441Z",
+  "generatedAt": "2026-10-07T18:12:54.270Z",
   "collections": [
     {
       "name": "users",
@@ -677,6 +677,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "q3_arquivo",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

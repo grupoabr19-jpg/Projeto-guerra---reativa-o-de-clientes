@@ -162,6 +162,7 @@ export interface RespostaFormulario {
   desfecho: string
   valor_potencial?: number
   toneladas_potencial?: number
+  q3_arquivo?: string
   anexos?: string[]
   created: string
   expand?: {

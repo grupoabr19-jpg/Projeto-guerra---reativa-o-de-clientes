@@ -4,6 +4,11 @@
  * Cada conjunto possui opções pré-definidas e suporte à opção "Outros" com texto livre.
  */
 
+export const OPCOES_Q3_ORCAMENTO = ['Sim', 'Não'] as const
+
+/**
+ * @deprecated Mantido para retrocompatibilidade com histórico de Situação Operacional (agora em q3_arquivo).
+ */
 export const OPCOES_Q3_SITUACAO = [
   'Sim, operando normalmente',
   'Sim, demanda reduzida',

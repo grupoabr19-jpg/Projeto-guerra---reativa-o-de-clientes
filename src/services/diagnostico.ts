@@ -115,14 +115,18 @@ function extrairMotivosDeRespostas(
   if (!respostas || typeof respostas !== 'object') return []
   const resultado: MapeamentoOcorrencia[] = []
 
-  // Q3: Situação Operacional
-  const q3 = String(respostas.q3 || '').trim()
-  if (q3) {
-    if (q3.includes('demanda reduzida') || q3.includes('Encerrou') || q3.includes('judicial')) {
+  // Q3: Situação Operacional (Preservada historicamente em q3_arquivo ou respostas.q3 antigo)
+  const q3AntigoOuArquivo = String(respostas.q3_arquivo || respostas.q3 || '').trim()
+  if (q3AntigoOuArquivo && q3AntigoOuArquivo !== 'Sim' && q3AntigoOuArquivo !== 'Não') {
+    if (
+      q3AntigoOuArquivo.includes('demanda reduzida') ||
+      q3AntigoOuArquivo.includes('Encerrou') ||
+      q3AntigoOuArquivo.includes('judicial')
+    ) {
       resultado.push({
         categoria: 'sem_necessidade_obra',
-        perguntaOrigem: 'Q3 — Situação Operacional no Mercado',
-        respostaBruta: q3,
+        perguntaOrigem: 'Q3 — Situação Operacional (Histórico)',
+        respostaBruta: q3AntigoOuArquivo,
       })
     }
   }

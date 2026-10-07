@@ -85,6 +85,7 @@ import {
 import type { Cliente, Interacao, ClienteEstado, User } from '@/types'
 import { SEGMENTOS_OFICIAIS } from '@/lib/segmentos'
 import {
+  OPCOES_Q3_ORCAMENTO,
   OPCOES_Q7_CONCORRENCIA,
   OPCOES_Q8_OCORRENCIA,
   OPCOES_Q10_ACAO_CORRETIVA,
@@ -136,6 +137,7 @@ export default function AtendimentoPage() {
 
   // Questionário de Perguntas — Etapas visíveis: Q3 (3), Q5..Q13 (5..13), Q14..Q17 (14..17).
   // Q1, Q2 e Q4 são pré-preenchidas e puladas na navegação para não duplicar o card de gatilhos.
+  // Regra Q3 ("Fez orçamento?"): Q15 e Q16 só existem no fluxo se Q3="Sim". Se Q3="Não", Q15 e Q16 são puladas e ocultadas.
   const [currentStep, setCurrentStep] = useState(3)
   const [answers, setAnswers] = useState<Record<string, string | number>>({})
   const [anexosFiles, setAnexosFiles] = useState<File[]>([])
@@ -540,7 +542,7 @@ export default function AtendimentoPage() {
   // Desempacotar perguntas com "Outros: <texto>" quando cliente carrega
   useEffect(() => {
     if (!cliente) return
-    const chaves = ['q3', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'q12', 'q13']
+    const chaves = ['q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'q12', 'q13']
     const rascunho = (cliente.rascunho_respostas as Record<string, string | number>) || {}
     const updates: Record<string, string | number> = {}
     chaves.forEach((key) => {
@@ -555,6 +557,26 @@ export default function AtendimentoPage() {
       setAnswers((prev) => ({ ...prev, ...updates }))
     }
   }, [cliente?.id])
+
+  // Manipulador exclusivo de Q3 ("Fez orçamento?"):
+  // Quando muda para "Não", limpa os valores de Q15 e Q16 do estado para nunca gravar dado órfão
+  const handleQ3Change = (val: string) => {
+    setAnswers((prev) => {
+      const updated = { ...prev, q3: val }
+      if (val === 'Não') {
+        delete updated.q15
+        delete updated.q16
+      }
+      return updated
+    })
+    if (val === 'Não') {
+      setAvisoValidacaoMetrica(null)
+      // Se estava em step 15 ou 16 e mudou para Não, pula para 17
+      if (currentStep === 15 || currentStep === 16) {
+        setCurrentStep(17)
+      }
+    }
+  }
 
   // Salvar Edição de Atendimento Fechado pelo Administrador
   const handleSalvarEdicaoAdmin = async () => {
@@ -574,8 +596,12 @@ export default function AtendimentoPage() {
 
     setSalvandoEdicaoAdmin(true)
     try {
-      // Validação frontend de Q15 e Q16 (isenta sem_contato e duplicado)
-      if (desfechoFinal !== 'sem_contato' && desfechoFinal !== 'duplicado') {
+      // Validação frontend de Q15 e Q16:
+      // SOMENTE exigidas quando Q3 = "Sim". Se Q3 = "Não", Q15 e Q16 ficam ocultas e vazias (isenta também sem_contato e duplicado).
+      const q3Val = answers.q3 !== undefined && answers.q3 !== null ? String(answers.q3).trim() : ''
+      const fezOrcamento = q3Val === 'Sim'
+
+      if (fezOrcamento && desfechoFinal !== 'sem_contato' && desfechoFinal !== 'duplicado') {
         const rawValor = answers.q15 !== undefined ? String(answers.q15).trim() : ''
         const rawPeso = answers.q16 !== undefined ? String(answers.q16).trim() : ''
         const numValor = parseFloat(rawValor.replace(/[^\d.,]/g, '').replace(',', '.'))
@@ -616,22 +642,32 @@ export default function AtendimentoPage() {
         }
       }
 
-      const valorPotencial =
-        parseFloat(
-          String(answers.q15 || 0)
-            .replace(/[^\d.,]/g, '')
-            .replace(',', '.'),
-        ) || 0
-      const toneladasPotencial =
-        parseFloat(
-          String(answers.q16 || 0)
-            .replace(/[^\d.,]/g, '')
-            .replace(',', '.'),
-        ) || 0
+      // Se Q3 for "Não", campos de valor e peso são gravados vazios (undefined/null, NUNCA zero)
+      let valorPotencial: number | undefined = undefined
+      let toneladasPotencial: number | undefined = undefined
 
-      // Consolidar respostas com "Outros: <texto>"
-      const chavesOutros = ['q3', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'q12', 'q13']
+      if (fezOrcamento) {
+        valorPotencial =
+          parseFloat(
+            String(answers.q15 || '')
+              .replace(/[^\d.,]/g, '')
+              .replace(',', '.'),
+          ) || undefined
+        toneladasPotencial =
+          parseFloat(
+            String(answers.q16 || '')
+              .replace(/[^\d.,]/g, '')
+              .replace(',', '.'),
+          ) || undefined
+      }
+
+      // Consolidar respostas com "Outros: <texto>" (Q3 agora é Sim/Não sem 'Outros')
+      const chavesOutros = ['q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'q12', 'q13']
       const respostasConsolidadas: Record<string, unknown> = { ...answers }
+      if (!fezOrcamento) {
+        delete respostasConsolidadas.q15
+        delete respostasConsolidadas.q16
+      }
       chavesOutros.forEach((key) => {
         if (answers[key] === 'Outros') {
           const texto = String(answers[`${key}_outros`] || '').trim()
@@ -1912,53 +1948,34 @@ export default function AtendimentoPage() {
                   {/* Renderização da pergunta atual baseada no currentStep (Q1, Q2 e Q4 pré-preenchidas e omitidas do fluxo visível) */}
                   {currentStep === 3 && (
                     <div className="space-y-3">
-                      <Badge variant="outline" className="text-xs text-blue-600">
-                        Q3 — Situação Operacional
-                      </Badge>
-                      <h3 className="text-base font-semibold text-slate-800">
-                        O cliente continua ativo no mercado e com demanda operacional regular?
-                      </h3>
-                      <Select
-                        value={String(answers.q3 || '')}
-                        onValueChange={(val) => setAnswers({ ...answers, q3: val })}
-                      >
+                      <div className="flex items-center justify-between">
+                        <Badge variant="outline" className="text-xs text-blue-600">
+                          Q3 — Fez orçamento?
+                        </Badge>
+                        <span className="text-[11px] text-slate-400">
+                          {answers.q3 === 'Sim' ? 'Habilita Valor (Q15) e Peso (Q16)' : 'Sim / Não'}
+                        </span>
+                      </div>
+                      <h3 className="text-base font-semibold text-slate-800">Fez orçamento?</h3>
+                      <Select value={String(answers.q3 || '')} onValueChange={handleQ3Change}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Selecione o status no mercado..." />
+                          <SelectValue placeholder="Selecione Sim ou Não..." />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Sim, operando normalmente">
-                            Sim, operando normalmente
-                          </SelectItem>
-                          <SelectItem value="Sim, demanda reduzida">
-                            Sim, demanda reduzida
-                          </SelectItem>
-                          <SelectItem value="Em recuperação judicial">
-                            Em recuperação judicial
-                          </SelectItem>
-                          <SelectItem value="Encerrou as atividades">
-                            Encerrou as atividades
-                          </SelectItem>
-                          <SelectItem value="Outros">Outros</SelectItem>
+                          {OPCOES_Q3_ORCAMENTO.map((op) => (
+                            <SelectItem key={op} value={op}>
+                              {op}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
-                      {answers.q3 === 'Outros' && (
-                        <div className="mt-2 space-y-1.5 p-3 rounded-lg bg-amber-50/60 border border-amber-200">
-                          <Label className="text-xs font-semibold text-amber-950">
-                            Especifique os detalhes para &apos;Outros&apos;: *
-                          </Label>
-                          <Input
-                            placeholder="Descreva a situação operacional do cliente..."
-                            value={String(answers.q3_outros || '')}
-                            onChange={(e) => setAnswers({ ...answers, q3_outros: e.target.value })}
-                            className="bg-white text-xs"
-                          />
-                          {!answers.q3_outros && (
-                            <p className="text-[11px] text-amber-800 font-medium">
-                              ⚠️ Por favor, preencha o detalhamento do campo Outros.
-                            </p>
-                          )}
-                        </div>
-                      )}
+                      <p className="text-[11px] text-slate-500">
+                        {answers.q3 === 'Sim'
+                          ? 'Ao responder "Sim", será obrigatório informar o Valor Potencial (Q15) e Volume em Toneladas (Q16).'
+                          : answers.q3 === 'Não'
+                            ? 'Ao responder "Não", as perguntas de valor e peso ficam desabilitadas/ocultas.'
+                            : 'Escolha Sim para abrir os campos de valor e peso, ou Não para pular.'}
+                      </p>
                     </div>
                   )}
 
@@ -2837,9 +2854,11 @@ export default function AtendimentoPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => {
+                      const fezOrcamento = answers.q3 === 'Sim'
                       setCurrentStep((prev) => {
                         if (prev <= 3) return 3
                         if (prev === 5) return 3 // pula Q4
+                        if (prev === 17 && !fezOrcamento) return 14 // se não fez orçamento, pula Q16 e Q15 voltando
                         return prev - 1
                       })
                     }}
@@ -2864,8 +2883,11 @@ export default function AtendimentoPage() {
                           <Button
                             size="sm"
                             onClick={() => {
-                              // Validação de avanço para Q15 e Q16
+                              const fezOrcamento = answers.q3 === 'Sim'
+
+                              // Validação de avanço para Q15 e Q16 (somente quando Q3 = Sim)
                               if (
+                                fezOrcamento &&
                                 desfechoFinal !== 'sem_contato' &&
                                 desfechoFinal !== 'duplicado'
                               ) {
@@ -2904,6 +2926,10 @@ export default function AtendimentoPage() {
                               setAvisoValidacaoMetrica(null)
                               setCurrentStep((prev) => {
                                 if (prev === 3) return 5 // pula Q4
+                                if (prev === 14) {
+                                  // Se fez orçamento, vai para Q15; senão, pula direto para Q17
+                                  return fezOrcamento ? 15 : 17
+                                }
                                 return Math.min(17, prev + 1)
                               })
                             }}
@@ -3401,9 +3427,11 @@ export default function AtendimentoPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
+                        const fezOrcamento = answers.q3 === 'Sim'
                         setCurrentStep((prev) => {
                           if (prev <= 3) return 3
                           if (prev === 5) return 3
+                          if (prev === 17 && !fezOrcamento) return 14
                           return prev - 1
                         })
                       }}
@@ -3416,7 +3444,12 @@ export default function AtendimentoPage() {
                       <Button
                         size="sm"
                         onClick={() => {
-                          if (desfechoFinal !== 'sem_contato' && desfechoFinal !== 'duplicado') {
+                          const fezOrcamento = answers.q3 === 'Sim'
+                          if (
+                            fezOrcamento &&
+                            desfechoFinal !== 'sem_contato' &&
+                            desfechoFinal !== 'duplicado'
+                          ) {
                             if (currentStep === 15) {
                               const rawVal =
                                 answers.q15 !== undefined ? String(answers.q15).trim() : ''
@@ -3452,12 +3485,21 @@ export default function AtendimentoPage() {
                           }
                           setCurrentStep((prev) => {
                             if (prev === 3) return 5
+                            if (prev === 14) {
+                              return fezOrcamento ? 15 : 17
+                            }
                             return Math.min(17, prev + 1)
                           })
                         }}
                         className="bg-blue-600 hover:bg-blue-700 text-white text-xs"
                       >
-                        Próxima Pergunta ({currentStep === 3 ? 5 : currentStep + 1}/17)
+                        Próxima Pergunta (
+                        {currentStep === 3
+                          ? 5
+                          : currentStep === 14 && answers.q3 !== 'Sim'
+                            ? 17
+                            : currentStep + 1}
+                        /17)
                       </Button>
                     ) : (
                       <Button

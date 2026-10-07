@@ -63,34 +63,54 @@ onRecordCreateRequest((e) => {
     }
 
     // REGRA 3: Validação de valor e peso obrigatórios para garantir mensuração de métricas
-    // Não se aplica a 'sem_contato', 'duplicado' ou edições especiais de admin
+    // Regra Q3 ("Fez orçamento?"):
+    // - SOMENTE quando Q3 = "Sim" (ou 'sim'), Q15 (valor) e Q16 (peso) são OBRIGATÓRIOS.
+    // - Quando Q3 = "Não", Q15 e Q16 não são exigidos (e devem ser limpos se preenchidos).
+    // - Se Q3 vier vazia (ficha aberta antes da mudança), tratar como não respondida sem travar.
+    // - Isenções existentes mantidas: sem_contato e duplicado nunca exigem.
     if (desfecho !== 'sem_contato' && desfecho !== 'duplicado') {
-      const valor = record.getFloat('valor_potencial')
-      const peso = record.getFloat('toneladas_potencial')
       const respostas = record.get('respostas') || {}
-      const rawValor = respostas.q15 !== undefined ? respostas.q15 : valor
-      const rawPeso = respostas.q16 !== undefined ? respostas.q16 : peso
+      const q3Val =
+        respostas.q3 !== undefined && respostas.q3 !== null ? String(respostas.q3).trim() : ''
+      const fezOrcamento = q3Val.toLowerCase() === 'sim'
 
-      const numValor = parseFloat(
-        String(rawValor || '')
-          .replace(/[^\d.,]/g, '')
-          .replace(',', '.'),
-      )
-      const numPeso = parseFloat(
-        String(rawPeso || '')
-          .replace(/[^\d.,]/g, '')
-          .replace(',', '.'),
-      )
+      if (fezOrcamento) {
+        const valor = record.getFloat('valor_potencial')
+        const peso = record.getFloat('toneladas_potencial')
+        const rawValor = respostas.q15 !== undefined ? respostas.q15 : valor
+        const rawPeso = respostas.q16 !== undefined ? respostas.q16 : peso
 
-      if (isNaN(numValor) || numValor < 0 || String(rawValor || '').trim() === '') {
-        throw new BadRequestError(
-          'O preenchimento do Valor Potencial (Q15) é imprescindível para termos um bom retorno das métricas.',
+        const numValor = parseFloat(
+          String(rawValor || '')
+            .replace(/[^\d.,]/g, '')
+            .replace(',', '.'),
         )
-      }
-      if (isNaN(numPeso) || numPeso < 0 || String(rawPeso || '').trim() === '') {
-        throw new BadRequestError(
-          'O preenchimento do Volume em Toneladas (Q16) é imprescindível para termos um bom retorno das métricas.',
+        const numPeso = parseFloat(
+          String(rawPeso || '')
+            .replace(/[^\d.,]/g, '')
+            .replace(',', '.'),
         )
+
+        if (isNaN(numValor) || numValor < 0 || String(rawValor || '').trim() === '') {
+          throw new BadRequestError(
+            'O preenchimento do Valor Potencial (Q15) é imprescindível para termos um bom retorno das métricas.',
+          )
+        }
+        if (isNaN(numPeso) || numPeso < 0 || String(rawPeso || '').trim() === '') {
+          throw new BadRequestError(
+            'O preenchimento do Volume em Toneladas (Q16) é imprescindível para termos um bom retorno das métricas.',
+          )
+        }
+      } else if (q3Val.toLowerCase() === 'não' || q3Val.toLowerCase() === 'nao') {
+        // Se Q3 = "Não", garante que valor e peso não fiquem gravados (limpa dados órfãos)
+        record.set('valor_potencial', null)
+        record.set('toneladas_potencial', null)
+        if (respostas.q15 !== undefined || respostas.q16 !== undefined) {
+          const novasRespostas = { ...respostas }
+          delete novasRespostas.q15
+          delete novasRespostas.q16
+          record.set('respostas', novasRespostas)
+        }
       }
     }
   } catch (err) {

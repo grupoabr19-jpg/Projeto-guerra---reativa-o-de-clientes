@@ -1052,7 +1052,20 @@ routerAdd(
       const respostas = body.respostas && typeof body.respostas === 'object' ? body.respostas : {}
 
       let valorPotencial = undefined
-      if (
+      let toneladasPotencial = undefined
+
+      const q3Val =
+        respostas.q3 !== undefined && respostas.q3 !== null ? String(respostas.q3).trim() : ''
+      const fezOrcamento = q3Val.toLowerCase() === 'sim'
+      const naoFezOrcamento = q3Val.toLowerCase() === 'não' || q3Val.toLowerCase() === 'nao'
+
+      if (naoFezOrcamento) {
+        // Quando Q3 = "Não", garante que campos de valor e peso fiquem limpos
+        delete respostas.q15
+        delete respostas.q16
+        valorPotencial = null
+        toneladasPotencial = null
+      } else if (
         body.valor_potencial !== undefined &&
         body.valor_potencial !== null &&
         body.valor_potencial !== ''
@@ -1061,8 +1074,8 @@ routerAdd(
         if (!isNaN(num)) valorPotencial = num
       }
 
-      let toneladasPotencial = undefined
       if (
+        !naoFezOrcamento &&
         body.toneladas_potencial !== undefined &&
         body.toneladas_potencial !== null &&
         body.toneladas_potencial !== ''
