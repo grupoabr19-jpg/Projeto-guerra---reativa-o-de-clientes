@@ -313,22 +313,81 @@ routerAdd(
       }
 
       // 1. Verifica se o operador já tem um cliente reservado ou em atendimento ativo (dentro do lock de 30 min)
+      // REGRA DE SANEAMENTO ATÔMICO: Se o lock ativo apontar para cliente que JÁ TEM desfecho gravado
+      // ou reagendamento futuro/ativo, o servidor ignora e saneia o registro (limpa lock e acerta estado),
+      // e segue para o próximo da fila — nunca mais devolve cliente concluído em loop!
       try {
         const currentLocked = $app.findRecordsByFilter(
           'clientes',
           `operador = '${userId}' && (estado = 'reservado' || estado = 'em_atendimento') && lock_timestamp >= '${cutoffTime}'`,
           '-lock_timestamp',
-          1,
+          5,
           0,
         )
 
         if (currentLocked && currentLocked.length > 0) {
-          return e.json(200, {
-            cliente: currentLocked[0],
-            ja_reservado: true,
-            carteira_esgotada: false,
-            message: 'Você já possui um contato em andamento.',
-          })
+          for (let lcIdx = 0; lcIdx < currentLocked.length; lcIdx++) {
+            const candLock = currentLocked[lcIdx]
+            const candReagPara = candLock.getString('reagendado_para')
+            const candEstado = candLock.getString('estado')
+
+            // Checar se o cliente já tem interação de conclusão/desfecho recente ou se já foi concluído
+            let temDesfechoGravado = false
+            try {
+              const ultimasInteracoes = $app.findRecordsByFilter(
+                'interacoes',
+                `cliente = '${candLock.id}' && desfecho != ''`,
+                '-created',
+                1,
+                0,
+              )
+              if (ultimasInteracoes && ultimasInteracoes.length > 0) {
+                temDesfechoGravado = true
+              }
+            } catch (_) {}
+
+            const temReagendamentoFuturoOuGravado = Boolean(
+              candReagPara && candReagPara.trim() !== '',
+            )
+
+            if (temDesfechoGravado || temReagendamentoFuturoOuGravado) {
+              // Saneamento defensivo: limpa lock e operador e ajusta o estado
+              console.log(
+                `[queue_reserve] Saneando cliente concluído preso em lock: ${candLock.id} (código ${candLock.getString('codigo')}, desfecho: ${temDesfechoGravado}, reag: ${temReagendamentoFuturoOuGravado})`,
+              )
+              try {
+                $app
+                  .db()
+                  .newQuery(
+                    `UPDATE clientes
+                   SET operador = '',
+                       lock_timestamp = '1970-01-01 00:00:00.000Z',
+                       estado = CASE
+                         WHEN reagendado_para IS NOT NULL AND reagendado_para != '' THEN 'reagendado'
+                         WHEN estado = 'em_atendimento' OR estado = 'reservado' THEN 'na_base'
+                         ELSE estado
+                       END
+                   WHERE id = {:id}`,
+                  )
+                  .bind({ id: candLock.id })
+                  .execute()
+              } catch (sanErr) {
+                console.log(
+                  '[queue_reserve] Erro ao sanear cliente com desfecho: ' + sanErr.message,
+                )
+              }
+              // Não devolve este cliente concluído! Continua verificando outros ou segue para a fila
+              continue
+            }
+
+            // Cliente legítimo em andamento sem desfecho
+            return e.json(200, {
+              cliente: candLock,
+              ja_reservado: true,
+              carteira_esgotada: false,
+              message: 'Você já possui um contato em andamento.',
+            })
+          }
         }
       } catch (lockErr) {
         console.log('[queue_reserve] Erro ao verificar lock existente: ' + lockErr.message)

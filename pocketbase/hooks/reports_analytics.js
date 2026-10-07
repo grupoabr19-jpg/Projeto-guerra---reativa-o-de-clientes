@@ -376,9 +376,9 @@ routerAdd(
         SELECT
           COALESCE(NULLIF(TRIM(segmento), ''), 'Não Informado') as segmento_nome,
           COUNT(*) as total_clientes,
-          SUM(CASE WHEN estado = 'reativado' THEN 1 ELSE 0 END) as reativados,
-          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
-          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas,
           SUM(CASE WHEN estado = 'compra_terceiros' OR estado = 'nao_quer_negociar' OR estado = 'sem_contato' THEN 1 ELSE 0 END) as perdidos,
           SUM(CASE WHEN estado = 'reagendado' THEN 1 ELSE 0 END) as reagendados
         FROM clientes
@@ -445,8 +445,8 @@ routerAdd(
             ELSE '5. Mais de 365 dias (Inatividade Severa)'
           END as faixa_nome,
           COUNT(*) as total_clientes,
-          SUM(CASE WHEN estado = 'reativado' THEN 1 ELSE 0 END) as reativados,
-          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
           SUM(CASE WHEN estado = 'compra_terceiros' OR estado = 'nao_quer_negociar' OR estado = 'sem_contato' THEN 1 ELSE 0 END) as perdidos
         FROM clientes
         WHERE ${whereClause}
@@ -500,8 +500,8 @@ routerAdd(
             ELSE 'Score Alto (61-100)'
           END as score_faixa,
           COUNT(*) as total_clientes,
-          SUM(CASE WHEN estado = 'reativado' THEN 1 ELSE 0 END) as reativados,
-          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
           AVG(COALESCE(score, 0)) as score_medio
         FROM clientes
         WHERE ${whereClause}
@@ -561,9 +561,9 @@ routerAdd(
             ELSE UPPER(TRIM(regiao))
           END as regiao_nome,
           COUNT(*) as total_clientes,
-          SUM(CASE WHEN estado = 'reativado' THEN 1 ELSE 0 END) as reativados,
-          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
-          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas
         FROM clientes
         WHERE ${whereClause}
         GROUP BY regiao_nome
@@ -620,7 +620,7 @@ routerAdd(
           COALESCE(NULLIF(TRIM(vendedor), ''), 'Sem Vendedor Atribuído') as vendedor_nome,
           COUNT(*) as total_carteira,
           SUM(CASE WHEN dias_sem_faturar >= 90 AND estado = 'na_base' THEN 1 ELSE 0 END) as inativos_90_na_base,
-          SUM(CASE WHEN estado = 'reativado' THEN 1 ELSE 0 END) as reativados,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados,
           SUM(CASE WHEN estado = 'em_atendimento' OR estado = 'reservado' OR estado = 'contatado' OR estado = 'reagendado' THEN 1 ELSE 0 END) as em_trabalho
         FROM clientes
         WHERE ${whereClause}

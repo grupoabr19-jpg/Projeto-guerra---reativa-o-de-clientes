@@ -1455,7 +1455,9 @@ export default function RelatoriosPage() {
                   </div>
                   <CardDescription className="text-xs text-slate-500">
                     Taxa real de reativação, clientes na base, pedidos efetivados e faturamento
-                    recuperado por nicho
+                    recuperado por nicho. Métricas baseadas exclusivamente em reativações reais com
+                    ficha de atendimento da equipe comercial (exclui faturamento identificado
+                    automaticamente via cruzamento ERP).
                   </CardDescription>
                 </div>
                 <Button
@@ -1553,7 +1555,8 @@ export default function RelatoriosPage() {
                       Conversão por tempo sem faturar — quando a reativação compensa
                     </CardTitle>
                     <CardDescription className="text-[11px] text-slate-500">
-                      Relação entre dias de inatividade do cliente e chance de reativação
+                      Relação entre dias de inatividade do cliente e chance de reativação. Considera
+                      apenas reativações reais com ficha de atendimento (exclui cruzamento ERP).
                     </CardDescription>
                   </div>
                   <Button
@@ -1620,7 +1623,9 @@ export default function RelatoriosPage() {
                       Score vs. Resultado Real — validação do algoritmo preditivo
                     </CardTitle>
                     <CardDescription className="text-[11px] text-slate-500">
-                      Clientes com score alto realmente convertem mais pedidos?
+                      Clientes com score alto realmente convertem mais pedidos? Métricas baseadas
+                      exclusivamente em reativações reais com ficha de atendimento da equipe
+                      comercial (exclui cruzamento ERP).
                     </CardDescription>
                   </div>
                   <Button
@@ -1687,7 +1692,9 @@ export default function RelatoriosPage() {
                 </CardTitle>
                 <CardDescription className="text-[11px] text-slate-500">
                   Desempenho financeiro e volumetria recuperada nas 8 rotas do varejo, atacado e
-                  repescagem
+                  repescagem. Faturamento e ticket médio calculados exclusivamente sobre reativações
+                  reais da equipe comercial (exclui faturamento identificado automaticamente via
+                  cruzamento ERP).
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
@@ -1770,7 +1777,8 @@ export default function RelatoriosPage() {
                   </div>
                   <CardDescription className="text-xs text-slate-500">
                     Vendedores cujos clientes estão inativos há mais de 90 dias e continuam parados
-                    na base sem abordagem
+                    na base sem abordagem. A coluna de reativados contabiliza somente reativações
+                    reais da equipe comercial via atendimento (exclui cruzamento ERP).
                   </CardDescription>
                 </div>
                 <Button
