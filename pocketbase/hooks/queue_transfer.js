@@ -1,18 +1,7 @@
+// #include vendedor_matching
 // pocketbase/hooks/queue_transfer.js
 // Transferência de clientes entre operadores da mesma região/rota
 // Implementa as 7 correções da auditoria 0080
-
-const {
-  normalizarTextoNFD,
-  normalizarRegiaoCanonica,
-  buildRegiaoSqlFilter,
-  limparPrefixoVendedor,
-  obterVariantesVendedor,
-  matchesCarteiraVendedorTolerante,
-  buildVendedorSqlTerms,
-  extrairDddCliente,
-  expurgarLocksExpiradosAtomicamente,
-} = require(`${__hooks}/vendedor_matching.js`)
 
 routerAdd(
   'POST',

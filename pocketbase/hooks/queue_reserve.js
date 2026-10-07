@@ -1,18 +1,7 @@
+// #include vendedor_matching
 // pocketbase/hooks/queue_reserve.js
 // Endpoint de reserva do próximo cliente na fila / carteira
 // Implementa as 7 correções de blindagem da auditoria 0080
-
-const {
-  normalizarTextoNFD,
-  normalizarRegiaoCanonica,
-  buildRegiaoSqlFilter,
-  limparPrefixoVendedor,
-  obterVariantesVendedor,
-  matchesCarteiraVendedorTolerante,
-  buildVendedorSqlTerms,
-  extrairDddCliente,
-  expurgarLocksExpiradosAtomicamente,
-} = require(`${__hooks}/vendedor_matching.js`)
 
 routerAdd(
   'POST',
