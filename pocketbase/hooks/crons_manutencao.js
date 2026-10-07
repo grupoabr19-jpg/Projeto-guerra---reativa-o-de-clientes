@@ -12,7 +12,7 @@ const {
   buildVendedorSqlTerms,
   extrairDddCliente,
   expurgarLocksExpiradosAtomicamente,
-} = require('./vendedor_matching.js')
+} = require(`${__hooks}/vendedor_matching.js`)
 
 // 1. Cron frequente (a cada 10 minutos): Liberação atômica de locks expirados (> 30 min) e quarentenas vencidas
 cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {

@@ -12,7 +12,7 @@ const {
   buildVendedorSqlTerms,
   extrairDddCliente,
   expurgarLocksExpiradosAtomicamente,
-} = require('./vendedor_matching.js')
+} = require(`${__hooks}/vendedor_matching.js`)
 
 routerAdd(
   'POST',
