@@ -1,3 +1,7 @@
+// pocketbase/hooks/queue_transfer.js
+// Transferência de clientes entre operadores da mesma região/rota
+// Implementa as 7 correções da auditoria 0080
+
 routerAdd(
   'POST',
   '/backend/v1/queue/transfer-client',
@@ -11,6 +15,9 @@ routerAdd(
       const userId = authRecord.id
       const userName = authRecord.getString('name') || authRecord.getString('email') || 'Operador'
       const userRole = authRecord.getString('role')
+
+      // Expurgo de locks antes de processar transferência
+      expurgarLocksExpiradosAtomicamente($app)
 
       let body = {}
       try {
@@ -45,50 +52,13 @@ routerAdd(
       }
 
       const destinoRole = destinoUser.getString('role')
-      // Apenas operadores, líderes ou supervisores podem receber clientes reatribuídos
       if (destinoRole !== 'operador' && destinoRole !== 'lider' && destinoRole !== 'supervisor') {
         return e.json(400, {
           error: 'O destinatário deve ser um operador, líder ou supervisor de rota.',
         })
       }
 
-      // Função auxiliar de normalização de região (inline no callback do hook)
-      const normalizarRegiaoHook = (r) => {
-        let s = String(r || '')
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .toUpperCase()
-          .trim()
-        if (s === 'BRAGANCA PAULISTA' || s === 'BRAGANCA' || s.includes('BRAGANCA'))
-          return 'BRAGANCA'
-        if (
-          s === 'POCOS DE CALDAS' ||
-          s === 'POCOS CALDAS' ||
-          s === 'POCOS' ||
-          s.includes('POCOS') ||
-          s.includes('CALDAS')
-        ) {
-          return 'POCOS DE CALDAS'
-        }
-        if (
-          s === 'CAMBUI' ||
-          s === 'MICRO-REGIAO' ||
-          s === 'MICRO REGIAO' ||
-          s === 'MICROREGIAO' ||
-          s.includes('CAMBUI')
-        ) {
-          return 'CAMBUI'
-        }
-        if (s === 'JUNDIAI' || s.includes('JUNDIAI')) return 'JUNDIAI'
-        if (s === 'ITAJUBA' || s.includes('ITAJUBA')) return 'ITAJUBA'
-        if (s === 'POUSO ALEGRE' || s.includes('POUSO')) return 'POUSO ALEGRE'
-        if (s === 'VARGINHA' || s.includes('VARGINHA')) return 'VARGINHA'
-        if (s === 'EXTREMA' || s.includes('EXTREMA')) return 'EXTREMA'
-        if (s === 'ATACADO') return 'ATACADO'
-        return s
-      }
-
-      // Extrair regiões de um record de usuário (resiliente com Goja PocketBase)
+      // Extrair regiões de um record de usuário
       const extrairRegioesUsuario = (rec) => {
         let arr = []
         try {
@@ -109,16 +79,15 @@ routerAdd(
           if (Array.isArray(rawGet)) arr = rawGet
         }
         if (Array.isArray(arr)) {
-          return arr.map(normalizarRegiaoHook).filter(Boolean)
+          return arr.map((r) => normalizarRegiaoCanonica(r)).filter(Boolean)
         }
         return []
       }
 
       const destinoRegioesNorm = extrairRegioesUsuario(destinoUser)
       const origemRegioesNorm = extrairRegioesUsuario(authRecord)
-      const clienteRegiaoNorm = normalizarRegiaoHook(cliente.getString('regiao'))
+      const clienteRegiaoNorm = normalizarRegiaoCanonica(cliente.getString('regiao'))
 
-      // Se o atendente atual for operador ou líder e não tiver região definida
       if ((userRole === 'operador' || userRole === 'lider') && origemRegioesNorm.length === 0) {
         return e.json(400, {
           error:
@@ -126,8 +95,7 @@ routerAdd(
         })
       }
 
-      // Validação de região entre cliente/atendente e destinatário:
-      // O destinatário precisa compartilhar ao menos uma região com o atendente (ou com a região do cliente)
+      // Validação de região entre cliente/atendente e destinatário
       if (userRole !== 'admin') {
         const atendeCliente = clienteRegiaoNorm && destinoRegioesNorm.includes(clienteRegiaoNorm)
         const compartilhaOrigem = origemRegioesNorm.some((r) => destinoRegioesNorm.includes(r))
@@ -143,8 +111,6 @@ routerAdd(
       const destinoNome =
         destinoUser.getString('name') || destinoUser.getString('email') || 'Colega'
 
-      // Verificar permissão: admin pode transferir qualquer um;
-      // operador/supervisor só pode transferir se o cliente estiver com ele (operador = userId) ou na fila
       const currentOp = cliente.getString('operador')
       if (userRole !== 'admin' && currentOp && currentOp !== userId) {
         return e.json(403, {
@@ -152,7 +118,7 @@ routerAdd(
         })
       }
 
-      // Blindagem de standby na transferência: se cliente estiver reativado em standby, não pode ser repassado para reagendado por não-admin
+      // Blindagem de standby na transferência: 60 dias
       const estadoCli = cliente.getString('estado')
       const standbyAteStr = cliente.getString('standby_ate')
       let emStandby = false
@@ -170,19 +136,17 @@ routerAdd(
       }
 
       const estadoAnterior = cliente.getString('estado')
-      // Configurar cliente como reagendado para HOJE com prioridade máxima para o operador de destino
       const now = new Date()
       const hojeIso = now.toISOString()
 
       // Liberar lock atual e atribuir reagendamento prioritário
       cliente.set('estado', 'reagendado')
-      cliente.set('operador', '') // Libera lock de atendimento ativo
+      cliente.set('operador', '')
       cliente.set('lock_timestamp', null)
       cliente.set('reagendado_operador', destinoOperadorId)
       cliente.set('reagendado_para', hojeIso)
       cliente.set('prioridade_transferencia', true)
 
-      // Se enviou rascunho de respostas para preservar o que já foi preenchido
       if (body.rascunho_respostas) {
         cliente.set('rascunho_respostas', body.rascunho_respostas)
       }

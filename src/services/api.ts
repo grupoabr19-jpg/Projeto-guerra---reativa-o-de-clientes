@@ -320,6 +320,7 @@ export async function reserveNextQueueClient(options?: {
     carteira_esgotada?: boolean
     segmento_zerado?: boolean
     total_carteira_sem_filtro?: number
+    segunda_passada_executada?: boolean
     message: string
   }>
 }
@@ -927,7 +928,8 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
       upper === 'CAMBUÍ' ||
       upper === 'CAMBUI' ||
       upper === 'MICRO-REGIÃO' ||
-      upper === 'MICRO REGIAO'
+      upper === 'MICRO REGIAO' ||
+      upper === 'MICROREGIAO'
     )
       return 'CAMBUÍ'
     if (upper === 'ATACADO') return 'ATACADO'

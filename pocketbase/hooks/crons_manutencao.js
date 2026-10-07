@@ -1,55 +1,16 @@
-// 1. Cron frequente: Liberação de locks expirados e quarentenas vencidas
+// pocketbase/hooks/crons_manutencao.js
+// Rotinas de manutenção e atualização diária da base
+// Implementa as 7 correções da auditoria 0080
+
+// 1. Cron frequente (a cada 10 minutos): Liberação atômica de locks expirados (> 30 min) e quarentenas vencidas
 cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
   try {
     const now = new Date()
-    const timeoutMinutos = 30
-    const cutoffLock = new Date(now.getTime() - timeoutMinutos * 60 * 1000).toISOString()
 
-    // Inspeção de teste do Kommo no cron foi transferida exclusivamente para o endpoint dedicado POST /backend/v1/kommo/test
-    // para evitar contenção de escrita em SQLite e chamadas HTTP bloqueantes a cada ciclo do cron.
-
-    const expiredLocks = $app.findRecordsByFilter(
-      'clientes',
-      `(estado = 'reservado' || estado = 'em_atendimento') && lock_timestamp < '${cutoffLock}'`,
-      '',
-      200,
-      0,
-    )
-
-    for (let i = 0; i < expiredLocks.length; i++) {
-      const c = expiredLocks[i]
-      const opAnterior = c.getString('operador')
-
-      // PRESERVAÇÃO DE STANDBY: se o cliente possui standby_ate no futuro,
-      // NUNCA deve virar 'na_base'! Deve voltar para 'reativado'!
-      const standbyAteStr = c.getString('standby_ate')
-      let emStandby = false
-      if (standbyAteStr) {
-        const parsedStandby = new Date(standbyAteStr)
-        if (!isNaN(parsedStandby.getTime()) && parsedStandby.getTime() > now.getTime()) {
-          emStandby = true
-        }
-      }
-
-      const novoEstado = emStandby ? 'reativado' : 'na_base'
-      c.set('estado', novoEstado)
-      c.set('operador', '')
-      c.set('lock_timestamp', null)
-      $app.save(c)
-
-      try {
-        const colEv = $app.findCollectionByNameOrId('eventos_log')
-        const ev = new Record(colEv)
-        ev.set('cliente', c.id)
-        ev.set('acao', 'timeout_lock_expirado')
-        ev.set('detalhes', {
-          motivo: 'Inatividade superior a 30 minutos',
-          operador_anterior: opAnterior,
-          restaurado_para: novoEstado,
-          em_standby: emStandby,
-        })
-        $app.save(ev)
-      } catch (_) {}
+    // EXPURGO ATÔMICO IMEDIATO: liberação de qualquer lock expirado (> 30 min) na base
+    const totalLocksLiberados = expurgarLocksExpiradosAtomicamente($app)
+    if (totalLocksLiberados > 0) {
+      console.log(`[cron_10m] Locks expirados liberados atomicamente: ${totalLocksLiberados}`)
     }
 
     // Data corrente no fuso de Brasília (UTC-3) para cálculo preciso de quarentena
@@ -82,10 +43,9 @@ cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
 // 2. Cron diário (1x por dia, às 03:00 UTC / 00:00 BRT):
 // - Recalcula dias sem faturar, faixa (60-89 / 90+) e score de todos os clientes
 // - Faz reconciliação: apenas quem faturou recentemente (<60 dias comprovados) sai da fila (estado = 'reativado')
-// - Respeita o STANDBY DE NO MÍNIMO 60 DIAS após reativação: se standby_ate estiver no futuro, mantém 'reativado' fora da fila
-// - Quando o standby vence: se houve compra confirmada recente (faixa 'recente' ou pedido_confirmado=true), mantém 'reativado';
-//   se não houve compra confirmada, restabelece estado = 'na_base' e limpa standby_ate/reativado_em
-// - Libera reservas expiradas (timeout de atendimento abandonado)
+// - Respeita o STANDBY DE NO MÍNIMO 60 DIAS após reativação
+// - Expurgo atômico de reservas expiradas (>30 min)
+// - Matching tolerante e saneamento de sem_dono_equipe com sinônimos
 // - Grava registro da execução em eventos_log
 cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
   try {
@@ -93,68 +53,9 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
     const nowMs = now.getTime()
     let totalProcessados = 0
     let totalReconciliados = 0
-    let totalLocksLiberados = 0
 
-    // 1. Timeout de 30 minutos para atendimentos abandonados em MASSA (SQL rápido com proteção a standby)
-    const timeoutMinutos = 30
-    const cutoffLock = new Date(nowMs - timeoutMinutos * 60 * 1000).toISOString()
-    const nowIsoStr = now.toISOString()
-    try {
-      // 1A. Quem NÃO está em standby no futuro volta para 'na_base'
-      const resLock = $app
-        .db()
-        .newQuery(
-          `UPDATE clientes 
-         SET estado = 'na_base', operador = '', lock_timestamp = NULL 
-         WHERE (estado = 'reservado' OR estado = 'em_atendimento') 
-           AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp < {:cutoff})
-           AND (standby_ate IS NULL OR standby_ate = '' OR datetime(standby_ate) <= datetime({:now}))`,
-        )
-        .bind({ cutoff: cutoffLock, now: nowIsoStr })
-        .execute()
-      totalLocksLiberados = resLock && resLock.rowsAffected ? resLock.rowsAffected() : 0
-
-      // 1B. Quem ESTÁ em standby no futuro volta para 'reativado' (NUNCA para 'na_base')
-      const resLockStandby = $app
-        .db()
-        .newQuery(
-          `UPDATE clientes 
-         SET estado = 'reativado', operador = '', lock_timestamp = NULL 
-         WHERE (estado = 'reservado' OR estado = 'em_atendimento') 
-           AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp < {:cutoff})
-           AND standby_ate IS NOT NULL AND standby_ate != '' AND datetime(standby_ate) > datetime({:now})`,
-        )
-        .bind({ cutoff: cutoffLock, now: nowIsoStr })
-        .execute()
-      const totalStandbyRestaurados =
-        resLockStandby && resLockStandby.rowsAffected ? resLockStandby.rowsAffected() : 0
-      totalLocksLiberados += totalStandbyRestaurados
-    } catch (lockErr) {
-      console.log('[cron_3h] Fallback manual para liberação de locks: ' + lockErr.message)
-      const abandonedLocks = $app.findRecordsByFilter(
-        'clientes',
-        `(estado = 'reservado' || estado = 'em_atendimento') && (lock_timestamp = '' || lock_timestamp < '${cutoffLock}')`,
-        '',
-        500,
-        0,
-      )
-      for (let l = 0; l < abandonedLocks.length; l++) {
-        const lockCli = abandonedLocks[l]
-        const stStr = lockCli.getString('standby_ate')
-        let emStandby = false
-        if (stStr) {
-          const parsedSt = new Date(stStr)
-          if (!isNaN(parsedSt.getTime()) && parsedSt.getTime() > nowMs) {
-            emStandby = true
-          }
-        }
-        lockCli.set('estado', emStandby ? 'reativado' : 'na_base')
-        lockCli.set('operador', '')
-        lockCli.set('lock_timestamp', null)
-        $app.save(lockCli)
-        totalLocksLiberados++
-      }
-    }
+    // 1. Timeout de 30 minutos para atendimentos abandonados via expurgo atômico
+    const totalLocksLiberados = expurgarLocksExpiradosAtomicamente($app)
 
     // 2. Ler pesos do score configurados
     let pesos = {
@@ -169,43 +70,54 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
       if (cfg && cfg.get('valor')) pesos = cfg.get('valor')
     } catch (_) {}
 
-    // Lista de vendedores ativos para checagem de sem_dono_equipe
-    const equipeNomesAtivos = [
+    // Lista canônica de termos e apelidos de operadores e líderes da equipe ativa
+    // Inclui nomes, sobrenomes e apelidos: JAPA, ALESSANDRO, JESSIKA, FELIPE, CONSTRUCAO CIVIL, etc.
+    const termosEquipeAtiva = [
       'ALESSANDRO',
+      'JAPA',
       'LEIZ',
       'HELOA',
+      'HELOÁ',
       'DYOVANA',
       'JOSIANE',
       'KAYLANE',
       'PETERSON',
       'BRUNA',
       'THAIS',
+      'THAÍS',
       'PAOLA',
       'VITORIA',
+      'VITÓRIA',
+      'JOSE FELIPE',
       'JOSE',
+      'JOSÉ',
       'FELIPE',
       'MILENA',
       'CAMILA',
       'JENNIFER',
       'GABRIELA',
       'JESSICA',
+      'JESSIKA',
       'GUSTAVO',
       'INAYARA',
       'TAINARA',
       'JULIANO',
       'EDMILA',
       'ARIANE',
+      'CONSTRUCAO CIVIL',
+      'CONSTRUÇÃO CIVIL',
+      'CONSTRUCAO',
       'MATHEUS',
       'JULIO',
+      'JÚLIO',
       'LARISSA',
       'WILSON',
       'PRISCILA',
       'RAFAELA',
       'ANDERSON',
-    ]
+    ].map((t) => normalizarTextoNFD(t))
 
-    // 3. Recálculo em Lotes Otimizados com detecção cirúrgica de mutações
-    // Lote de 500 registros para alta vazão com baixo overhead de memória
+    // 3. Recálculo em Lotes com detecção cirúrgica de mutações
     const pageSize = 500
     let page = 0
     let hasMore = true
@@ -226,7 +138,6 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
 
       for (let i = 0; i < batch.length; i++) {
         const c = batch[i]
-        // Regra Inviolável: se o cliente for ativo_fora_base, NUNCA mexer
         if (c.getString('estado') === 'ativo_fora_base' || c.getBool('ativo_fora_base')) {
           continue
         }
@@ -271,7 +182,6 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
         // Reconciliação com faturamento recente e regra de standby de 60 dias:
         const estadoAtual = c.getString('estado')
         if (faixa === 'recente' && ultimaDataStr) {
-          // REGRA: Cliente com compra recente (<60 dias)
           if (estadoAtual !== 'reativado') {
             c.set('estado', 'reativado')
             c.set('operador', '')
@@ -279,8 +189,6 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
             totalReconciliados++
             mudou = true
           }
-          // Garante que reativado_em e standby_ate fiquem preenchidos caso estejam vazios
-          // Usar a data do último faturamento/compra se disponível para não marcar horário artificial do cron
           if (!c.getString('reativado_em')) {
             const dataFatParsed = new Date(ultimaDataStr)
             const dataReativado = !isNaN(dataFatParsed.getTime()) ? dataFatParsed : now
@@ -295,7 +203,6 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
             mudou = true
           }
         } else if (estadoAtual === 'reativado') {
-          // Cliente marcado como reativado com faixa 60_89 ou 90_plus:
           const standbyAteStr = c.getString('standby_ate')
           let emStandby = false
           if (standbyAteStr) {
@@ -306,29 +213,23 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
           }
 
           if (emStandby) {
-            // Cliente ainda está dentro da janela de standby de 60 dias: NÃO religar na fila!
-            // Garante operador limpo e lock liberado
             if (c.getString('operador') || c.getString('lock_timestamp')) {
               c.set('operador', '')
               c.set('lock_timestamp', null)
               mudou = true
             }
           } else {
-            // Janela de standby expirou (ou não existia / legado vencido):
-            // Verificar faturamento / compra confirmada
             const pedidoConfirmado = c.getBool('pedido_confirmado')
             const comprouDeFato =
               pedidoConfirmado || (faixa === 'recente' && Boolean(ultimaDataStr))
 
             if (comprouDeFato) {
-              // Compra confirmada: mantém como sucesso ('reativado')
               if (c.getString('operador') || c.getString('lock_timestamp')) {
                 c.set('operador', '')
                 c.set('lock_timestamp', null)
                 mudou = true
               }
             } else {
-              // Sem compra confirmada após os 60 dias de standby: volta para a fila ('na_base')
               c.set('estado', 'na_base')
               c.set('operador', '')
               c.set('lock_timestamp', null)
@@ -338,8 +239,6 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
             }
           }
         } else {
-          // Estado NÃO é 'reativado' (ex: na_base, reagendado, etc.) MAS possui standby_ate futuro ativo:
-          // CORREÇÃO PREVENTIVA CRÍTICA: se tem standby_ate no futuro, restaura estado para 'reativado'
           const standbyAteStr = c.getString('standby_ate')
           if (standbyAteStr) {
             const parsedStandby = new Date(standbyAteStr)
@@ -352,25 +251,14 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
           }
         }
 
-        // DDD e Regra ATACADO fora do mapa
-        const telDddRaw = (c.getString('telefone') || c.getString('whatsapp') || '').replace(
-          /\D/g,
-          '',
-        )
-        let dddCalc = ''
-        if (telDddRaw) {
-          let sDdd = telDddRaw
-          if (sDdd.startsWith('0')) sDdd = sDdd.slice(1)
-          if (sDdd.startsWith('55') && sDdd.length >= 12) sDdd = sDdd.slice(2)
-          dddCalc = sDdd.slice(0, 2)
-        }
+        // DDD e Regra ATACADO
+        const dddCalc = extrairDddCliente(c)
         if (c.getString('ddd_telefone') !== dddCalc) {
           c.set('ddd_telefone', dddCalc)
           mudou = true
         }
 
-        // Blindagem da Base Cliente Final e ATACADO fora do mapa
-        // Se já foi classificado como cliente final por desfecho anterior, preserva!
+        // Blindagem de Base Categoria
         const categoriaAtual = c.getString('base_categoria')
         const desfechoUltimo = c.getString('desfecho_final') || c.getString('ultimo_desfecho')
         const isClienteFinalPorDesfecho =
@@ -379,19 +267,16 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
         const cleanDoc = String(c.getString('cpf_cnpj') || '').replace(/\D/g, '')
         const isCpfOuNaoIdentificado = cleanDoc.length === 11 || !cleanDoc
         const cCount = c.getInt('compras_count') || c.getInt('frequencia_compras_12m') || 1
-        const segAtualNorm = (c.getString('segmento') || '')
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
+        const segAtualNorm = normalizarTextoNFD(c.getString('segmento') || '')
         const isClienteFinalComportamento =
           isCpfOuNaoIdentificado &&
           cCount <= 2 &&
-          (segAtualNorm === 'cliente final' ||
-            segAtualNorm.includes('cliente final') ||
-            segAtualNorm.includes('consumidor')) &&
+          (segAtualNorm === 'CLIENTE FINAL' ||
+            segAtualNorm.includes('CLIENTE FINAL') ||
+            segAtualNorm.includes('CONSUMIDOR')) &&
           (dias <= 730 || dias === 0)
 
-        const regiaoAtual = (c.getString('regiao') || '').toUpperCase()
+        const regiaoAtual = normalizarTextoNFD(c.getString('regiao') || '')
         let novaBaseCat = categoriaAtual || 'normal'
 
         if (
@@ -413,42 +298,28 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
           mudou = true
         }
 
-        // Sem Dono na Equipe (Item A: Resolução por conjunto de pistas)
-        const vendUp = (c.getString('vendedor') || '')
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .toUpperCase()
-          .trim()
-        let vNomeLimpo = vendUp
-        const pfxList = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ']
-        for (let px = 0; px < pfxList.length; px++) {
-          if (vNomeLimpo.startsWith(pfxList[px])) {
-            vNomeLimpo = vNomeLimpo.slice(pfxList[px].length).trim()
-            break
+        // Correção 1 & 2: sem_dono_equipe tolerante com apelidos, canais e sinônimos
+        const vRaw = c.getString('vendedor') || ''
+        const tipoVendRaw = c.getString('tipo_vendedor') || ''
+        const vLimpo = limparPrefixoVendedor(vRaw)
+        const tipoLimpo = normalizarTextoNFD(tipoVendRaw)
+        const vTexto = `${vLimpo} ${tipoLimpo}`
+
+        let temDonoNaEquipe = false
+        if (!vRaw.trim() && !tipoVendRaw.trim()) {
+          // Cliente sem vendedor específico: na rota, líder pode atender
+          temDonoNaEquipe = false
+        } else {
+          // Verifica se bate com algum termo/apelido da equipe ativa
+          for (let t = 0; t < termosEquipeAtiva.length; t++) {
+            const termo = termosEquipeAtiva[t]
+            if (vTexto.includes(termo) || vLimpo.includes(termo)) {
+              temDonoNaEquipe = true
+              break
+            }
           }
         }
 
-        let temDonoNaEquipe = false
-        if (!vendUp) {
-          temDonoNaEquipe = true
-        } else if (
-          vNomeLimpo === 'RAFAELA RESENDE' ||
-          vNomeLimpo === 'RAFAELA' ||
-          vNomeLimpo.includes('RAFAELA')
-        ) {
-          temDonoNaEquipe = true
-        } else if (equipeNomesAtivos.some((n) => vendUp.includes(n) || vNomeLimpo.includes(n))) {
-          temDonoNaEquipe = true
-        } else {
-          const tVend = (c.getString('tipo_vendedor') || '').toUpperCase()
-          const rNome = (c.getString('regiao') || '').toUpperCase()
-          if (
-            rNome === 'POUSO ALEGRE' &&
-            (tVend === 'ESPECIALISTA' || vNomeLimpo.includes('RAFAELA'))
-          ) {
-            temDonoNaEquipe = true
-          }
-        }
         const semDonoBool = !temDonoNaEquipe
         if (c.getBool('sem_dono_equipe') !== semDonoBool) {
           c.set('sem_dono_equipe', semDonoBool)
@@ -507,11 +378,6 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
         .execute()
       totalChatMsgsLimpas =
         resChatClean && resChatClean.rowsAffected ? resChatClean.rowsAffected() : 0
-      if (totalChatMsgsLimpas > 0) {
-        console.log(
-          `[cron_3h] Chat: ${totalChatMsgsLimpas} mensagens com mais de 90 dias foram removidas.`,
-        )
-      }
     } catch (chatErr) {
       console.log('[cron_3h] Aviso na limpeza de 90 dias do chat: ' + chatErr.message)
     }
@@ -538,6 +404,3 @@ cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
     console.error('Erro no cron crons_atualizacao_diaria_base:', err)
   }
 })
-
-// Polling contínuo de conversas externas do Kommo SDR foi abortado e removido conforme ordem do usuário.
-// O sistema permanece em modo somente-leitura para cruzamento de dados na importação e dashboard.

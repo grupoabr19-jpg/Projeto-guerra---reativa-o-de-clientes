@@ -1,3 +1,7 @@
+// pocketbase/hooks/queue_search.js
+// Busca na carteira, abertura de cliente específico e destrave/edição administrativa
+// Implementa as 7 correções da auditoria 0080
+
 routerAdd(
   'POST',
   '/backend/v1/queue/search-carteira',
@@ -14,7 +18,6 @@ routerAdd(
       } catch (_) {}
 
       const termoBusca = (body.termo || '').trim()
-      // Bloquear termos muito curtos (mínimo 3 caracteres)
       if (termoBusca.length < 3) {
         return e.json(400, {
           error: 'Digite pelo menos 3 caracteres para buscar na sua carteira.',
@@ -26,6 +29,10 @@ routerAdd(
       const userId = authRecord.id
       const userName = (authRecord.getString('name') || '').trim()
       const userRole = authRecord.getString('role')
+      const isLider = userRole === 'lider'
+
+      // Expurgo atômico imediato de locks antes de operações
+      expurgarLocksExpiradosAtomicamente($app)
 
       // Extração resiliente de regiões do authRecord
       let userRegioes = []
@@ -54,83 +61,20 @@ routerAdd(
 
       const isRepescagem = userRegioes.some((r) => r.toUpperCase() === 'REPESCAGEM')
       const isAtacado = userRegioes.some((r) => r.toUpperCase() === 'ATACADO')
-
-      const userFirstName = (userName.split(' ')[0] || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .trim()
-
-      const userFullNameNorm = (userName || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .trim()
+      const userNameNorm = normalizarTextoNFD(userName)
 
       // Mapa de DDDs do ATACADO por operador:
       let atacadoDddsPermitidos = []
       if (isAtacado) {
-        if (userFirstName === 'LARISSA') {
+        if (userNameNorm.includes('LARISSA')) {
           atacadoDddsPermitidos = ['11', '12', '13']
-        } else if (userFirstName === 'JULIO' || userFirstName === 'JÚLIO') {
+        } else if (userNameNorm.includes('JULIO')) {
           atacadoDddsPermitidos = ['15', '19']
-        } else if (userFirstName === 'WILSON') {
+        } else if (userNameNorm.includes('WILSON')) {
           atacadoDddsPermitidos = ['14', '16', '17', '18']
         } else {
           atacadoDddsPermitidos = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
         }
-      }
-
-      // Helper para extrair DDD do cliente
-      const extrairDdd = (clienteRec) => {
-        const dddGravado = clienteRec.getString('ddd_telefone')
-        if (dddGravado && dddGravado.length >= 2) return dddGravado.slice(0, 2)
-        const telRaw = (
-          clienteRec.getString('telefone') ||
-          clienteRec.getString('whatsapp') ||
-          ''
-        ).replace(/\D/g, '')
-        if (!telRaw) return ''
-        let s = telRaw
-        if (s.startsWith('0')) s = s.slice(1)
-        if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
-        return s.slice(0, 2)
-      }
-
-      // Helper para matching de carteira Varejo (vendedor no cliente vs operador)
-      const matchesCarteiraVendedor = (clienteRec) => {
-        if (!userFirstName && !userFullNameNorm) return true
-        const vRaw = clienteRec.getString('vendedor') || ''
-        const v = vRaw
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .toUpperCase()
-          .trim()
-        if (!v) return false
-
-        let vSemCanal = v
-        const prefixos = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ']
-        for (let p = 0; p < prefixos.length; p++) {
-          if (vSemCanal.startsWith(prefixos[p])) {
-            vSemCanal = vSemCanal.slice(prefixos[p].length).trim()
-            break
-          }
-        }
-
-        if (
-          userFullNameNorm &&
-          (vSemCanal === userFullNameNorm ||
-            v.includes(userFullNameNorm) ||
-            userFullNameNorm.includes(vSemCanal))
-        ) {
-          return true
-        }
-
-        if (userFirstName && (v.includes(userFirstName) || vSemCanal.startsWith(userFirstName))) {
-          return true
-        }
-
-        return false
       }
 
       // Helper de checagem Repescagem (não contatado pelo vendedor original)
@@ -180,120 +124,36 @@ routerAdd(
         }
       }
 
-      // Constrói filtro de regiões exato e rápido com suporte a variações de grafia
-      // Normalização robusta de região (sem acento, maiúsculas, trim)
-      const normalizarRegiaoTexto = (r) => {
-        return String(r || '')
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .toUpperCase()
-          .trim()
-      }
-
-      const buildRegiaoCondition = (regiaoStr) => {
-        const norm = normalizarRegiaoTexto(regiaoStr)
-        if (norm === 'BRAGANCA' || norm === 'BRAGANCA PAULISTA' || norm.includes('BRAGANCA')) {
-          return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA' || regiao ~ 'BRAGANCA' || regiao ~ 'BRAGANÇA')"
-        }
-        if (
-          norm === 'CAMBUI' ||
-          norm === 'MICRO-REGIAO' ||
-          norm === 'MICRO REGIAO' ||
-          norm.includes('CAMBUI')
-        ) {
-          return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao = 'MICRO REGIAO' || regiao ~ 'CAMBUI' || regiao ~ 'CAMBUÍ')"
-        }
-        if (
-          norm === 'POCOS DE CALDAS' ||
-          norm === 'POCOS CALDAS' ||
-          norm === 'POCOS' ||
-          norm.includes('POCOS') ||
-          norm.includes('CALDAS')
-        ) {
-          return "(regiao = 'POÇOS DE CALDAS' || regiao = 'POCOS DE CALDAS' || regiao = 'POÇOS CALDAS' || regiao = 'POCOS CALDAS' || regiao ~ 'POCOS' || regiao ~ 'POÇOS')"
-        }
-        if (norm === 'JUNDIAI' || norm.includes('JUNDIAI')) {
-          return "(regiao = 'JUNDIAÍ' || regiao = 'JUNDIAI' || regiao ~ 'JUNDIAI' || regiao ~ 'JUNDIAÍ')"
-        }
-        if (norm === 'ITAJUBA' || norm.includes('ITAJUBA')) {
-          return "(regiao = 'ITAJUBÁ' || regiao = 'ITAJUBA' || regiao ~ 'ITAJUBA' || regiao ~ 'ITAJUBÁ')"
-        }
-        if (norm === 'VARGINHA' || norm.includes('VARGINHA')) {
-          return "(regiao = 'VARGINHA' || regiao ~ 'VARGINHA')"
-        }
-        if (norm === 'POUSO ALEGRE' || norm.includes('POUSO')) {
-          return "(regiao = 'POUSO ALEGRE' || regiao ~ 'POUSO ALEGRE')"
-        }
-        if (norm === 'EXTREMA' || norm.includes('EXTREMA')) {
-          return "(regiao = 'EXTREMA' || regiao ~ 'EXTREMA')"
-        }
-        if (norm === 'ATACADO') {
-          return "regiao = 'ATACADO'"
-        }
-        const upper = String(regiaoStr).trim().toUpperCase()
-        return `(regiao = '${upper}' || regiao ~ '${norm}')`
-      }
-
       // Sanitiza termo de busca para SQLite filter
       const cleanTerm = termoBusca.replace(/['"\\]/g, '')
 
-      // Filtro base: busca clientes por nome (ou código) na base.
-      // Exclui clientes ativo_fora_base que já saíram da base.
-      // Para operadores, líderes e supervisores: exclui clientes já reativados que ainda estão em standby válido!
       let filterExpr = `(nome ~ '${cleanTerm}' || codigo ~ '${cleanTerm}') && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'`
       if (userRole !== 'admin') {
         const nowIso = new Date().toISOString()
         filterExpr += ` && !(estado = 'reativado' && standby_ate > '${nowIso}')`
       }
+
       // Restrições de perfil/região
       if (isRepescagem) {
         filterExpr += " && (faixa = '90_plus' || dias_sem_faturar >= 90)"
       } else if (userRole === 'operador' || userRole === 'lider') {
         if (userRegioes.length > 0) {
-          const parts = userRegioes.map((r) => buildRegiaoCondition(r))
+          const parts = userRegioes.map((r) => buildRegiaoSqlFilter(r))
           filterExpr += ` && (${parts.join(' || ')})`
         }
-        if (!isAtacado) {
-          filterExpr += ' && sem_dono_equipe != true'
-          if (userFirstName && userFirstName.length >= 3) {
-            filterExpr += ` && vendedor ~ '${userFirstName}'`
-          }
-        }
       } else if (userRegioes.length > 0) {
-        // Supervisor com regiões atribuídas
-        const parts = userRegioes.map((r) => buildRegiaoCondition(r))
+        const parts = userRegioes.map((r) => buildRegiaoSqlFilter(r))
         filterExpr += ` && (${parts.join(' || ')})`
       }
 
       // Buscar registros no PocketBase
       let pool = []
       try {
-        pool = $app.findRecordsByFilter('clientes', filterExpr, '-score', 80, 0)
+        pool = $app.findRecordsByFilter('clientes', filterExpr, '-score', 120, 0)
       } catch (err) {
         console.log('[queue_search] Erro ao buscar: ' + err.message)
       }
 
-      // Fallback para Varejo se o filtro de vendedor com ~ foi estrito demais
-      if (
-        (!pool || pool.length === 0) &&
-        !isAtacado &&
-        !isRepescagem &&
-        (userRole === 'operador' || userRole === 'lider')
-      ) {
-        try {
-          let broadExpr = `(nome ~ '${cleanTerm}' || codigo ~ '${cleanTerm}') && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'`
-          if (userRole !== 'admin') {
-            const nowIsoFallback = new Date().toISOString()
-            broadExpr += ` && !(estado = 'reativado' && standby_ate > '${nowIsoFallback}')`
-          }
-          if (userRegioes.length > 0) {
-            const parts = userRegioes.map((r) => buildRegiaoCondition(r))
-            broadExpr += ` && (${parts.join(' || ')})`
-          }
-          broadExpr += ' && sem_dono_equipe != true'
-          pool = $app.findRecordsByFilter('clientes', broadExpr, '-score', 80, 0)
-        } catch (_) {}
-      }
       // Filtrar estritamente pela carteira no servidor
       let resultados = []
       if (pool && pool.length > 0) {
@@ -301,11 +161,17 @@ routerAdd(
           resultados = pool.filter((c) => !jaContatadoPeloVendedorOriginal(c))
         } else if (isAtacado && (userRole === 'operador' || userRole === 'lider')) {
           resultados = pool.filter((c) => {
-            const ddd = extrairDdd(c)
+            const ddd = extrairDddCliente(c)
             return atacadoDddsPermitidos.includes(ddd)
           })
         } else if (userRole === 'operador' || userRole === 'lider') {
-          resultados = pool.filter((c) => matchesCarteiraVendedor(c))
+          // VAREJO: carteira do vendedor tolerante OU líder suporte sem dono
+          resultados = pool.filter((c) => {
+            const matchProprio = matchesCarteiraVendedorTolerante(c, userName)
+            if (matchProprio) return true
+            if (isLider && c.getBool('sem_dono_equipe') === true) return true
+            return false
+          })
         } else {
           resultados = pool
         }
@@ -331,7 +197,7 @@ routerAdd(
       // Limitar a 20 resultados mais relevantes
       const sliced = resultadosFiltrados.slice(0, 20)
 
-      // Formatar saída enxuta para a lista de resultados da busca
+      // Formatar saída enxuta
       const itemsFormatados = sliced.map((c) => {
         let ultimoContatoStr = '—'
         const ultFat = c.getString('ultimo_faturamento_data')
@@ -410,6 +276,10 @@ routerAdd(
       const userId = authRecord.id
       const userName = (authRecord.getString('name') || '').trim()
       const userRole = authRecord.getString('role')
+      const isLider = userRole === 'lider'
+
+      // Expurgo atômico imediato de locks
+      expurgarLocksExpiradosAtomicamente($app)
 
       let body = {}
       try {
@@ -433,8 +303,7 @@ routerAdd(
         })
       }
 
-      // Blindagem de Standby estrita: se o cliente está reativado e em período de standby futuro
-      // OU se tem standby_ate no futuro mesmo que o estado tenha sido alterado indevidamente
+      // Blindagem de Standby estrita: 60 dias
       const estadoCli = cliente.getString('estado')
       const standbyAteStr = cliente.getString('standby_ate')
       const reativadoEmStr = cliente.getString('reativado_em')
@@ -459,14 +328,13 @@ routerAdd(
         })
       }
 
-      // Checa lock de 30 min
+      // Checa lock de 30 min de outro operador
       const now = new Date()
       const cutoffTime = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
       const currentOp = cliente.getString('operador')
       const estadoAtual = cliente.getString('estado')
       const lockTimestamp = cliente.getString('lock_timestamp')
 
-      // Se o cliente já está em lock por OUTRO operador
       if (
         currentOp &&
         currentOp !== userId &&
@@ -506,74 +374,28 @@ routerAdd(
 
       const isRepescagem = userRegioes.some((r) => r.toUpperCase() === 'REPESCAGEM')
       const isAtacado = userRegioes.some((r) => r.toUpperCase() === 'ATACADO')
-
-      const userFirstName = (userName.split(' ')[0] || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .trim()
-
-      const userFullNameNorm = (userName || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .trim()
+      const userNameNorm = normalizarTextoNFD(userName)
 
       // Validar se cliente pertence à carteira
       if (userRole === 'operador' || userRole === 'lider') {
         if (isAtacado) {
           let atacadoDddsPermitidos = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
-          if (userFirstName === 'LARISSA') atacadoDddsPermitidos = ['11', '12', '13']
-          else if (userFirstName === 'JULIO' || userFirstName === 'JÚLIO')
-            atacadoDddsPermitidos = ['15', '19']
-          else if (userFirstName === 'WILSON') atacadoDddsPermitidos = ['14', '16', '17', '18']
+          if (userNameNorm.includes('LARISSA')) atacadoDddsPermitidos = ['11', '12', '13']
+          else if (userNameNorm.includes('JULIO')) atacadoDddsPermitidos = ['15', '19']
+          else if (userNameNorm.includes('WILSON')) atacadoDddsPermitidos = ['14', '16', '17', '18']
 
-          const dddGravado = cliente.getString('ddd_telefone')
-          let ddd = dddGravado && dddGravado.length >= 2 ? dddGravado.slice(0, 2) : ''
-          if (!ddd) {
-            const telRaw = (
-              cliente.getString('telefone') ||
-              cliente.getString('whatsapp') ||
-              ''
-            ).replace(/\D/g, '')
-            let s = telRaw
-            if (s.startsWith('0')) s = s.slice(1)
-            if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
-            ddd = s.slice(0, 2)
-          }
-
+          const ddd = extrairDddCliente(cliente)
           if (!atacadoDddsPermitidos.includes(ddd)) {
             return e.json(403, {
               error: `Este cliente pertence a outro DDD do Atacado e não está na sua carteira (${atacadoDddsPermitidos.join(', ')}).`,
             })
           }
         } else if (!isRepescagem) {
-          // Varejo: valida vendedor
-          const vRaw = cliente.getString('vendedor') || ''
-          const v = vRaw
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .toUpperCase()
-            .trim()
+          // Varejo: valida vendedor com matching tolerante
+          const matchVendedor = matchesCarteiraVendedorTolerante(cliente, userName)
+          const matchLiderSuporte = isLider && cliente.getBool('sem_dono_equipe') === true
 
-          let vSemCanal = v
-          const prefixos = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ']
-          for (let p = 0; p < prefixos.length; p++) {
-            if (vSemCanal.startsWith(prefixos[p])) {
-              vSemCanal = vSemCanal.slice(prefixos[p].length).trim()
-              break
-            }
-          }
-
-          const matchFullName =
-            userFullNameNorm &&
-            (vSemCanal === userFullNameNorm ||
-              v.includes(userFullNameNorm) ||
-              userFullNameNorm.includes(vSemCanal))
-          const matchFirstName =
-            userFirstName && (v.includes(userFirstName) || vSemCanal.startsWith(userFirstName))
-
-          if (!matchFullName && !matchFirstName) {
+          if (!matchVendedor && !matchLiderSuporte) {
             return e.json(403, {
               error:
                 'Este cliente pertence à carteira de outro vendedor e não está sob sua responsabilidade.',
@@ -582,8 +404,7 @@ routerAdd(
         }
       }
 
-      // Se o operador já tiver OUTRO cliente em lock, libera o anterior de volta para 'na_base' (ou preserva)
-      // para que ele possa abrir o cliente específico que procurou
+      // Se o operador já tiver OUTRO cliente em lock, libera o anterior de volta para 'na_base'
       try {
         const currentLocked = $app.findRecordsByFilter(
           'clientes',
@@ -643,10 +464,7 @@ routerAdd(
 
 /**
  * Endpoint para DESTRAVAR / remover standby de cliente
- * Exclusivo para role = 'admin' (operador, líder e supervisor recebem 403).
- * Limpa standby_ate e reativado_em, permitindo que o cliente volte à fila / carteira imediatamente.
- * Se o cliente ainda estiver como 'reativado', retorna para 'na_base' (ou mantém estado compatível se for reagendado).
- * Grava auditoria em eventos_log com usuário admin, cliente e data/hora.
+ * Exclusivo para role = 'admin'.
  */
 routerAdd(
   'POST',
@@ -693,7 +511,6 @@ routerAdd(
       cliente.set('standby_ate', null)
       cliente.set('reativado_em', null)
 
-      // Se estava como reativado fora da fila, devolve para na_base para reaparecer no fluxo normal
       if (estadoAnterior === 'reativado') {
         cliente.set('estado', 'na_base')
         cliente.set('operador', '')
@@ -729,7 +546,7 @@ routerAdd(
         console.log('[queue_search] Aviso ao registrar auditoria eventos_log: ' + evErr.message)
       }
 
-      // 2. Gravar interação na timeline do cliente para histórico visível na ficha
+      // 2. Gravar interação na timeline do cliente
       try {
         const colIt = $app.findCollectionByNameOrId('interacoes')
         const it = new Record(colIt)
@@ -765,11 +582,7 @@ routerAdd(
 
 /**
  * Endpoint para EDITAR ATENDIMENTO FECHADO (incluso em standby)
- * Exclusivo para role = 'admin' (operador, líder e supervisor recebem 403).
- * NÃO altera NEM zera standby_ate / reativado_em — preserva a blindagem intacta.
- * Atualiza o último registro em respostas_formulario (ou cria caso não exista)
- * e os campos derivados em clientes (desfecho, rascunho_respostas, observacoes).
- * Grava auditoria dupla: eventos_log e interacoes com tipo 'edicao_admin'.
+ * Exclusivo para role = 'admin'.
  */
 routerAdd(
   'POST',
@@ -880,7 +693,6 @@ routerAdd(
         }
       }
 
-      // Atualiza campos derivados em clientes SEM MEXER em standby_ate, reativado_em, estado ou fluxo da fila
       if (body.desfecho) {
         cliente.set('desfecho', desfechoNovo)
       }
@@ -915,7 +727,7 @@ routerAdd(
         console.log('[queue_search] Aviso ao registrar auditoria eventos_log: ' + evErr.message)
       }
 
-      // 2. Auditoria interacoes (tipo 'edicao_admin')
+      // 2. Auditoria interacoes
       try {
         const colIt = $app.findCollectionByNameOrId('interacoes')
         const it = new Record(colIt)

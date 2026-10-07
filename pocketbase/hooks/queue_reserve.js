@@ -1,3 +1,7 @@
+// pocketbase/hooks/queue_reserve.js
+// Endpoint de reserva do próximo cliente na fila / carteira
+// Implementa as 7 correções de blindagem da auditoria 0080
+
 routerAdd(
   'POST',
   '/backend/v1/queue/reserve-next',
@@ -19,15 +23,11 @@ routerAdd(
       const userId = authRecord.id
       const userName = (authRecord.getString('name') || '').trim()
       const userRole = authRecord.getString('role')
+      const isLider = userRole === 'lider'
 
-      // Extração do primeiro nome do operador em maiúsculas para matching de carteira
-      // Ex: "Bruna Pereira" -> "BRUNA"; "Peterson Seixas" -> "PETERSON"; "Thais Oliveira" -> "THAIS"; "Ariane Souza" -> "ARIANE"
-      const userFirstName = (userName.split(' ')[0] || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .trim()
-      const userFirstNameClean = userFirstName
+      // EXPURGO ATÔMICO IMEDIATO: liberação de qualquer lock expirado (> 30 min) na base
+      // antes de computar reservas ou checar lock do próprio operador
+      expurgarLocksExpiradosAtomicamente($app)
 
       // Extração resiliente de regioes do authRecord (Goja runtime do PocketBase)
       let userRegioes = []
@@ -53,7 +53,6 @@ routerAdd(
         }
       }
 
-      // Normaliza para array de strings limpas
       if (Array.isArray(userRegioes)) {
         userRegioes = userRegioes.map((r) => String(r || '').trim()).filter(Boolean)
       } else {
@@ -72,12 +71,13 @@ routerAdd(
       // - Julio Melo: DDDs 15, 19
       // - Wilson Neto: DDDs 14, 16, 17, 18
       let atacadoDddsPermitidos = []
+      const userNameNorm = normalizarTextoNFD(userName)
       if (isAtacado) {
-        if (userFirstName === 'LARISSA') {
+        if (userNameNorm.includes('LARISSA')) {
           atacadoDddsPermitidos = ['11', '12', '13']
-        } else if (userFirstName === 'JULIO' || userFirstName === 'JÚLIO') {
+        } else if (userNameNorm.includes('JULIO')) {
           atacadoDddsPermitidos = ['15', '19']
-        } else if (userFirstName === 'WILSON') {
+        } else if (userNameNorm.includes('WILSON')) {
           atacadoDddsPermitidos = ['14', '16', '17', '18']
         } else {
           // Fallback para supervisor/admin ou outro membro do atacado
@@ -116,89 +116,21 @@ routerAdd(
       } catch (_) {}
 
       // Fuso de Brasília (UTC-3): hoje em BRT e fim do dia (meia-noite de Brasília em UTC)
-      // Ex: 2026-04-09 em BRT termina às 23:59:59.999 BRT, que equivale a 2026-04-10T02:59:59.999Z
       const brasiliaOffsetMs = -3 * 60 * 60 * 1000
       const dBrasilia = new Date(now.getTime() + brasiliaOffsetMs)
       const yBrt = dBrasilia.getUTCFullYear()
       const mBrt = dBrasilia.getUTCMonth()
       const dayBrt = dBrasilia.getUTCDate()
-      const todayStr = `${yBrt}-${String(mBrt + 1).padStart(2, '0')}-${String(dayBrt).padStart(2, '0')}`
-      // Fim do dia em Brasília (23:59:59.999 BRT = 02:59:59.999 UTC do dia seguinte)
       const endOfTodayBrtUtcMs = Date.UTC(yBrt, mBrt, dayBrt + 1, 2, 59, 59, 999)
       const endOfToday = new Date(endOfTodayBrtUtcMs).toISOString()
 
-      // Constrói filtro de regiões exato e rápido com suporte a variações de grafia
-      // Normalização robusta de região (sem acento, maiúsculas, trim)
-      const normalizarRegiaoTexto = (r) => {
-        return String(r || '')
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .toUpperCase()
-          .trim()
-      }
-
-      // Constrói filtro SQL PocketBase com todas as variantes conhecidas sem acento/com acento
-      const buildRegiaoCondition = (regiaoStr) => {
-        const norm = normalizarRegiaoTexto(regiaoStr)
-        if (norm === 'BRAGANCA' || norm === 'BRAGANCA PAULISTA' || norm.includes('BRAGANCA')) {
-          return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA' || regiao ~ 'BRAGANCA' || regiao ~ 'BRAGANÇA')"
-        }
-        if (
-          norm === 'CAMBUI' ||
-          norm === 'MICRO-REGIAO' ||
-          norm === 'MICRO REGIAO' ||
-          norm.includes('CAMBUI')
-        ) {
-          return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao = 'MICRO REGIAO' || regiao ~ 'CAMBUI' || regiao ~ 'CAMBUÍ')"
-        }
-        if (
-          norm === 'POCOS DE CALDAS' ||
-          norm === 'POCOS CALDAS' ||
-          norm === 'POCOS' ||
-          norm.includes('POCOS') ||
-          norm.includes('CALDAS')
-        ) {
-          return "(regiao = 'POÇOS DE CALDAS' || regiao = 'POCOS DE CALDAS' || regiao = 'POÇOS CALDAS' || regiao = 'POCOS CALDAS' || regiao ~ 'POCOS' || regiao ~ 'POÇOS')"
-        }
-        if (norm === 'JUNDIAI' || norm.includes('JUNDIAI')) {
-          return "(regiao = 'JUNDIAÍ' || regiao = 'JUNDIAI' || regiao ~ 'JUNDIAI' || regiao ~ 'JUNDIAÍ')"
-        }
-        if (norm === 'ITAJUBA' || norm.includes('ITAJUBA')) {
-          return "(regiao = 'ITAJUBÁ' || regiao = 'ITAJUBA' || regiao ~ 'ITAJUBA' || regiao ~ 'ITAJUBÁ')"
-        }
-        if (norm === 'VARGINHA' || norm.includes('VARGINHA')) {
-          return "(regiao = 'VARGINHA' || regiao ~ 'VARGINHA')"
-        }
-        if (norm === 'POUSO ALEGRE' || norm.includes('POUSO')) {
-          return "(regiao = 'POUSO ALEGRE' || regiao ~ 'POUSO ALEGRE')"
-        }
-        if (norm === 'EXTREMA' || norm.includes('EXTREMA')) {
-          return "(regiao = 'EXTREMA' || regiao ~ 'EXTREMA')"
-        }
-        if (norm === 'ATACADO') {
-          return "regiao = 'ATACADO'"
-        }
-        const upper = String(regiaoStr).trim().toUpperCase()
-        return `(regiao = '${upper}' || regiao ~ '${norm}')`
-      }
-
+      // Filtro de região
       let regiaoFilter = ''
       if (isRepescagem) {
         regiaoFilter = ''
-      } else if (userRole === 'operador' || userRole === 'lider') {
-        if (userRegioes.length > 0) {
-          const parts = userRegioes.map((r) => buildRegiaoCondition(r))
-          regiaoFilter = parts.length === 1 ? parts[0] : `(${parts.join(' || ')})`
-        } else {
-          regiaoFilter = ''
-        }
-      } else {
-        if (userRegioes.length > 0) {
-          const parts = userRegioes.map((r) => buildRegiaoCondition(r))
-          regiaoFilter = parts.length === 1 ? parts[0] : `(${parts.join(' || ')})`
-        } else {
-          regiaoFilter = ''
-        }
+      } else if (userRegioes.length > 0) {
+        const parts = userRegioes.map((r) => buildRegiaoSqlFilter(r))
+        regiaoFilter = parts.length === 1 ? parts[0] : `(${parts.join(' || ')})`
       }
 
       // Função defensiva de checagem para Repescagem
@@ -252,71 +184,11 @@ routerAdd(
         }
       }
 
-      // Helper para extrair DDD do cliente
-      const extrairDdd = (clienteRec) => {
-        const dddGravado = clienteRec.getString('ddd_telefone')
-        if (dddGravado && dddGravado.length >= 2) return dddGravado.slice(0, 2)
-        const telRaw = (
-          clienteRec.getString('telefone') ||
-          clienteRec.getString('whatsapp') ||
-          ''
-        ).replace(/\D/g, '')
-        if (!telRaw) return ''
-        let s = telRaw
-        if (s.startsWith('0')) s = s.slice(1)
-        if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
-        return s.slice(0, 2)
-      }
-
-      // Helper para checar se o vendedor do cliente corresponde ao operador (Matching Carteira Varejo)
-      // Suporta matching pelo primeiro nome do operador ou pelo nome completo normalizado
-      const userFullNameNorm = (userName || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .trim()
-
-      const matchesCarteiraVendedor = (clienteRec) => {
-        if (!userFirstName && !userFullNameNorm) return true
-        const vRaw = clienteRec.getString('vendedor') || ''
-        const v = vRaw
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .toUpperCase()
-          .trim()
-        if (!v) return false
-
-        // Extrai o nome após prefixo de canal se houver (ex: "VARE - RAFAELA RESENDE" -> "RAFAELA RESENDE")
-        let vSemCanal = v
-        const prefixos = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ']
-        for (let p = 0; p < prefixos.length; p++) {
-          if (vSemCanal.startsWith(prefixos[p])) {
-            vSemCanal = vSemCanal.slice(prefixos[p].length).trim()
-            break
-          }
-        }
-
-        // 1. Match por nome completo
-        if (
-          userFullNameNorm &&
-          (vSemCanal === userFullNameNorm ||
-            v.includes(userFullNameNorm) ||
-            userFullNameNorm.includes(vSemCanal))
-        ) {
-          return true
-        }
-
-        // 2. Match por primeiro nome
-        if (userFirstName && (v.includes(userFirstName) || vSemCanal.startsWith(userFirstName))) {
-          return true
-        }
-
-        return false
-      }
-
       let cand = null
 
-      // A: Reagendados vencidos do operador ou da região
+      // =========================================================================
+      // A: REAGENDADOS VENCIDOS (Follow-ups do operador ou da região)
+      // =========================================================================
       let reagFilter = `estado = 'reagendado' && reagendado_para <= '${endOfToday}' && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'`
       if (regiaoFilter) {
         reagFilter += ` && ${regiaoFilter}`
@@ -337,7 +209,7 @@ routerAdd(
           0,
         )
         if (reagendados && reagendados.length > 0) {
-          // Prioridade máxima: follow-ups do próprio operador (ou atribuídos especificamente a ele)
+          // Prioridade máxima: follow-ups atribuídos diretamente a este operador
           const myReags = reagendados.filter((r) => r.getString('reagendado_operador') === userId)
           if (myReags.length > 0) {
             const transferido = myReags.find((r) => r.getBool('prioridade_transferencia') === true)
@@ -346,20 +218,24 @@ routerAdd(
             // No Atacado, filtra por DDD
             for (let k = 0; k < reagendados.length; k++) {
               const rCand = reagendados[k]
-              const ddd = extrairDdd(rCand)
+              const ddd = extrairDddCliente(rCand)
               if (atacadoDddsPermitidos.includes(ddd)) {
                 cand = rCand
                 break
               }
             }
           } else if (!isRepescagem && (userRole === 'operador' || userRole === 'lider')) {
-            // No Varejo, filtra por carteira do operador
+            // No Varejo: Prioridade 1 = carteira própria (matching tolerante)
             for (let k = 0; k < reagendados.length; k++) {
               const rCand = reagendados[k]
-              if (matchesCarteiraVendedor(rCand)) {
+              if (matchesCarteiraVendedorTolerante(rCand, userName)) {
                 cand = rCand
                 break
               }
+            }
+            // Se for Líder de Rota e não achou da carteira própria, suporta reagendados da rota
+            if (!cand && isLider) {
+              cand = reagendados[0]
             }
           } else {
             for (let k = 0; k < reagendados.length; k++) {
@@ -380,7 +256,12 @@ routerAdd(
         console.log('[queue_reserve] Aviso ao buscar reagendados: ' + reagErr.message)
       }
 
-      // B: Se não achou reagendado, busca na base de clientes disponíveis (estado = 'na_base')
+      // =========================================================================
+      // B: BASE DISPONÍVEL (estado = 'na_base') COM BLINDAGEM DO POOL E 2ª PASSADA
+      // =========================================================================
+      let contagemCarteiraSemFiltroSegmento = 0
+      let segundaPassadaExecutada = false
+
       if (!cand) {
         let sortExpr = '-score'
         if (ordenacaoEscolhida === 'antigos') {
@@ -395,101 +276,140 @@ routerAdd(
           sortExpr = '-score'
         }
 
-        // Filtro base limpo com novas bases separadas:
-        // Exclui clientes ativo_fora_base, cliente_final, atacado_fora_mapa e sem_dono_equipe (para operadores)
-        // BLINDAGEM DE STANDBY: Garante que clientes com standby_ate vigente NUNCA sejam puxados
         const nowIsoQueue = now.toISOString()
-        let baseFilter = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && !(standby_ate > '${nowIsoQueue}')`
+        const isVarejoOperadorOuLider =
+          !isAtacado && !isRepescagem && (userRole === 'operador' || userRole === 'lider')
 
-        if (regiaoFilter) {
-          baseFilter += ` && ${regiaoFilter}`
-        }
-        if (isRepescagem) {
-          baseFilter += " && (faixa = '90_plus' || dias_sem_faturar >= 90)"
-        }
-        if (filtroSegmento && filtroSegmento !== 'todos') {
-          baseFilter += ` && segmento = '${filtroSegmento}'`
+        // Termos SQL do vendedor e seus sinônimos para blindar o pool ANTES do LIMIT 500
+        const vendedorTokens = buildVendedorSqlTerms(userName)
+
+        // Helper para montar filtro da base
+        const montarBaseFilter = (paramsFiltro) => {
+          const { comFiltroVendedor, comFiltroSegmento, incluirSemDonoRota } = paramsFiltro
+          let f = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && !(standby_ate > '${nowIsoQueue}')`
+
+          if (regiaoFilter) {
+            f += ` && ${regiaoFilter}`
+          }
+          if (isRepescagem) {
+            f += " && (faixa = '90_plus' || dias_sem_faturar >= 90)"
+          }
+          if (comFiltroSegmento && filtroSegmento && filtroSegmento !== 'todos') {
+            f += ` && segmento = '${filtroSegmento}'`
+          }
+
+          if (isVarejoOperadorOuLider) {
+            if (comFiltroVendedor && vendedorTokens.length > 0) {
+              const vConds = vendedorTokens.map((t) => `vendedor ~ '${t}'`)
+              f += ` && (${vConds.join(' || ')})`
+            } else if (incluirSemDonoRota && isLider) {
+              // Líder de rota: clientes sem dono na equipe ou com vendedor genérico da rota
+              f += ' && sem_dono_equipe = true'
+            }
+          }
+
+          return f
         }
 
-        // Se for operador/líder do Varejo (não Atacado nem Repescagem), exclui clientes marcados como sem_dono_equipe
-        if (!isAtacado && !isRepescagem && (userRole === 'operador' || userRole === 'lider')) {
-          baseFilter += ' && sem_dono_equipe != true'
-          // OTIMIZAÇÃO CRÍTICA: Filtrar diretamente por vendedor no SQL do PocketBase se houver primeiro nome
-          // Isso impede que centenas de clientes de outras rotas/vendedores ocupem todo o LIMIT do pool
-          if (userFirstNameClean && userFirstNameClean.length >= 3) {
-            baseFilter += ` && vendedor ~ '${userFirstNameClean.toUpperCase()}'`
+        // =========================================================================
+        // PASSADA 1: Busca primária específica
+        // =========================================================================
+        let pool = []
+        try {
+          const filterP1 = montarBaseFilter({
+            comFiltroVendedor: isVarejoOperadorOuLider,
+            comFiltroSegmento: true,
+            incluirSemDonoRota: false,
+          })
+          pool = $app.findRecordsByFilter('clientes', filterP1, sortExpr, 500, 0)
+        } catch (findErr) {
+          console.log('[queue_reserve] Erro Passada 1 findRecordsByFilter: ' + findErr.message)
+        }
+
+        // =========================================================================
+        // PASSADA 2: Fallback ampliado antes de declarar carteira esgotada
+        // Se a passada 1 não retornar candidatos para Varejo:
+        // - Se operador: amplia sem o filtro SQL estrito de vendedor (mas mantendo matching em memória)
+        // - Se líder de rota: busca clientes da rota sem vendedor específico / sem dono (Prioridade 2)
+        // =========================================================================
+        const precisaSegundaPassada =
+          (!pool || pool.length === 0) &&
+          (isVarejoOperadorOuLider || (isAtacado && (!pool || pool.length === 0)))
+
+        if (precisaSegundaPassada) {
+          segundaPassadaExecutada = true
+          try {
+            if (isVarejoOperadorOuLider) {
+              // Passada 2A: Tenta buscar da região com matching em memória (sem trava de token no SQL)
+              const filterP2A = montarBaseFilter({
+                comFiltroVendedor: false,
+                comFiltroSegmento: true,
+                incluirSemDonoRota: false,
+              })
+              const poolP2A = $app.findRecordsByFilter('clientes', filterP2A, sortExpr, 500, 0)
+              if (poolP2A && poolP2A.length > 0) {
+                // Filtra clientes da carteira do vendedor
+                const daCarteira = poolP2A.filter((c) =>
+                  matchesCarteiraVendedorTolerante(c, userName),
+                )
+                if (daCarteira.length > 0) {
+                  pool = daCarteira
+                } else if (isLider) {
+                  // Prioridade 2 do Líder: suporte de vazão da equipe para clientes sem dono
+                  const semDonoRota = poolP2A.filter((c) => c.getBool('sem_dono_equipe') === true)
+                  if (semDonoRota.length > 0) {
+                    pool = semDonoRota
+                  }
+                }
+              }
+            } else if (isAtacado) {
+              // Atacado: re-busca pool amplo para garantir
+              const filterAtacado = montarBaseFilter({
+                comFiltroVendedor: false,
+                comFiltroSegmento: true,
+                incluirSemDonoRota: false,
+              })
+              pool = $app.findRecordsByFilter('clientes', filterAtacado, sortExpr, 500, 0)
+            }
+          } catch (p2Err) {
+            console.log('[queue_reserve] Erro na 2ª passada ampliada: ' + p2Err.message)
           }
         }
 
-        let pool = []
-        try {
-          // Busca um pool maior (500) para poder aplicar matching de carteira e DDD com precisão
-          pool = $app.findRecordsByFilter('clientes', baseFilter, sortExpr, 500, 0)
-        } catch (findErr) {
-          console.log('[queue_reserve] Erro em findRecordsByFilter clientes: ' + findErr.message)
-        }
-
-        // Fallback: se pool do vendedor estiver vazia e havia filtro de vendedor direto, tenta sem filtro de vendedor direto
-        // (caso o nome do vendedor esteja grafado diferente mas seja capturado pelo mapa de donos)
-        if (
-          (!pool || pool.length === 0) &&
-          !isAtacado &&
-          !isRepescagem &&
-          (userRole === 'operador' || userRole === 'lider')
-        ) {
-          try {
-            let broadFilter = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && !(standby_ate > '${nowIsoQueue}')`
-            if (regiaoFilter) broadFilter += ` && ${regiaoFilter}`
-            if (filtroSegmento && filtroSegmento !== 'todos')
-              broadFilter += ` && segmento = '${filtroSegmento}'`
-            broadFilter += ' && sem_dono_equipe != true'
-            pool = $app.findRecordsByFilter('clientes', broadFilter, sortExpr, 500, 0)
-          } catch (_) {}
-        }
-
-        // Se o operador filtrou por segmento, calcular quantos clientes existem na carteira sem o filtro de segmento
-        // para enriquecer a resposta caso o filtro de segmento gere resultado vazio.
-        let contagemCarteiraSemFiltroSegmento = 0
+        // Se o operador filtrou por segmento, calcular contagem sem filtro de segmento
+        // para dar o aviso correto caso a carteira tenha clientes em outros segmentos
         if (filtroSegmento && filtroSegmento !== 'todos') {
           try {
-            let countFilter = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && !(standby_ate > '${nowIsoQueue}')`
-            if (regiaoFilter) countFilter += ` && ${regiaoFilter}`
-            if (!isAtacado && !isRepescagem && (userRole === 'operador' || userRole === 'lider')) {
-              countFilter += ' && sem_dono_equipe != true'
-              if (userFirstNameClean && userFirstNameClean.length >= 3) {
-                countFilter += ` && vendedor ~ '${userFirstNameClean.toUpperCase()}'`
-              }
-            }
-            const poolSemFiltro = $app.findRecordsByFilter(
-              'clientes',
-              countFilter,
-              '-score',
-              500,
-              0,
-            )
-            if (poolSemFiltro && poolSemFiltro.length > 0) {
+            const filterSemSeg = montarBaseFilter({
+              comFiltroVendedor: isVarejoOperadorOuLider,
+              comFiltroSegmento: false,
+              incluirSemDonoRota: false,
+            })
+            const poolSemSeg = $app.findRecordsByFilter('clientes', filterSemSeg, '-score', 500, 0)
+            if (poolSemSeg && poolSemSeg.length > 0) {
               if (isAtacado && (userRole === 'operador' || userRole === 'lider')) {
-                contagemCarteiraSemFiltroSegmento = poolSemFiltro.filter((c) => {
-                  const ddd = extrairDdd(c)
+                contagemCarteiraSemFiltroSegmento = poolSemSeg.filter((c) => {
+                  const ddd = extrairDddCliente(c)
                   return atacadoDddsPermitidos.includes(ddd)
                 }).length
-              } else if (!isRepescagem && (userRole === 'operador' || userRole === 'lider')) {
-                contagemCarteiraSemFiltroSegmento = poolSemFiltro.filter((c) =>
-                  matchesCarteiraVendedor(c),
+              } else if (isVarejoOperadorOuLider) {
+                contagemCarteiraSemFiltroSegmento = poolSemSeg.filter(
+                  (c) =>
+                    matchesCarteiraVendedorTolerante(c, userName) ||
+                    (isLider && c.getBool('sem_dono_equipe') === true),
                 ).length
               } else {
-                contagemCarteiraSemFiltroSegmento = poolSemFiltro.length
+                contagemCarteiraSemFiltroSegmento = poolSemSeg.length
               }
             }
           } catch (_) {}
         }
 
         // =========================================================================
-        // APLICAÇÃO DAS REGRAS ESPECÍFICAS DE CARTEIRA E DDD
+        // SELEÇÃO DO CANDIDATO NO POOL
         // =========================================================================
         if (pool && pool.length > 0) {
           if (isRepescagem) {
-            // Priscila atende 90+ de todas as rotas exceto já contatados pelo vendedor original
             for (let m = 0; m < pool.length; m++) {
               const item = pool[m]
               if (!jaContatadoPeloVendedorOriginal(item)) {
@@ -498,9 +418,9 @@ routerAdd(
               }
             }
           } else if (isAtacado && (userRole === 'operador' || userRole === 'lider')) {
-            // ATACADO: Filtrar estritamente clientes cujo DDD esteja no mapa do operador
+            // ATACADO: Filtrar por DDDs permitidos
             const poolAtacadoOperador = pool.filter((c) => {
-              const ddd = extrairDdd(c)
+              const ddd = extrairDddCliente(c)
               return atacadoDddsPermitidos.includes(ddd)
             })
 
@@ -508,7 +428,7 @@ routerAdd(
               if (ordenacaoEscolhida === 'antigos') {
                 cand = poolAtacadoOperador[0]
               } else {
-                // Prioridade: faixa 60–89 primeiro; faixa 90+ só quando não houver 60–89
+                // Prioridade 60–89 primeiro; 90+ depois
                 const faixa60 = poolAtacadoOperador.filter((c) => {
                   const f = c.getString('faixa')
                   const d = c.getInt('dias_sem_faturar')
@@ -517,26 +437,34 @@ routerAdd(
                 cand = faixa60.length > 0 ? faixa60[0] : poolAtacadoOperador[0]
               }
             }
-          } else if (userRole === 'operador' || userRole === 'lider') {
-            // VAREJO: Filtrar estritamente clientes cuja CARTEIRA individual pertence ao operador
-            const poolCarteiraOperador = pool.filter((c) => matchesCarteiraVendedor(c))
+          } else if (isVarejoOperadorOuLider) {
+            // VAREJO:
+            // Prioridade 1: Carteira própria do vendedor (matching tolerante)
+            const poolPropria = pool.filter((c) => matchesCarteiraVendedorTolerante(c, userName))
 
-            if (poolCarteiraOperador.length > 0) {
+            let poolElegivel = []
+            if (poolPropria.length > 0) {
+              poolElegivel = poolPropria
+            } else if (isLider) {
+              // Prioridade 2 do Líder: suporte de vazão da equipe (clientes sem dono da rota)
+              const poolSuporte = pool.filter((c) => c.getBool('sem_dono_equipe') === true)
+              poolElegivel = poolSuporte
+            }
+
+            if (poolElegivel.length > 0) {
               if (ordenacaoEscolhida === 'antigos') {
-                // Ordenação explícita por mais antigos: maior dias_sem_faturar primeiro
-                poolCarteiraOperador.sort(
+                poolElegivel.sort(
                   (a, b) => b.getInt('dias_sem_faturar') - a.getInt('dias_sem_faturar'),
                 )
-                cand = poolCarteiraOperador[0]
+                cand = poolElegivel[0]
               } else if (ordenacaoEscolhida === 'novos') {
-                poolCarteiraOperador.sort(
+                poolElegivel.sort(
                   (a, b) => a.getInt('dias_sem_faturar') - b.getInt('dias_sem_faturar'),
                 )
-                cand = poolCarteiraOperador[0]
+                cand = poolElegivel[0]
               } else {
-                // Padrão: faixa 60–89 primeiro (por score desc);
-                // esgotada a 60–89, trazer os 90+ ordenados pelos MAIS ANTIGOS (maior dias_sem_faturar desc)
-                const faixa60 = poolCarteiraOperador.filter((c) => {
+                // Padrão: faixa 60–89 primeiro; esgotada, 90+ pelos mais antigos
+                const faixa60 = poolElegivel.filter((c) => {
                   const f = c.getString('faixa')
                   const d = c.getInt('dias_sem_faturar')
                   return f === '60_89' || (d >= 60 && d <= 89)
@@ -544,8 +472,7 @@ routerAdd(
                 if (faixa60.length > 0) {
                   cand = faixa60[0]
                 } else {
-                  // Fallback 90+: ordenado pelos MAIS ANTIGOS (maior dias_sem_faturar primeiro)
-                  const faixa90 = poolCarteiraOperador.filter((c) => {
+                  const faixa90 = poolElegivel.filter((c) => {
                     const f = c.getString('faixa')
                     const d = c.getInt('dias_sem_faturar')
                     return f === '90_plus' || d >= 90
@@ -556,13 +483,13 @@ routerAdd(
                     )
                     cand = faixa90[0]
                   } else {
-                    cand = poolCarteiraOperador[0]
+                    cand = poolElegivel[0]
                   }
                 }
               }
             }
           } else {
-            // Supervisor ou admin atendendo: prioriza 60-89; esgotada, 90+ pelos mais antigos
+            // Supervisor ou admin atendendo
             const faixa60 = pool.filter((c) => {
               const f = c.getString('faixa')
               const d = c.getInt('dias_sem_faturar')
@@ -587,15 +514,18 @@ routerAdd(
         }
       }
 
-      // Se nenhum candidato elegível foi encontrado:
+      // =========================================================================
+      // NENHUM CANDIDATO ENCONTRADO
+      // =========================================================================
       if (!cand) {
-        // Se havia filtro de segmento selecionado e existem clientes na carteira sem o filtro de segmento:
+        // Se havia filtro de segmento ativo e existem clientes na carteira sem o filtro:
         const temFiltroSegmentoAtivo = filtroSegmento && filtroSegmento !== 'todos'
         if (temFiltroSegmentoAtivo && contagemCarteiraSemFiltroSegmento > 0) {
           return e.json(200, {
             cliente: null,
             carteira_esgotada: false,
             segmento_zerado: true,
+            segunda_passada_executada: segundaPassadaExecutada,
             total_carteira_sem_filtro: contagemCarteiraSemFiltroSegmento,
             message: `Nenhum cliente disponível no segmento selecionado. Selecione 'Todos os Segmentos' para acessar os ${contagemCarteiraSemFiltroSegmento} clientes da sua carteira.`,
           })
@@ -610,19 +540,26 @@ routerAdd(
         } else if (isAtacado && isCarteiraVazia) {
           msg = `Carteira esgotada para os seus DDDs (${atacadoDddsPermitidos.join(', ')}). Nenhum cliente disponível no seu mapa no momento.`
         } else if (isCarteiraVazia) {
-          msg = `Carteira esgotada: não há clientes da sua carteira (${userName}) disponíveis para reativação no momento.`
+          if (isLider) {
+            msg = `Carteira esgotada: não há clientes da sua carteira (${userName}) nem clientes de suporte da rota disponíveis para reativação no momento.`
+          } else {
+            msg = `Carteira esgotada: não há clientes da sua carteira (${userName}) disponíveis para reativação no momento.`
+          }
         }
 
         return e.json(200, {
           cliente: null,
           carteira_esgotada: isCarteiraVazia,
           segmento_zerado: false,
+          segunda_passada_executada: segundaPassadaExecutada,
           total_carteira_sem_filtro: 0,
           message: msg,
         })
       }
 
-      // Lock atômico: atribui operador, lock_timestamp e muda estado para 'reservado'
+      // =========================================================================
+      // LOCK ATÔMICO
+      // =========================================================================
       cand.set('estado', 'reservado')
       cand.set('operador', userId)
       cand.set('lock_timestamp', new Date().toISOString())
@@ -648,6 +585,8 @@ routerAdd(
           dias_sem_faturar: cand.getInt('dias_sem_faturar'),
           repescagem: isRepescagem,
           atacado: isAtacado,
+          is_lider: isLider,
+          segunda_passada_executada: segundaPassadaExecutada,
         })
         $app.save(ev)
       } catch (_) {}
@@ -656,6 +595,7 @@ routerAdd(
         cliente: cand,
         ja_reservado: false,
         carteira_esgotada: false,
+        segunda_passada_executada: segundaPassadaExecutada,
         message: 'Novo contato reservado com sucesso.',
       })
     } catch (err) {

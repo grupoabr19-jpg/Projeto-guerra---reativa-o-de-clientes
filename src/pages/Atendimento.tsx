@@ -392,7 +392,9 @@ export default function AtendimentoPage() {
               : 'Nenhum cliente elegível na sua fila',
             description:
               res.message ||
-              'Não encontramos nenhum cliente elegível disponível na sua rota no momento. Tente trocar os filtros ou tente novamente mais tarde.',
+              (res.segunda_passada_executada
+                ? 'Após busca completa e verificação ampliada da rota, nenhum cliente elegível foi localizado no momento.'
+                : 'Não encontramos nenhum cliente elegível disponível na sua rota no momento. Tente trocar os filtros ou tente novamente mais tarde.'),
           })
         }
       }

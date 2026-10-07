@@ -31,13 +31,14 @@ routerAdd(
       } else if (baseCategoriaParam === 'todas') {
         categoriaSql = '1=1'
       }
+
       // Construção da condição de região segura para SQLite
-      // Trata as variações de grafia e "Sem Região"
+      // Trata todas as variações de grafia e "Sem Região"
       let regiaoCondition = ''
       const params = {}
 
       if (regiao && regiao.toLowerCase() !== 'todas') {
-        const upper = regiao.toUpperCase()
+        const upper = regiao.toUpperCase().trim()
         if (upper === 'SEM REGIÃO' || upper === 'SEM REGIAO') {
           regiaoCondition =
             " AND (regiao = '' OR regiao IS NULL OR UPPER(TRIM(regiao)) = 'SEM REGIÃO' OR UPPER(TRIM(regiao)) = 'SEM REGIAO')"
@@ -53,18 +54,21 @@ routerAdd(
           upper === 'CAMBUÍ' ||
           upper === 'CAMBUI' ||
           upper === 'MICRO-REGIÃO' ||
-          upper === 'MICRO REGIAO'
+          upper === 'MICRO REGIAO' ||
+          upper === 'MICROREGIAO'
         ) {
           regiaoCondition =
-            " AND (UPPER(TRIM(regiao)) = 'CAMBUÍ' OR UPPER(TRIM(regiao)) = 'CAMBUI' OR UPPER(TRIM(regiao)) = 'MICRO-REGIÃO' OR UPPER(TRIM(regiao)) = 'MICRO REGIAO')"
+            " AND (UPPER(TRIM(regiao)) = 'CAMBUÍ' OR UPPER(TRIM(regiao)) = 'CAMBUI' OR UPPER(TRIM(regiao)) = 'MICRO-REGIÃO' OR UPPER(TRIM(regiao)) = 'MICRO REGIAO' OR UPPER(TRIM(regiao)) = 'MICROREGIAO')"
         } else if (
           upper === 'POÇOS DE CALDAS' ||
           upper === 'POCOS DE CALDAS' ||
           upper === 'POÇOS CALDAS' ||
-          upper === 'POCOS CALDAS'
+          upper === 'POCOS CALDAS' ||
+          upper === 'POÇOS' ||
+          upper === 'POCOS'
         ) {
           regiaoCondition =
-            " AND (UPPER(TRIM(regiao)) = 'POÇOS DE CALDAS' OR UPPER(TRIM(regiao)) = 'POCOS DE CALDAS' OR UPPER(TRIM(regiao)) = 'POÇOS CALDAS' OR UPPER(TRIM(regiao)) = 'POCOS CALDAS')"
+            " AND (UPPER(TRIM(regiao)) = 'POÇOS DE CALDAS' OR UPPER(TRIM(regiao)) = 'POCOS DE CALDAS' OR UPPER(TRIM(regiao)) = 'POÇOS CALDAS' OR UPPER(TRIM(regiao)) = 'POCOS CALDAS' OR UPPER(TRIM(regiao)) = 'POÇOS' OR UPPER(TRIM(regiao)) = 'POCOS')"
         } else if (upper === 'JUNDIAÍ' || upper === 'JUNDIAI') {
           regiaoCondition =
             " AND (UPPER(TRIM(regiao)) = 'JUNDIAÍ' OR UPPER(TRIM(regiao)) = 'JUNDIAI')"
@@ -89,21 +93,12 @@ routerAdd(
         }
       }
 
-      // Regra fundamental: clientes marcados com ativo_fora_base (flag ou estado) ficam fora,
-      // e aplicamos o filtro de categoria selecionado
+      // Regra fundamental: clientes marcados com ativo_fora_base (flag ou estado) ficam fora
       const baseFilterSql = `estado != 'ativo_fora_base' AND (ativo_fora_base IS NULL OR ativo_fora_base = 0) AND (${categoriaSql})`
 
-      // 1. Contagens agregadas gerais e valores recuperados
-      // No PocketBase JSVM (Goja), dbx.Query.one() requer um DynamicModel com a estrutura dos campos.
-      // O acesso às propriedades geradas no DynamicModel é feito em lowerCamelCase.
-      // Condição que define uma REATIVAÇÃO REAL DA EQUIPE:
-      // Cliente com estado 'reativado' QUE teve atendimento por operador e/ou pedido registrado
       const isReativacaoRealCond =
         "(estado = 'reativado' AND ((operador IS NOT NULL AND TRIM(operador) != '') OR (pedido_reativacao IS NOT NULL AND TRIM(pedido_reativacao) != '')))"
 
-      // Condição que define CLIENTES COM FATURAMENTO RECENTE DETECTADOS NO CRUZAMENTO (sem atendimento de operador):
-      // Cliente com estado 'reativado' que NÃO teve atendimento por operador nem pedido de reativação da equipe
-      // (detectado automaticamente pela planilha/reconciliação devido a compras recentes)
       const isFaturamentoCruzamentoCond =
         "(estado = 'reativado' AND (operador IS NULL OR TRIM(operador) = '') AND (pedido_reativacao IS NULL OR TRIM(pedido_reativacao) = ''))"
 
@@ -166,7 +161,6 @@ routerAdd(
         })
       }
 
-      // Propriedades acessíveis no DynamicModel (Goja armazena nos campos nomeados da struct/objeto)
       const totalBase = Number(
         kpiModel.total_base !== undefined && kpiModel.total_base !== null
           ? kpiModel.total_base
@@ -203,7 +197,6 @@ routerAdd(
           : kpiModel.toneladasRecuperadasReal || 0,
       )
 
-      // Clientes identificados com faturamento recente pelo cruzamento (sem atendimento da equipe)
       const faturamentoCruzamentoCount = Number(
         kpiModel.faturamento_recente_cruzamento !== undefined &&
           kpiModel.faturamento_recente_cruzamento !== null
@@ -244,25 +237,28 @@ routerAdd(
           : kpiModel.valorRecuperadoTotal || 0,
       )
 
-      // Na fila: 'na_base' + 'reservado' (ou clientes disponíveis para alocação)
       const naFila = naBaseCount + reservadoCount
       const emAtendimentoTotal = emAtendimentoCount + reservadoCount
 
-      // TAXA DE RECUPERAÇÃO: passa a contar APENAS as reativações reais da equipe sobre a base
       const taxaReativacao =
         totalBase > 0 ? Number(((reativadosReaisCount / totalBase) * 100).toFixed(1)) : 0
       const taxaReativacaoInt = Math.round(taxaReativacao)
 
-      // 2. Agrupamento por região (contagem e média ponderada de score para todas as regiões da base)
+      // 2. Agrupamento por região com normalização completa das 8 rotas Varejo + ATACADO + REPESCAGEM
       const regioesQuery = `
         SELECT
           CASE
             WHEN regiao IS NULL OR TRIM(regiao) = '' THEN 'Sem Região'
-            WHEN UPPER(TRIM(regiao)) = 'BRAGANÇA PAULISTA' OR UPPER(TRIM(regiao)) = 'BRAGANCA PAULISTA' THEN 'BRAGANÇA'
-            WHEN UPPER(TRIM(regiao)) = 'CAMBUI' OR UPPER(TRIM(regiao)) = 'MICRO-REGIÃO' OR UPPER(TRIM(regiao)) = 'MICRO REGIAO' THEN 'CAMBUÍ'
-            WHEN UPPER(TRIM(regiao)) = 'POCOS DE CALDAS' OR UPPER(TRIM(regiao)) = 'POÇOS CALDAS' OR UPPER(TRIM(regiao)) = 'POCOS CALDAS' THEN 'POÇOS DE CALDAS'
-            WHEN UPPER(TRIM(regiao)) = 'JUNDIAI' THEN 'JUNDIAÍ'
-            WHEN UPPER(TRIM(regiao)) = 'ITAJUBA' THEN 'ITAJUBÁ'
+            WHEN UPPER(TRIM(regiao)) = 'BRAGANÇA' OR UPPER(TRIM(regiao)) = 'BRAGANCA' OR UPPER(TRIM(regiao)) = 'BRAGANÇA PAULISTA' OR UPPER(TRIM(regiao)) = 'BRAGANCA PAULISTA' THEN 'BRAGANÇA'
+            WHEN UPPER(TRIM(regiao)) = 'CAMBUÍ' OR UPPER(TRIM(regiao)) = 'CAMBUI' OR UPPER(TRIM(regiao)) = 'MICRO-REGIÃO' OR UPPER(TRIM(regiao)) = 'MICRO REGIAO' OR UPPER(TRIM(regiao)) = 'MICROREGIAO' THEN 'CAMBUÍ'
+            WHEN UPPER(TRIM(regiao)) = 'POÇOS DE CALDAS' OR UPPER(TRIM(regiao)) = 'POCOS DE CALDAS' OR UPPER(TRIM(regiao)) = 'POÇOS CALDAS' OR UPPER(TRIM(regiao)) = 'POCOS CALDAS' OR UPPER(TRIM(regiao)) = 'POÇOS' OR UPPER(TRIM(regiao)) = 'POCOS' THEN 'POÇOS DE CALDAS'
+            WHEN UPPER(TRIM(regiao)) = 'JUNDIAÍ' OR UPPER(TRIM(regiao)) = 'JUNDIAI' THEN 'JUNDIAÍ'
+            WHEN UPPER(TRIM(regiao)) = 'ITAJUBÁ' OR UPPER(TRIM(regiao)) = 'ITAJUBA' THEN 'ITAJUBÁ'
+            WHEN UPPER(TRIM(regiao)) = 'VARGINHA' THEN 'VARGINHA'
+            WHEN UPPER(TRIM(regiao)) = 'POUSO ALEGRE' THEN 'POUSO ALEGRE'
+            WHEN UPPER(TRIM(regiao)) = 'EXTREMA' THEN 'EXTREMA'
+            WHEN UPPER(TRIM(regiao)) = 'ATACADO' THEN 'ATACADO'
+            WHEN UPPER(TRIM(regiao)) = 'REPESCAGEM' THEN 'REPESCAGEM'
             ELSE UPPER(TRIM(regiao))
           END as regiao_nome,
           COUNT(*) as total,
@@ -311,18 +307,15 @@ routerAdd(
           total_base: totalBase,
           naFila: naFila,
           na_fila: naFila,
-          // Reativações REAIS da equipe (atendimento por operador com pedido / confirmação)
           reativados: reativadosReaisCount,
           reativadosReais: reativadosReaisCount,
           taxaReativacao: taxaReativacaoInt,
           taxaReativacaoFloat: taxaReativacao,
           valorRecuperado: valorRecuperadoReal,
           toneladasRecuperadas: toneladasRecuperadasReal,
-          // Grupo 2: Faturamento recente detectado no cruzamento de planilhas (sem operador)
           faturamentoRecenteCruzamento: faturamentoCruzamentoCount,
           valorFaturamentoCruzamento: valorFaturamentoCruzamento,
           toneladasFaturamentoCruzamento: toneladasFaturamentoCruzamento,
-          // Totais brutos combinados (para auditoria e compatibilidade)
           reativadosTotalBruto: reativadoTotalCount,
           valorRecuperadoTotalBruto: valorRecuperadoTotal,
         },
