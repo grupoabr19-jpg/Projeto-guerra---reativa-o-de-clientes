@@ -1,10 +1,21 @@
-// #include vendedor_matching
 // pocketbase/hooks/crons_manutencao.js
 // Rotinas de manutenção e atualização diária da base
 // Implementa as 7 correções da auditoria 0080
 
 // 1. Cron frequente (a cada 10 minutos): Liberação atômica de locks expirados (> 30 min) e quarentenas vencidas
 cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
+  const {
+    normalizarTextoNFD,
+    normalizarRegiaoCanonica,
+    buildRegiaoSqlFilter,
+    limparPrefixoVendedor,
+    obterVariantesVendedor,
+    matchesCarteiraVendedorTolerante,
+    buildVendedorSqlTerms,
+    extrairDddCliente,
+    expurgarLocksExpiradosAtomicamente,
+  } = require(`${__hooks}/vendedor_matching.js`)
+
   try {
     const now = new Date()
 
@@ -49,6 +60,18 @@ cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
 // - Matching tolerante e saneamento de sem_dono_equipe com sinônimos
 // - Grava registro da execução em eventos_log
 cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
+  const {
+    normalizarTextoNFD,
+    normalizarRegiaoCanonica,
+    buildRegiaoSqlFilter,
+    limparPrefixoVendedor,
+    obterVariantesVendedor,
+    matchesCarteiraVendedorTolerante,
+    buildVendedorSqlTerms,
+    extrairDddCliente,
+    expurgarLocksExpiradosAtomicamente,
+  } = require(`${__hooks}/vendedor_matching.js`)
+
   try {
     const now = new Date()
     const nowMs = now.getTime()

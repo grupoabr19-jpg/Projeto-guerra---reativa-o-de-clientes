@@ -1,4 +1,3 @@
-// #include vendedor_matching
 // pocketbase/hooks/queue_search.js
 // Busca na carteira, abertura de cliente específico e destrave/edição administrativa
 // Implementa as 7 correções da auditoria 0080
@@ -7,6 +6,18 @@ routerAdd(
   'POST',
   '/backend/v1/queue/search-carteira',
   (e) => {
+    const {
+      normalizarTextoNFD,
+      normalizarRegiaoCanonica,
+      buildRegiaoSqlFilter,
+      limparPrefixoVendedor,
+      obterVariantesVendedor,
+      matchesCarteiraVendedorTolerante,
+      buildVendedorSqlTerms,
+      extrairDddCliente,
+      expurgarLocksExpiradosAtomicamente,
+    } = require(`${__hooks}/vendedor_matching.js`)
+
     try {
       const authRecord = e.auth
       if (!authRecord || !authRecord.id) {
@@ -268,6 +279,18 @@ routerAdd(
   'POST',
   '/backend/v1/queue/reserve-specific',
   (e) => {
+    const {
+      normalizarTextoNFD,
+      normalizarRegiaoCanonica,
+      buildRegiaoSqlFilter,
+      limparPrefixoVendedor,
+      obterVariantesVendedor,
+      matchesCarteiraVendedorTolerante,
+      buildVendedorSqlTerms,
+      extrairDddCliente,
+      expurgarLocksExpiradosAtomicamente,
+    } = require(`${__hooks}/vendedor_matching.js`)
+
     try {
       const authRecord = e.auth
       if (!authRecord || !authRecord.id) {

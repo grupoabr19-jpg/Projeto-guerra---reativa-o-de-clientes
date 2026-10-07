@@ -1,6 +1,6 @@
 {
-  "version": "0.0.71",
-  "buildTime": "2026-03-31T04:00:00.000Z",
-  "buildId": "v0.0.71",
-  "mensagem": "v0.0.71: Redesenho do Hub de Atendimento (WhatsApp + Pipeline Kanban), barra de contatos fixa, vinculação contato-card, sidebar retrátil e Base de Inativos."
+  "version": "0.0.104",
+  "buildTime": "2026-10-07T12:45:00.000Z",
+  "buildId": "v0.0.104",
+  "mensagem": "v0.0.104: Correção crítica e definitiva do escopo dos hooks PocketBase (CommonJS require em vez de include inexistente)."
 }
