@@ -40,7 +40,20 @@ import {
   fetchInteracoesByCliente,
   fetchRegioes,
   destravarClienteStandby,
+  concluirFaturamentoPedido,
 } from '@/services/api'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { CheckCircle2, DollarSign } from 'lucide-react'
+import { getBrasiliaDateStr } from '@/lib/expediente'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   AlertDialog,
@@ -82,6 +95,15 @@ export default function ClientesPage() {
   // Diálogo de Destrave de Standby (Admin Only)
   const [clienteParaDestravar, setClienteParaDestravar] = useState<Cliente | null>(null)
   const [destravandoStandby, setDestravandoStandby] = useState(false)
+
+  // Modal de Complementação de Faturamento
+  const [modalFaturamentoAberto, setModalFaturamentoAberto] = useState(false)
+  const [clienteParaFaturar, setClienteParaFaturar] = useState<Cliente | null>(null)
+  const [dataFaturamentoInput, setDataFaturamentoInput] = useState(getBrasiliaDateStr(new Date()))
+  const [valorFaturadoInput, setValorFaturadoInput] = useState('')
+  const [nfFaturaInput, setNfFaturaInput] = useState('')
+  const [obsFaturamentoInput, setObsFaturamentoInput] = useState('')
+  const [salvandoFaturamento, setSalvandoFaturamento] = useState(false)
 
   useEffect(() => {
     if (user && (user.role === 'operador' || user.role === 'lider')) {
@@ -216,6 +238,83 @@ export default function ClientesPage() {
     }
   }
 
+  const abrirModalFaturamento = (c: Cliente) => {
+    setClienteParaFaturar(c)
+    setDataFaturamentoInput(getBrasiliaDateStr(new Date()))
+    setValorFaturadoInput(
+      c.valor_faturado
+        ? String(c.valor_faturado)
+        : c.valor_ultima_compra
+          ? String(c.valor_ultima_compra)
+          : '',
+    )
+    setNfFaturaInput(c.numero_nf_fatura || c.pedido_reativacao || '')
+    setObsFaturamentoInput('')
+    setModalFaturamentoAberto(true)
+  }
+
+  const handleSalvarFaturamento = async () => {
+    if (!clienteParaFaturar) return
+
+    if (!dataFaturamentoInput) {
+      toast({
+        variant: 'destructive',
+        title: 'Data obrigatória',
+        description: 'Informe a data do faturamento.',
+      })
+      return
+    }
+
+    const valorNum = parseFloat(valorFaturadoInput.replace(/[^\d.,]/g, '').replace(',', '.'))
+    if (isNaN(valorNum) || valorNum <= 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Valor obrigatório',
+        description: 'Informe um valor faturado válido e maior que zero (R$).',
+      })
+      return
+    }
+
+    setSalvandoFaturamento(true)
+    try {
+      const res = await concluirFaturamentoPedido({
+        cliente_id: clienteParaFaturar.id,
+        data_faturamento: dataFaturamentoInput,
+        valor_faturado: valorNum,
+        numero_nf_fatura: nfFaturaInput.trim() || undefined,
+        observacoes: obsFaturamentoInput.trim() || undefined,
+      })
+
+      toast({
+        title: 'Faturamento concluído!',
+        description: res.message || 'Dados de faturamento gravados com sucesso.',
+      })
+
+      setModalFaturamentoAberto(false)
+      setClienteParaFaturar(null)
+      loadClientesServer()
+      if (selectedClient && selectedClient.id === clienteParaFaturar.id) {
+        setSelectedClient({
+          ...selectedClient,
+          pedido_em_aberto: false,
+          status_faturamento: 'faturado',
+          valor_faturado: valorNum,
+          numero_nf_fatura: nfFaturaInput.trim(),
+          data_faturamento: dataFaturamentoInput,
+        })
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao salvar faturamento'
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao concluir faturamento',
+        description: msg,
+      })
+    } finally {
+      setSalvandoFaturamento(false)
+    }
+  }
+
   // Reversão de status pelo supervisor (ex: compra_terceiros para na_base)
   const handleReverterStatus = async (novoEstado: string) => {
     if (!selectedClient) return
@@ -295,6 +394,7 @@ export default function ClientesPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="todos">Todos os Status</SelectItem>
+              <SelectItem value="pedido_em_aberto">📦 Pedidos em Aberto (Pendente)</SelectItem>
               <SelectItem value="na_base">Na Base</SelectItem>
               <SelectItem value="em_atendimento">Em Atendimento</SelectItem>
               <SelectItem value="reativado">Reativado</SelectItem>
@@ -406,6 +506,16 @@ export default function ClientesPage() {
                         >
                           {item.estado.replace('_', ' ')}
                         </Badge>
+                        {item.pedido_em_aberto && (
+                          <Badge className="bg-amber-500 text-white border-amber-600 text-[9px] block w-fit font-bold font-mono animate-pulse">
+                            📦 Pedido em Aberto
+                          </Badge>
+                        )}
+                        {!item.pedido_em_aberto && item.status_faturamento === 'faturado' && (
+                          <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[9px] block w-fit font-medium font-mono">
+                            ✓ Faturado
+                          </Badge>
+                        )}
                         {item.estado === 'reativado' &&
                           item.standby_ate &&
                           new Date(item.standby_ate).getTime() > Date.now() && (
@@ -448,6 +558,18 @@ export default function ClientesPage() {
                               Destravar
                             </Button>
                           )}
+                        {item.pedido_em_aberto && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => abrirModalFaturamento(item)}
+                            className="h-7 text-[11px] bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 px-2 font-bold"
+                            title="Concluir faturamento deste pedido"
+                          >
+                            <DollarSign className="h-3 w-3 mr-0.5" />
+                            Faturar
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -612,6 +734,67 @@ export default function ClientesPage() {
                     <span className="font-mono font-medium text-amber-700">
                       {new Date(selectedClient.standby_ate).toLocaleDateString('pt-BR')}
                     </span>
+                  </div>
+                )}
+                {selectedClient.pedido_em_aberto && (
+                  <div className="p-3 bg-amber-50 rounded-lg border border-amber-300 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-amber-900 flex items-center gap-1.5">
+                        📦 Pedido em Aberto
+                      </span>
+                      <Badge className="bg-amber-500 text-white text-[10px]">Pendente</Badge>
+                    </div>
+                    {selectedClient.pedido_reativacao && (
+                      <div className="text-[11px] text-slate-700">
+                        <span className="text-slate-500">Pedido/Referência:</span>{' '}
+                        <strong>{selectedClient.pedido_reativacao}</strong>
+                      </div>
+                    )}
+                    {selectedClient.valor_ultima_compra && (
+                      <div className="text-[11px] text-slate-700">
+                        <span className="text-slate-500">Valor Estimado:</span>{' '}
+                        <strong>
+                          R${' '}
+                          {selectedClient.valor_ultima_compra.toLocaleString('pt-BR', {
+                            minimumFractionDigits: 2,
+                          })}
+                        </strong>
+                      </div>
+                    )}
+                    <Button
+                      size="sm"
+                      onClick={() => abrirModalFaturamento(selectedClient)}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8"
+                    >
+                      <DollarSign className="h-3.5 w-3.5 mr-1" />
+                      Complementar / Concluir Faturamento
+                    </Button>
+                  </div>
+                )}
+                {selectedClient.status_faturamento === 'faturado' && (
+                  <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 text-emerald-900 space-y-1">
+                    <div className="flex items-center justify-between font-bold text-[11px]">
+                      <span>✓ Faturamento Concluído</span>
+                      {selectedClient.data_faturamento && (
+                        <span>
+                          {new Date(selectedClient.data_faturamento).toLocaleDateString('pt-BR')}
+                        </span>
+                      )}
+                    </div>
+                    {selectedClient.valor_faturado ? (
+                      <div className="text-[11px]">
+                        Valor:{' '}
+                        <strong>
+                          R${' '}
+                          {selectedClient.valor_faturado.toLocaleString('pt-BR', {
+                            minimumFractionDigits: 2,
+                          })}
+                        </strong>
+                        {selectedClient.numero_nf_fatura
+                          ? ` • NF: ${selectedClient.numero_nf_fatura}`
+                          : ''}
+                      </div>
+                    ) : null}
                   </div>
                 )}
                 <div className="flex justify-between py-1 border-b border-slate-200/60">
@@ -830,6 +1013,147 @@ export default function ClientesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Modal de Complementação de Faturamento */}
+      <Dialog
+        open={modalFaturamentoAberto}
+        onOpenChange={(open) => {
+          if (!salvandoFaturamento) {
+            setModalFaturamentoAberto(open)
+            if (!open) setClienteParaFaturar(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2 text-slate-900 text-base">
+              <DollarSign className="h-5 w-5 text-emerald-600" />
+              <span>Concluir Faturamento de Pedido</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Registre a data real, o número da Nota Fiscal (NF) e o valor faturado para dar baixa
+              no pedido em aberto e validar a reativação definitiva.
+            </DialogDescription>
+          </DialogHeader>
+
+          {clienteParaFaturar && (
+            <div className="space-y-4 pt-2">
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs space-y-1">
+                <div className="font-bold text-slate-900">{clienteParaFaturar.nome}</div>
+                <div className="text-slate-500 flex items-center space-x-2 font-mono">
+                  <span>Código: {clienteParaFaturar.codigo}</span>
+                  <span>•</span>
+                  <span>Região: {clienteParaFaturar.regiao}</span>
+                </div>
+                {clienteParaFaturar.pedido_reativacao && (
+                  <div className="text-[11px] text-amber-800 pt-0.5">
+                    <strong>Ref. do pedido inicial:</strong> {clienteParaFaturar.pedido_reativacao}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <Label
+                    htmlFor="data-fat-clientes"
+                    className="text-xs font-semibold text-slate-700"
+                  >
+                    Data do Faturamento *
+                  </Label>
+                  <Input
+                    id="data-fat-clientes"
+                    type="date"
+                    value={dataFaturamentoInput}
+                    onChange={(e) => setDataFaturamentoInput(e.target.value)}
+                    className="h-9 text-xs mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="nf-fat-clientes" className="text-xs font-semibold text-slate-700">
+                    Número da NF / Fatura / Pedido Definitivo
+                  </Label>
+                  <Input
+                    id="nf-fat-clientes"
+                    type="text"
+                    placeholder="Ex: NF 45892 ou Pedido 221872"
+                    value={nfFaturaInput}
+                    onChange={(e) => setNfFaturaInput(e.target.value)}
+                    className="h-9 text-xs mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label
+                    htmlFor="valor-fat-clientes"
+                    className="text-xs font-semibold text-slate-700"
+                  >
+                    Valor Faturado Real (R$) *
+                  </Label>
+                  <Input
+                    id="valor-fat-clientes"
+                    type="text"
+                    placeholder="Ex: 15.420,00"
+                    value={valorFaturadoInput}
+                    onChange={(e) => setValorFaturadoInput(e.target.value)}
+                    className="h-9 text-xs mt-1 font-mono font-bold text-emerald-700"
+                  />
+                </div>
+
+                <div>
+                  <Label
+                    htmlFor="obs-fat-clientes"
+                    className="text-xs font-semibold text-slate-700"
+                  >
+                    Observações Internas (Opcional)
+                  </Label>
+                  <Textarea
+                    id="obs-fat-clientes"
+                    rows={2}
+                    placeholder="Condição de pagamento, itens faturados ou notas operacionais..."
+                    value={obsFaturamentoInput}
+                    onChange={(e) => setObsFaturamentoInput(e.target.value)}
+                    className="text-xs mt-1"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setModalFaturamentoAberto(false)
+                setClienteParaFaturar(null)
+              }}
+              disabled={salvandoFaturamento}
+              className="text-xs"
+            >
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSalvarFaturamento}
+              disabled={salvandoFaturamento}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+            >
+              {salvandoFaturamento ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                  Concluir Faturamento
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -27,6 +27,8 @@ import {
   AlertTriangle,
   CheckCircle,
   Sparkles,
+  PackageCheck,
+  ShoppingBag,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -205,6 +207,15 @@ export default function Dashboard() {
   const toneladasFaturamentoCruzamento = Number(
     baseKpisData?.kpis?.toneladasFaturamentoCruzamento ??
       (baseKpisData?.kpis as any)?.toneladas_faturamento_recente_cruzamento ??
+      0,
+  )
+
+  const pedidosEmAbertoCount = Number(
+    baseKpisData?.kpis?.pedidosEmAberto ?? (baseKpisData?.kpis as any)?.pedidos_em_aberto ?? 0,
+  )
+  const valorPedidosEmAberto = Number(
+    baseKpisData?.kpis?.valorPedidosEmAberto ??
+      (baseKpisData?.kpis as any)?.valor_pedidos_em_aberto ??
       0,
   )
 
@@ -948,7 +959,44 @@ export default function Dashboard() {
             Reativações reais da equipe separadas de faturamento recente do cruzamento
           </span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3.5">
+          {/* 0. NOVO CARD: PEDIDOS EM ABERTO */}
+          <Card className="border-amber-300 bg-gradient-to-br from-amber-50 via-white to-orange-50/40 shadow-sm hover:border-amber-400 transition-colors">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <div>
+                <CardTitle className="text-xs font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>Pedidos em Aberto</span>
+                  <Badge className="bg-amber-600 text-white text-[9px] px-1 py-0">Pendente</Badge>
+                </CardTitle>
+                <span className="text-[10px] text-amber-800 block">Aguardando faturamento</span>
+              </div>
+              <div className="h-8 w-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 shrink-0 shadow-2xs">
+                <ShoppingBag className="h-4 w-4" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-baseline justify-between">
+                <div className="text-2xl font-black text-amber-800 tabular-nums font-mono">
+                  {pedidosEmAbertoCount}
+                </div>
+                <Link
+                  to="/clientes"
+                  className="text-[11px] font-semibold text-amber-800 hover:text-amber-950 hover:underline flex items-center"
+                >
+                  Listar &rarr;
+                </Link>
+              </div>
+              <div className="mt-1 space-y-0.5">
+                <p className="text-[11px] font-bold text-amber-900 tabular-nums truncate">
+                  R$ {valorPedidosEmAberto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
+                <p className="text-[10px] text-slate-500 leading-tight">
+                  Reativações com pedido aguardando emissão de NF
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* 1. TOTAL INATIVOS BASE */}
           <Card className="border-slate-200 shadow-sm hover:shadow transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">

@@ -117,6 +117,8 @@ routerAdd(
           SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN 1 ELSE 0 END) as faturamento_recente_cruzamento,
           SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_faturamento_recente_cruzamento,
           SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_faturamento_recente_cruzamento,
+          SUM(CASE WHEN pedido_em_aberto = 1 THEN 1 ELSE 0 END) as pedidos_em_aberto,
+          SUM(CASE WHEN pedido_em_aberto = 1 THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_pedidos_em_aberto,
           SUM(CASE WHEN estado = 'compra_terceiros' THEN 1 ELSE 0 END) as compra_terceiros,
           SUM(CASE WHEN estado = 'nao_quer_negociar' THEN 1 ELSE 0 END) as nao_quer_negociar,
           SUM(CASE WHEN estado = 'sem_contato' THEN 1 ELSE 0 END) as sem_contato,
@@ -140,6 +142,8 @@ routerAdd(
         faturamento_recente_cruzamento: 0,
         valor_faturamento_recente_cruzamento: -0,
         toneladas_faturamento_recente_cruzamento: -0,
+        pedidos_em_aberto: 0,
+        valor_pedidos_em_aberto: -0,
         compra_terceiros: 0,
         nao_quer_negociar: 0,
         sem_contato: 0,
@@ -214,6 +218,17 @@ routerAdd(
           kpiModel.toneladas_faturamento_recente_cruzamento !== null
           ? kpiModel.toneladas_faturamento_recente_cruzamento
           : kpiModel.toneladasFaturamentoRecenteCruzamento || 0,
+      )
+
+      const pedidosEmAbertoCount = Number(
+        kpiModel.pedidos_em_aberto !== undefined && kpiModel.pedidos_em_aberto !== null
+          ? kpiModel.pedidos_em_aberto
+          : kpiModel.pedidosEmAberto || 0,
+      )
+      const valorPedidosEmAberto = Number(
+        kpiModel.valor_pedidos_em_aberto !== undefined && kpiModel.valor_pedidos_em_aberto !== null
+          ? kpiModel.valor_pedidos_em_aberto
+          : kpiModel.valorPedidosEmAberto || 0,
       )
 
       const compraTerceirosCount = Number(
@@ -316,6 +331,10 @@ routerAdd(
           faturamentoRecenteCruzamento: faturamentoCruzamentoCount,
           valorFaturamentoCruzamento: valorFaturamentoCruzamento,
           toneladasFaturamentoCruzamento: toneladasFaturamentoCruzamento,
+          pedidosEmAberto: pedidosEmAbertoCount,
+          pedidos_em_aberto: pedidosEmAbertoCount,
+          valorPedidosEmAberto: valorPedidosEmAberto,
+          valor_pedidos_em_aberto: valorPedidosEmAberto,
           reativadosTotalBruto: reativadoTotalCount,
           valorRecuperadoTotalBruto: valorRecuperadoTotal,
         },

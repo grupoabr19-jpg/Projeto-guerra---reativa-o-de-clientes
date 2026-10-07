@@ -45,7 +45,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
-import { pb } from '@/lib/pocketbase/client'
+import pb from '@/lib/pocketbase/client'
 import { isConversao, isLigacaoOuChamada, calcularTaxaConversao } from '@/lib/conversao'
 import type { Interacao, Cliente, RankingUserRow, MetasOperacionaisConfig } from '@/types'
 import { getBrasiliaDateStr, getBrasiliaParts, formatarDataHoraBrasilia } from '@/lib/expediente'

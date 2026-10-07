@@ -24,6 +24,7 @@ export async function fetchClientes(params?: {
   regiao?: string
   estado?: string
   categoria?: string
+  apenasPedidosEmAberto?: boolean
   allowedRegioes?: string[]
 }) {
   const page = params?.page || 1
@@ -98,7 +99,16 @@ export async function fetchClientes(params?: {
 
   // Filtro de Estado/Status
   if (params?.estado && params.estado !== 'todos') {
-    filterParts.push(`estado = '${params.estado}'`)
+    if (params.estado === 'pedido_em_aberto') {
+      filterParts.push('pedido_em_aberto = true')
+    } else {
+      filterParts.push(`estado = '${params.estado}'`)
+    }
+  }
+
+  // Filtro direto de Pedidos em Aberto
+  if (params?.apenasPedidosEmAberto) {
+    filterParts.push('pedido_em_aberto = true')
   }
 
   // Filtro de Categoria de Base
@@ -345,6 +355,9 @@ export interface ClienteBuscaCarteiraItem {
   standby_ate?: string
   reativado_em?: string
   em_standby?: boolean
+  pedido_em_aberto?: boolean
+  status_faturamento?: string
+  pedido_reativacao?: string
 }
 
 /**
@@ -1597,6 +1610,20 @@ export async function fetchMetricasBaseKpis(options?: {
       data.toneladas_faturamento_recente_cruzamento ??
       0,
   )
+  const pedidosEmAberto = Number(
+    kpisRaw.pedidosEmAberto ??
+      kpisRaw.pedidos_em_aberto ??
+      data.pedidosEmAberto ??
+      data.pedidos_em_aberto ??
+      0,
+  )
+  const valorPedidosEmAberto = Number(
+    kpisRaw.valorPedidosEmAberto ??
+      kpisRaw.valor_pedidos_em_aberto ??
+      data.valorPedidosEmAberto ??
+      data.valor_pedidos_em_aberto ??
+      0,
+  )
 
   return {
     kpis: {
@@ -1611,6 +1638,10 @@ export async function fetchMetricasBaseKpis(options?: {
       faturamentoRecenteCruzamento,
       valorFaturamentoCruzamento,
       toneladasFaturamentoCruzamento,
+      pedidosEmAberto,
+      pedidos_em_aberto: pedidosEmAberto,
+      valorPedidosEmAberto,
+      valor_pedidos_em_aberto: valorPedidosEmAberto,
       reativadosTotalBruto: Number(
         kpisRaw.reativadosTotalBruto ?? kpisRaw.reativado_total ?? data.reativadosTotalBruto ?? 0,
       ),

@@ -504,6 +504,10 @@ export interface MetricasBaseKpisResponse {
     faturamentoRecenteCruzamento?: number
     valorFaturamentoCruzamento?: number
     toneladasFaturamentoCruzamento?: number
+    pedidosEmAberto?: number
+    pedidos_em_aberto?: number
+    valorPedidosEmAberto?: number
+    valor_pedidos_em_aberto?: number
     reativadosTotalBruto?: number
     valorRecuperadoTotalBruto?: number
   }
@@ -611,6 +615,10 @@ export interface ReportsAnalyticsResponse {
     faturamentoRecenteCruzamento?: number
     valorFaturamentoCruzamento?: number
     toneladasFaturamentoCruzamento?: number
+    pedidosEmAberto?: number
+    pedidos_em_aberto?: number
+    valorPedidosEmAberto?: number
+    valor_pedidos_em_aberto?: number
     reativadosTotalBruto?: number
     valorRecuperadoTotalBruto?: number
   }
