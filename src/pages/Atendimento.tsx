@@ -85,6 +85,12 @@ import {
 import type { Cliente, Interacao, ClienteEstado, User } from '@/types'
 import { SEGMENTOS_OFICIAIS } from '@/lib/segmentos'
 import {
+  OPCOES_Q7_CONCORRENCIA,
+  OPCOES_Q8_OCORRENCIA,
+  OPCOES_Q10_ACAO_CORRETIVA,
+} from '@/lib/perguntasFicha'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
   ajustarParaExpediente,
   getSugestaoReagendamentoHtml,
   formatarDataHoraBrasilia,
@@ -133,6 +139,12 @@ export default function AtendimentoPage() {
   const [currentStep, setCurrentStep] = useState(3)
   const [answers, setAnswers] = useState<Record<string, string | number>>({})
   const [anexosFiles, setAnexosFiles] = useState<File[]>([])
+
+  // Aviso de validação métricas (balãozinho amigável Q15/Q16)
+  const [avisoValidacaoMetrica, setAvisoValidacaoMetrica] = useState<{
+    campo: 'q15' | 'q16'
+    mensagem: string
+  } | null>(null)
 
   // Desfecho Unificado (Q14 e Q17 foram unificados pelo usuário)
   const [desfechoFinal, setDesfechoFinal] = useState<ClienteEstado | ''>('')
@@ -528,13 +540,13 @@ export default function AtendimentoPage() {
   // Desempacotar perguntas com "Outros: <texto>" quando cliente carrega
   useEffect(() => {
     if (!cliente) return
-    const chaves = ['q3', 'q5', 'q6', 'q9', 'q12', 'q13']
+    const chaves = ['q3', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'q12', 'q13']
     const rascunho = (cliente.rascunho_respostas as Record<string, string | number>) || {}
     const updates: Record<string, string | number> = {}
     chaves.forEach((key) => {
       const val = String(answers[key] ?? rascunho[key] ?? '')
-      if (val.startsWith('Outros: ')) {
-        const textoLivre = val.replace(/^Outros:\s*/, '')
+      if (val.startsWith('Outros: ') || val.startsWith('Outros - ')) {
+        const textoLivre = val.replace(/^Outros[:\s-]+/, '').trim()
         updates[key] = 'Outros'
         updates[`${key}_outros`] = textoLivre
       }
@@ -562,6 +574,48 @@ export default function AtendimentoPage() {
 
     setSalvandoEdicaoAdmin(true)
     try {
+      // Validação frontend de Q15 e Q16 (isenta sem_contato e duplicado)
+      if (desfechoFinal !== 'sem_contato' && desfechoFinal !== 'duplicado') {
+        const rawValor = answers.q15 !== undefined ? String(answers.q15).trim() : ''
+        const rawPeso = answers.q16 !== undefined ? String(answers.q16).trim() : ''
+        const numValor = parseFloat(rawValor.replace(/[^\d.,]/g, '').replace(',', '.'))
+        const numPeso = parseFloat(rawPeso.replace(/[^\d.,]/g, '').replace(',', '.'))
+
+        if (rawValor === '' || isNaN(numValor) || numValor < 0) {
+          setCurrentStep(15)
+          setAvisoValidacaoMetrica({
+            campo: 'q15',
+            mensagem:
+              'O preenchimento do Valor Potencial (Q15) é imprescindível para termos um bom retorno das métricas.',
+          })
+          toast({
+            variant: 'destructive',
+            title: 'Campo obrigatório',
+            description:
+              'O preenchimento do Valor Potencial (Q15) é imprescindível para termos um bom retorno das métricas.',
+          })
+          setIsFinalizing(false)
+          return
+        }
+
+        if (rawPeso === '' || isNaN(numPeso) || numPeso < 0) {
+          setCurrentStep(16)
+          setAvisoValidacaoMetrica({
+            campo: 'q16',
+            mensagem:
+              'O preenchimento do Volume em Toneladas (Q16) é imprescindível para termos um bom retorno das métricas.',
+          })
+          toast({
+            variant: 'destructive',
+            title: 'Campo obrigatório',
+            description:
+              'O preenchimento do Volume em Toneladas (Q16) é imprescindível para termos um bom retorno das métricas.',
+          })
+          setIsFinalizing(false)
+          return
+        }
+      }
+
       const valorPotencial =
         parseFloat(
           String(answers.q15 || 0)
@@ -576,7 +630,7 @@ export default function AtendimentoPage() {
         ) || 0
 
       // Consolidar respostas com "Outros: <texto>"
-      const chavesOutros = ['q3', 'q5', 'q6', 'q9', 'q12', 'q13']
+      const chavesOutros = ['q3', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'q12', 'q13']
       const respostasConsolidadas: Record<string, unknown> = { ...answers }
       chavesOutros.forEach((key) => {
         if (answers[key] === 'Outros') {
@@ -912,7 +966,7 @@ export default function AtendimentoPage() {
         ) || 0
 
       // Consolidar respostas com "Outros: <texto>"
-      const chavesOutros = ['q3', 'q5', 'q6', 'q9', 'q12', 'q13']
+      const chavesOutros = ['q3', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'q12', 'q13']
       const respostasConsolidadas: Record<string, unknown> = { ...answers }
       chavesOutros.forEach((key) => {
         if (answers[key] === 'Outros') {
@@ -2020,11 +2074,39 @@ export default function AtendimentoPage() {
                       <h3 className="text-base font-semibold text-slate-800">
                         Está comprando de qual concorrente ou canal alternativo atualmente?
                       </h3>
-                      <Input
-                        placeholder="Nome do concorrente ou canal..."
+                      <Select
                         value={String(answers.q7 || '')}
-                        onChange={(e) => setAnswers({ ...answers, q7: e.target.value })}
-                      />
+                        onValueChange={(val) => setAnswers({ ...answers, q7: val })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o concorrente ou canal..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {OPCOES_Q7_CONCORRENCIA.map((op) => (
+                            <SelectItem key={op} value={op}>
+                              {op}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {answers.q7 === 'Outros' && (
+                        <div className="mt-2 space-y-1.5 p-3 rounded-lg bg-amber-50/60 border border-amber-200">
+                          <Label className="text-xs font-semibold text-amber-950">
+                            Especifique os detalhes para &apos;Outros&apos;: *
+                          </Label>
+                          <Input
+                            placeholder="Descreva o concorrente ou canal alternativo..."
+                            value={String(answers.q7_outros || '')}
+                            onChange={(e) => setAnswers({ ...answers, q7_outros: e.target.value })}
+                            className="bg-white text-xs"
+                          />
+                          {!answers.q7_outros && (
+                            <p className="text-[11px] text-amber-800 font-medium">
+                              ⚠️ Por favor, preencha o detalhamento do campo Outros.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -2043,12 +2125,39 @@ export default function AtendimentoPage() {
                         Houve falha operacional, lote defeituoso ou divergência em faturamentos
                         passados?
                       </h3>
-                      <Textarea
-                        placeholder="Descreva o problema ocorrido..."
+                      <Select
                         value={String(answers.q8 || '')}
-                        onChange={(e) => setAnswers({ ...answers, q8: e.target.value })}
-                        rows={3}
-                      />
+                        onValueChange={(val) => setAnswers({ ...answers, q8: val })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione a ocorrência reportada..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {OPCOES_Q8_OCORRENCIA.map((op) => (
+                            <SelectItem key={op} value={op}>
+                              {op}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {answers.q8 === 'Outros' && (
+                        <div className="mt-2 space-y-1.5 p-3 rounded-lg bg-amber-50/60 border border-amber-200">
+                          <Label className="text-xs font-semibold text-amber-950">
+                            Especifique os detalhes para &apos;Outros&apos;: *
+                          </Label>
+                          <Input
+                            placeholder="Descreva o problema ou ocorrência..."
+                            value={String(answers.q8_outros || '')}
+                            onChange={(e) => setAnswers({ ...answers, q8_outros: e.target.value })}
+                            className="bg-white text-xs"
+                          />
+                          {!answers.q8_outros && (
+                            <p className="text-[11px] text-amber-800 font-medium">
+                              ⚠️ Por favor, preencha o detalhamento do campo Outros.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -2114,11 +2223,39 @@ export default function AtendimentoPage() {
                       <h3 className="text-base font-semibold text-slate-800">
                         Qual ação reparatória é necessária para restabelecer a confiança comercial?
                       </h3>
-                      <Input
-                        placeholder="Ex: Bonificação em próximo lote, visita técnica, troca de prazo..."
+                      <Select
                         value={String(answers.q10 || '')}
-                        onChange={(e) => setAnswers({ ...answers, q10: e.target.value })}
-                      />
+                        onValueChange={(val) => setAnswers({ ...answers, q10: val })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione a ação reparatória..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {OPCOES_Q10_ACAO_CORRETIVA.map((op) => (
+                            <SelectItem key={op} value={op}>
+                              {op}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {answers.q10 === 'Outros' && (
+                        <div className="mt-2 space-y-1.5 p-3 rounded-lg bg-amber-50/60 border border-amber-200">
+                          <Label className="text-xs font-semibold text-amber-950">
+                            Especifique os detalhes para &apos;Outros&apos;: *
+                          </Label>
+                          <Input
+                            placeholder="Ex: Bonificação em próximo lote, visita técnica, troca de prazo..."
+                            value={String(answers.q10_outros || '')}
+                            onChange={(e) => setAnswers({ ...answers, q10_outros: e.target.value })}
+                            className="bg-white text-xs"
+                          />
+                          {!answers.q10_outros && (
+                            <p className="text-[11px] text-amber-800 font-medium">
+                              ⚠️ Por favor, preencha o detalhamento do campo Outros.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -2595,9 +2732,14 @@ export default function AtendimentoPage() {
                   {/* Q15 = Numérico (R$) */}
                   {currentStep === 15 && (
                     <div className="space-y-3">
-                      <Badge variant="outline" className="text-xs text-blue-600">
-                        Q15 — Campo Numérico: Valor Potencial (R$)
-                      </Badge>
+                      <div className="flex items-center justify-between">
+                        <Badge variant="outline" className="text-xs text-blue-600">
+                          Q15 — Campo Numérico: Valor Potencial (R$)
+                        </Badge>
+                        <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded font-semibold">
+                          Obrigatório para métricas
+                        </span>
+                      </div>
                       <h3 className="text-base font-semibold text-slate-800">
                         Valor monetário estimado da recuperação / cotação
                       </h3>
@@ -2607,19 +2749,38 @@ export default function AtendimentoPage() {
                           type="number"
                           placeholder="0.00"
                           value={answers.q15 !== undefined ? String(answers.q15) : ''}
-                          onChange={(e) => setAnswers({ ...answers, q15: e.target.value })}
-                          className="pl-9"
+                          onChange={(e) => {
+                            setAnswers({ ...answers, q15: e.target.value })
+                            if (avisoValidacaoMetrica?.campo === 'q15') {
+                              setAvisoValidacaoMetrica(null)
+                            }
+                          }}
+                          className={`pl-9 ${avisoValidacaoMetrica?.campo === 'q15' ? 'border-amber-500 ring-2 ring-amber-300' : ''}`}
                         />
                       </div>
+                      {avisoValidacaoMetrica?.campo === 'q15' && (
+                        <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2 animate-in fade-in slide-in-from-top-1">
+                          <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div className="text-xs text-amber-900">
+                            <strong className="font-semibold block mb-0.5">Aviso importante</strong>
+                            {avisoValidacaoMetrica.mensagem}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {/* Q16 = Numérico (Toneladas) */}
                   {currentStep === 16 && (
                     <div className="space-y-3">
-                      <Badge variant="outline" className="text-xs text-blue-600">
-                        Q16 — Campo Numérico: Volume em Toneladas
-                      </Badge>
+                      <div className="flex items-center justify-between">
+                        <Badge variant="outline" className="text-xs text-blue-600">
+                          Q16 — Campo Numérico: Volume em Toneladas
+                        </Badge>
+                        <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded font-semibold">
+                          Obrigatório para métricas
+                        </span>
+                      </div>
                       <h3 className="text-base font-semibold text-slate-800">
                         Volume físico estimado de entrega (toneladas)
                       </h3>
@@ -2630,10 +2791,24 @@ export default function AtendimentoPage() {
                           step="0.1"
                           placeholder="0.0"
                           value={answers.q16 !== undefined ? String(answers.q16) : ''}
-                          onChange={(e) => setAnswers({ ...answers, q16: e.target.value })}
-                          className="pl-9"
+                          onChange={(e) => {
+                            setAnswers({ ...answers, q16: e.target.value })
+                            if (avisoValidacaoMetrica?.campo === 'q16') {
+                              setAvisoValidacaoMetrica(null)
+                            }
+                          }}
+                          className={`pl-9 ${avisoValidacaoMetrica?.campo === 'q16' ? 'border-amber-500 ring-2 ring-amber-300' : ''}`}
                         />
                       </div>
+                      {avisoValidacaoMetrica?.campo === 'q16' && (
+                        <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2 animate-in fade-in slide-in-from-top-1">
+                          <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div className="text-xs text-amber-900">
+                            <strong className="font-semibold block mb-0.5">Aviso importante</strong>
+                            {avisoValidacaoMetrica.mensagem}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -2676,18 +2851,86 @@ export default function AtendimentoPage() {
 
                   <div className="flex items-center space-x-2">
                     {currentStep < 17 ? (
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setCurrentStep((prev) => {
-                            if (prev === 3) return 5 // pula Q4
-                            return Math.min(17, prev + 1)
-                          })
+                      <Popover
+                        open={
+                          (currentStep === 15 && avisoValidacaoMetrica?.campo === 'q15') ||
+                          (currentStep === 16 && avisoValidacaoMetrica?.campo === 'q16')
+                        }
+                        onOpenChange={(open) => {
+                          if (!open) setAvisoValidacaoMetrica(null)
                         }}
-                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs"
                       >
-                        Próxima Pergunta
-                      </Button>
+                        <PopoverTrigger asChild>
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              // Validação de avanço para Q15 e Q16
+                              if (
+                                desfechoFinal !== 'sem_contato' &&
+                                desfechoFinal !== 'duplicado'
+                              ) {
+                                if (currentStep === 15) {
+                                  const rawVal =
+                                    answers.q15 !== undefined ? String(answers.q15).trim() : ''
+                                  const num = parseFloat(
+                                    rawVal.replace(/[^\d.,]/g, '').replace(',', '.'),
+                                  )
+                                  if (rawVal === '' || isNaN(num) || num < 0) {
+                                    setAvisoValidacaoMetrica({
+                                      campo: 'q15',
+                                      mensagem:
+                                        'O preenchimento do Valor Potencial (Q15) é imprescindível para termos um bom retorno das métricas.',
+                                    })
+                                    return
+                                  }
+                                }
+                                if (currentStep === 16) {
+                                  const rawPeso =
+                                    answers.q16 !== undefined ? String(answers.q16).trim() : ''
+                                  const num = parseFloat(
+                                    rawPeso.replace(/[^\d.,]/g, '').replace(',', '.'),
+                                  )
+                                  if (rawPeso === '' || isNaN(num) || num < 0) {
+                                    setAvisoValidacaoMetrica({
+                                      campo: 'q16',
+                                      mensagem:
+                                        'O preenchimento do Volume em Toneladas (Q16) é imprescindível para termos um bom retorno das métricas.',
+                                    })
+                                    return
+                                  }
+                                }
+                              }
+
+                              setAvisoValidacaoMetrica(null)
+                              setCurrentStep((prev) => {
+                                if (prev === 3) return 5 // pula Q4
+                                return Math.min(17, prev + 1)
+                              })
+                            }}
+                            className="bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                          >
+                            Próxima Pergunta
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          side="top"
+                          align="end"
+                          className="w-80 p-3 bg-amber-50 border-amber-300 text-amber-950 shadow-lg text-xs"
+                        >
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                            <div className="space-y-1">
+                              <p className="font-bold text-amber-900">Preenchimento Necessário</p>
+                              <p className="text-[11px] text-amber-800">
+                                {avisoValidacaoMetrica?.mensagem}
+                              </p>
+                              <p className="text-[10px] text-amber-700 italic pt-1">
+                                Preencha o valor acima para prosseguir à próxima etapa.
+                              </p>
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     ) : (
                       <Button
                         size="sm"
@@ -3173,6 +3416,40 @@ export default function AtendimentoPage() {
                       <Button
                         size="sm"
                         onClick={() => {
+                          if (desfechoFinal !== 'sem_contato' && desfechoFinal !== 'duplicado') {
+                            if (currentStep === 15) {
+                              const rawVal =
+                                answers.q15 !== undefined ? String(answers.q15).trim() : ''
+                              const num = parseFloat(
+                                rawVal.replace(/[^\d.,]/g, '').replace(',', '.'),
+                              )
+                              if (rawVal === '' || isNaN(num) || num < 0) {
+                                toast({
+                                  variant: 'destructive',
+                                  title: 'Campo obrigatório',
+                                  description:
+                                    'O preenchimento do Valor Potencial (Q15) é imprescindível para termos um bom retorno das métricas.',
+                                })
+                                return
+                              }
+                            }
+                            if (currentStep === 16) {
+                              const rawPeso =
+                                answers.q16 !== undefined ? String(answers.q16).trim() : ''
+                              const num = parseFloat(
+                                rawPeso.replace(/[^\d.,]/g, '').replace(',', '.'),
+                              )
+                              if (rawPeso === '' || isNaN(num) || num < 0) {
+                                toast({
+                                  variant: 'destructive',
+                                  title: 'Campo obrigatório',
+                                  description:
+                                    'O preenchimento do Volume em Toneladas (Q16) é imprescindível para termos um bom retorno das métricas.',
+                                })
+                                return
+                              }
+                            }
+                          }
                           setCurrentStep((prev) => {
                             if (prev === 3) return 5
                             return Math.min(17, prev + 1)
