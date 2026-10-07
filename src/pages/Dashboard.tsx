@@ -33,6 +33,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -90,6 +91,9 @@ export default function Dashboard() {
   // Operador selecionado para destaque/modal rápido
   const [selectedOperadorDetalhe, setSelectedOperadorDetalhe] =
     useState<MetricasAtendimentoOperador | null>(null)
+
+  // Filtro para exibir apenas operadores atuando (com dados no período/escopo)
+  const [apenasAtuando, setApenasAtuando] = useState<boolean>(true)
 
   useEffect(() => {
     if (user && (user.role === 'operador' || user.role === 'lider')) {
@@ -592,72 +596,90 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="flex items-center space-x-2 text-xs">
-              <span className="text-slate-400">Ordenar por:</span>
-              <Button
-                variant={sortField === 'conversoes' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => {
-                  if (sortField === 'conversoes') {
-                    setSortAsc(!sortAsc)
-                  } else {
-                    setSortField('conversoes')
-                    setSortAsc(false)
-                  }
-                }}
-                className={`h-7 px-2.5 text-xs ${sortField === 'conversoes' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'text-slate-600'}`}
-              >
-                Conversões
-                <ArrowUpDown className="h-3 w-3 ml-1 opacity-70" />
-              </Button>
-              <Button
-                variant={sortField === 'atendimentos' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => {
-                  if (sortField === 'atendimentos') {
-                    setSortAsc(!sortAsc)
-                  } else {
-                    setSortField('atendimentos')
-                    setSortAsc(false)
-                  }
-                }}
-                className={`h-7 px-2.5 text-xs ${sortField === 'atendimentos' ? 'bg-[#253575] hover:bg-[#1e2b5e] text-white' : 'text-slate-600'}`}
-              >
-                Atendimentos
-                <ArrowUpDown className="h-3 w-3 ml-1 opacity-70" />
-              </Button>
-              <Button
-                variant={sortField === 'taxaConversao' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => {
-                  if (sortField === 'taxaConversao') {
-                    setSortAsc(!sortAsc)
-                  } else {
-                    setSortField('taxaConversao')
-                    setSortAsc(false)
-                  }
-                }}
-                className={`h-7 px-2.5 text-xs ${sortField === 'taxaConversao' ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'text-slate-600'}`}
-              >
-                Taxa %
-                <ArrowUpDown className="h-3 w-3 ml-1 opacity-70" />
-              </Button>
-              <Button
-                variant={sortField === 'pontosGamificacao' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => {
-                  if (sortField === 'pontosGamificacao') {
-                    setSortAsc(!sortAsc)
-                  } else {
-                    setSortField('pontosGamificacao')
-                    setSortAsc(false)
-                  }
-                }}
-                className={`h-7 px-2.5 text-xs ${sortField === 'pontosGamificacao' ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'text-slate-600'}`}
-              >
-                Pontos
-                <ArrowUpDown className="h-3 w-3 ml-1 opacity-70" />
-              </Button>
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              {/* Controle discreto: Apenas quem atuou / Mostrar todos */}
+              <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
+                <Switch
+                  id="toggle-apenas-atuando"
+                  checked={apenasAtuando}
+                  onCheckedChange={setApenasAtuando}
+                  className="data-[state=checked]:bg-emerald-600 h-4 w-7 [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
+                />
+                <label
+                  htmlFor="toggle-apenas-atuando"
+                  className="text-xs font-medium text-slate-700 cursor-pointer select-none whitespace-nowrap"
+                >
+                  {apenasAtuando ? 'Apenas quem atuou' : 'Mostrar todos'}
+                </label>
+              </div>
+
+              <div className="flex items-center space-x-1.5">
+                <span className="text-slate-400">Ordenar por:</span>
+                <Button
+                  variant={sortField === 'conversoes' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    if (sortField === 'conversoes') {
+                      setSortAsc(!sortAsc)
+                    } else {
+                      setSortField('conversoes')
+                      setSortAsc(false)
+                    }
+                  }}
+                  className={`h-7 px-2.5 text-xs ${sortField === 'conversoes' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'text-slate-600'}`}
+                >
+                  Conversões
+                  <ArrowUpDown className="h-3 w-3 ml-1 opacity-70" />
+                </Button>
+                <Button
+                  variant={sortField === 'atendimentos' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    if (sortField === 'atendimentos') {
+                      setSortAsc(!sortAsc)
+                    } else {
+                      setSortField('atendimentos')
+                      setSortAsc(false)
+                    }
+                  }}
+                  className={`h-7 px-2.5 text-xs ${sortField === 'atendimentos' ? 'bg-[#253575] hover:bg-[#1e2b5e] text-white' : 'text-slate-600'}`}
+                >
+                  Atendimentos
+                  <ArrowUpDown className="h-3 w-3 ml-1 opacity-70" />
+                </Button>
+                <Button
+                  variant={sortField === 'taxaConversao' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    if (sortField === 'taxaConversao') {
+                      setSortAsc(!sortAsc)
+                    } else {
+                      setSortField('taxaConversao')
+                      setSortAsc(false)
+                    }
+                  }}
+                  className={`h-7 px-2.5 text-xs ${sortField === 'taxaConversao' ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'text-slate-600'}`}
+                >
+                  Taxa %
+                  <ArrowUpDown className="h-3 w-3 ml-1 opacity-70" />
+                </Button>
+                <Button
+                  variant={sortField === 'pontosGamificacao' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    if (sortField === 'pontosGamificacao') {
+                      setSortAsc(!sortAsc)
+                    } else {
+                      setSortField('pontosGamificacao')
+                      setSortAsc(false)
+                    }
+                  }}
+                  className={`h-7 px-2.5 text-xs ${sortField === 'pontosGamificacao' ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'text-slate-600'}`}
+                >
+                  Pontos
+                  <ArrowUpDown className="h-3 w-3 ml-1 opacity-70" />
+                </Button>
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -673,18 +695,66 @@ export default function Dashboard() {
             </div>
           ) : (
             (() => {
-              // Ordenar lista de operadores
-              const sortedOperadores = [...metricasAtendimento.operadores].sort((a, b) => {
+              // Filtrar operadores: se apenasAtuando estiver ativo, filtrar apenas quem tem atividade real no período
+              // Apenas operadores e líderes de rota (administradores e supervisores já são excluídos do ranking)
+              const baseOperadores = metricasAtendimento.operadores.filter(
+                (op) => op.role === 'operador' || op.role === 'lider',
+              )
+              const operadoresFiltrados = apenasAtuando
+                ? baseOperadores.filter((op) => {
+                    const temAtividade =
+                      (op.atendimentos || 0) > 0 ||
+                      (op.ligacoes || 0) > 0 ||
+                      (op.conversoes || 0) > 0 ||
+                      (op.reagendamentos || 0) > 0 ||
+                      (op.followUpsHoje || 0) > 0 ||
+                      (op.vendasPerdidas || 0) > 0 ||
+                      (op.pontosGamificacao || 0) > 0
+                    return temAtividade
+                  })
+                : baseOperadores
+
+              if (operadoresFiltrados.length === 0) {
+                return (
+                  <div className="py-12 px-4 text-center text-xs text-slate-500 space-y-2">
+                    <p className="font-medium text-slate-700">
+                      Nenhum operador com atividade registrada para o período selecionado.
+                    </p>
+                    <p className="text-slate-400">
+                      Os operadores zerados estão ocultos por padrão.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setApenasAtuando(false)}
+                      className="h-7 text-xs text-[#253575] border-[#253575]/30 hover:bg-[#253575]/5 mt-1"
+                    >
+                      Mostrar todos ({baseOperadores.length} operadores cadastrados)
+                    </Button>
+                  </div>
+                )
+              }
+
+              // Ordenar lista de operadores visíveis
+              const sortedOperadores = [...operadoresFiltrados].sort((a, b) => {
                 const valA = a[sortField]
                 const valB = b[sortField]
-                if (sortAsc) {
-                  return valA > valB ? 1 : valA < valB ? -1 : 0
-                } else {
-                  return valA < valB ? 1 : valA > valB ? -1 : 0
+                if (valA !== valB) {
+                  if (sortAsc) {
+                    return valA > valB ? 1 : -1
+                  } else {
+                    return valA < valB ? 1 : -1
+                  }
                 }
+                // Desempates estáveis quando valores são iguais
+                if (b.conversoes !== a.conversoes) return b.conversoes - a.conversoes
+                if (b.atendimentos !== a.atendimentos) return b.atendimentos - a.atendimentos
+                if (b.pontosGamificacao !== a.pontosGamificacao)
+                  return b.pontosGamificacao - a.pontosGamificacao
+                return a.operadorNome.localeCompare(b.operadorNome)
               })
 
-              // Somatórios para o totalizador
+              // Somatórios para o totalizador dos visíveis
               const totalAtendimentos = sortedOperadores.reduce((acc, o) => acc + o.atendimentos, 0)
               const totalLigacoes = sortedOperadores.reduce((acc, o) => acc + o.ligacoes, 0)
               const totalConversoes = sortedOperadores.reduce((acc, o) => acc + o.conversoes, 0)
@@ -835,10 +905,15 @@ export default function Dashboard() {
                     <tfoot className="bg-slate-100 border-t-2 border-slate-300 font-bold text-slate-900">
                       <tr>
                         <td className="py-3 px-4 font-bold text-slate-900 uppercase tracking-wider text-[11px]">
-                          Total Geral ({sortedOperadores.length} operadores)
+                          Total Geral ({sortedOperadores.length}{' '}
+                          {sortedOperadores.length === 1 ? 'operador' : 'operadores'}
+                          {apenasAtuando && baseOperadores.length !== sortedOperadores.length
+                            ? ` atuando de ${baseOperadores.length}`
+                            : ''}
+                          )
                         </td>
                         <td className="py-3 px-4 text-slate-500 text-[11px]">
-                          Todas as rotas filtradas
+                          {selectedRegion === 'todas' ? 'Todas as rotas' : selectedRegion}
                         </td>
                         <td className="py-3 px-3 text-center font-mono text-slate-900 text-sm">
                           {totalAtendimentos}

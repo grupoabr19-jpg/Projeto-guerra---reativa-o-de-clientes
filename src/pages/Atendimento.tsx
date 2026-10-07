@@ -562,7 +562,7 @@ export default function AtendimentoPage() {
   // Quando muda para "Não", limpa os valores de Q15 e Q16 do estado para nunca gravar dado órfão
   const handleQ3Change = (val: string) => {
     setAnswers((prev) => {
-      const updated = { ...prev, q3: val }
+      const updated: Record<string, string | number> = { ...prev, q3: val }
       if (val === 'Não') {
         delete updated.q15
         delete updated.q16
