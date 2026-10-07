@@ -439,14 +439,21 @@ routerAdd(
               }
             }
 
-            // Reconciliação com suporte à janela de standby de 60 dias:
+            // Reconciliação com suporte à janela de standby de 60 dias e proteção de pedido_em_aberto:
+            // 0. Se pedido_em_aberto=true: NUNCA expurgar nem rebaixar estado, manter operador_reativacao/operador.
             // 1. Se faturamento recente (<60 dias): é compra confirmada -> mantém/marca 'reativado', fora da fila.
             // 2. Se faturamento >= 60 dias e estado='reativado': verificar se está em janela de standby de 60 dias.
             //    Se standby_ate for no futuro, NÃO religar para 'na_base' — mantém 'reativado' em standby.
             //    Só restaura para 'na_base' quando standby venceu E não há compra confirmada.
+            const temPedidoEmAberto = targetRec.getBool('pedido_em_aberto')
             const estadoAtual = targetRec.getString('estado')
             const isRecente = diasCalculados < 60
-            if (isRecente) {
+
+            if (temPedidoEmAberto) {
+              // Cliente possui pedido em aberto aguardando faturamento:
+              // Preservar na base e manter operador responsável para complementação de faturamento.
+              // Apenas atualiza dados financeiros da planilha (já feito acima).
+            } else if (isRecente) {
               if (estadoAtual !== 'reativado') {
                 targetRec.set('estado', 'reativado')
                 targetRec.set('operador', '')
@@ -1426,7 +1433,12 @@ routerAdd(
             }
 
             const currentEstado = rec.getString('estado')
-            if (faixa === 'recente') {
+            const recTemPedidoEmAberto = rec.getBool('pedido_em_aberto')
+
+            if (recTemPedidoEmAberto) {
+              // Cliente possui pedido em aberto aguardando faturamento:
+              // Preservar na base e manter operador responsável para complementação de dados.
+            } else if (faixa === 'recente') {
               if (currentEstado !== 'reativado') {
                 rec.set('estado', 'reativado')
                 rec.set('operador', '')

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-07T13:32:51.171Z",
+  "generatedAt": "2026-10-07T14:42:22.895Z",
   "collections": [
     {
       "name": "users",
@@ -448,6 +448,44 @@
           "type": "date",
           "required": false,
           "system": false
+        },
+        {
+          "name": "pedido_em_aberto",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status_faturamento",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["nenhum", "pendente", "faturado"]
+        },
+        {
+          "name": "data_faturamento",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_faturado",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "numero_nf_fatura",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "operador_reativacao",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
         }
       ],
       "indexes": [
@@ -465,7 +503,9 @@
         "CREATE INDEX `idx_clientes_base_categoria` ON `clientes` (base_categoria)",
         "CREATE INDEX `idx_clientes_sem_dono_equipe` ON `clientes` (sem_dono_equipe)",
         "CREATE INDEX `idx_clientes_ddd_telefone` ON `clientes` (ddd_telefone)",
-        "CREATE INDEX `idx_clientes_standby_ate` ON `clientes` (standby_ate)"
+        "CREATE INDEX `idx_clientes_standby_ate` ON `clientes` (standby_ate)",
+        "CREATE INDEX `idx_clientes_pedido_em_aberto` ON `clientes` (pedido_em_aberto)",
+        "CREATE INDEX `idx_clientes_status_faturamento` ON `clientes` (status_faturamento)"
       ]
     },
     {

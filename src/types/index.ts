@@ -123,6 +123,12 @@ export interface Cliente {
   gatilhos_fechamento?: Record<string, unknown>
   reativado_em?: string
   standby_ate?: string
+  pedido_em_aberto?: boolean
+  status_faturamento?: 'nenhum' | 'pendente' | 'faturado'
+  data_faturamento?: string
+  valor_faturado?: number
+  numero_nf_fatura?: string
+  operador_reativacao?: string
   created: string
   updated: string
 }

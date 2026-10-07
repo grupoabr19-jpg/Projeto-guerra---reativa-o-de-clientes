@@ -143,6 +143,10 @@ export default function AtendimentoPage() {
   const [reagendarData, setReagendarData] = useState('')
   const [avisoAjusteExpediente, setAvisoAjusteExpediente] = useState<string | null>(null)
   const [numeroPedido, setNumeroPedido] = useState('')
+  const [houvePedidoFechado, setHouvePedidoFechado] = useState<'sim' | 'nao' | ''>('')
+  const [valorPedidoFechado, setValorPedidoFechado] = useState('')
+  const [previsaoFaturamento, setPrevisaoFaturamento] = useState('')
+  const [observacoesPedido, setObservacoesPedido] = useState('')
   const [duplicadoCodigo, setDuplicadoCodigo] = useState('')
   const [isFinalizing, setIsFinalizing] = useState(false)
 
@@ -852,7 +856,25 @@ export default function AtendimentoPage() {
         return
       }
 
-      if (!numeroPedido) {
+      if (!houvePedidoFechado) {
+        toast({
+          variant: 'destructive',
+          title: 'Pergunta obrigatória',
+          description: 'Informe se houve pedido fechado (Sim ou Não).',
+        })
+        return
+      }
+
+      if (houvePedidoFechado === 'sim' && !numeroPedido.trim()) {
+        toast({
+          variant: 'destructive',
+          title: 'Número do pedido obrigatório',
+          description: 'Para reativação com pedido fechado, preencha o número do pedido.',
+        })
+        return
+      }
+
+      if (houvePedidoFechado === 'nao') {
         setShowConfirmReativarSemPedido(true)
         return
       }
@@ -922,7 +944,20 @@ export default function AtendimentoPage() {
         updatePayload.pedido_confirmado = false // aguarda confirmação na próxima importação
         updatePayload.reativado_em = agora.toISOString()
         updatePayload.standby_ate = standbyDate.toISOString()
-        updatePayload.operador = undefined
+
+        if (houvePedidoFechado === 'sim') {
+          // Novo fluxo de pedido fechado pendente de faturamento:
+          // Cliente continua na base sob responsabilidade do operador para edição/complementação
+          updatePayload.pedido_em_aberto = true
+          updatePayload.status_faturamento = 'pendente'
+          updatePayload.operador_reativacao = user.id
+          updatePayload.operador = user.id // mantém o operador vinculado para achar e editar
+        } else {
+          updatePayload.pedido_em_aberto = false
+          updatePayload.status_faturamento = 'nenhum'
+          updatePayload.operador = undefined
+        }
+
         updatePayload.lock_timestamp = undefined
         updatePayload.quarentena_ate = undefined
       } else if (desfechoFinal === 'reagendado') {
@@ -986,6 +1021,10 @@ export default function AtendimentoPage() {
             ? `Atendimento finalizado: CLIENTE ATIVO — FORA DA BASE DE INATIVOS.\nMotivo: ${textoMotivoFinalizacao}\nObservação do operador: ${obsAtivoForaBase || 'Nenhuma'}\n(Cliente removido permanentemente da base de inativos e protegido contra reimportações/recálculo)`
             : `Atendimento finalizado com desfecho: ${desfechoFinal.toUpperCase()}.\nObservações: ${observacoes || 'Nenhuma'}${
                 numeroPedido ? `\nPedido: ${numeroPedido}` : ''
+              }${
+                desfechoFinal === 'reativado' && houvePedidoFechado === 'sim'
+                  ? `\n[PEDIDO EM ABERTO REGISTRADO]${valorPedidoFechado ? `\nValor Estimado: R$ ${valorPedidoFechado}` : ''}${previsaoFaturamento ? `\nPrevisão de Faturamento: ${previsaoFaturamento}` : ''}${observacoesPedido ? `\nObs Pedido: ${observacoesPedido}` : ''}`
+                  : ''
               }`,
         reagendado_para: reagendarData
           ? ajustarParaExpediente(new Date(reagendarData)).dataAjustada.toISOString()
@@ -1217,11 +1256,15 @@ export default function AtendimentoPage() {
                                   <span className="font-bold text-xs text-slate-900 truncate">
                                     {item.nome}
                                   </span>
-                                  {isItemStandby && (
+                                  {item.pedido_em_aberto ? (
+                                    <Badge className="bg-amber-500 text-white border-none text-[10px] font-bold shadow-xs">
+                                      ⏳ Aguardando Faturamento
+                                    </Badge>
+                                  ) : isItemStandby ? (
                                     <Badge className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-medium">
                                       Em standby — bloqueado
                                     </Badge>
-                                  )}
+                                  ) : null}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
                                   <span>
@@ -1267,7 +1310,18 @@ export default function AtendimentoPage() {
                                     Destravar
                                   </Button>
                                 )}
-                                {isItemStandby && user?.role !== 'admin' ? (
+                                {item.pedido_em_aberto ? (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      navigate('/meu-painel')
+                                    }}
+                                    className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold h-8 px-3 shadow-xs"
+                                    title="Ver e complementar faturamento no Meu Painel"
+                                  >
+                                    Complementar Faturamento
+                                  </Button>
+                                ) : isItemStandby && user?.role !== 'admin' ? (
                                   <Badge
                                     variant="outline"
                                     className="text-[11px] h-8 px-2.5 font-medium text-amber-800 bg-amber-50 border-amber-200"
@@ -2267,16 +2321,116 @@ export default function AtendimentoPage() {
 
                       {/* Campos específicos dependendo do desfecho */}
                       {desfechoFinal === 'reativado' && (
-                        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg space-y-2">
-                          <Label className="text-xs font-bold text-emerald-900">
-                            Número do Pedido / Registro Faturado (Validação na próxima planilha)
-                          </Label>
-                          <Input
-                            placeholder="Ex: PED-2025-998"
-                            value={numeroPedido}
-                            onChange={(e) => setNumeroPedido(e.target.value)}
-                            className="bg-white text-xs"
-                          />
+                        <div className="p-4 bg-emerald-50/80 border-2 border-emerald-300 rounded-xl space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                              <span>Houve pedido fechado? *</span>
+                            </Label>
+                            <span className="text-[10px] text-emerald-800 font-semibold uppercase tracking-wider bg-emerald-200/60 px-2 py-0.5 rounded">
+                              Obrigatório
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setHouvePedidoFechado('sim')}
+                              className={`p-2.5 rounded-lg border-2 text-xs font-bold transition-all text-center ${
+                                houvePedidoFechado === 'sim'
+                                  ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
+                                  : 'border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-100/50'
+                              }`}
+                            >
+                              ✓ Sim, houve pedido
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setHouvePedidoFechado('nao')
+                                setNumeroPedido('')
+                                setValorPedidoFechado('')
+                                setPrevisaoFaturamento('')
+                                setObservacoesPedido('')
+                              }}
+                              className={`p-2.5 rounded-lg border-2 text-xs font-bold transition-all text-center ${
+                                houvePedidoFechado === 'nao'
+                                  ? 'border-amber-600 bg-amber-600 text-white shadow-sm'
+                                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                              }`}
+                            >
+                              ✕ Não houve pedido
+                            </button>
+                          </div>
+
+                          {houvePedidoFechado === 'sim' && (
+                            <div className="pt-2 border-t border-emerald-200 space-y-3 animate-in fade-in-50">
+                              <div className="space-y-1">
+                                <Label className="text-xs font-bold text-emerald-950">
+                                  Número do Pedido *
+                                </Label>
+                                <Input
+                                  placeholder="Ex: 221872 ou PED-2026-99"
+                                  value={numeroPedido}
+                                  onChange={(e) => setNumeroPedido(e.target.value)}
+                                  className="bg-white text-xs border-emerald-300 focus-visible:ring-emerald-500"
+                                />
+                                <p className="text-[10px] text-emerald-700">
+                                  O cliente permanecerá na base com status &quot;Aguardando
+                                  Faturamento&quot; sob sua responsabilidade até a complementação da
+                                  nota/fatura.
+                                </p>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <div className="space-y-1">
+                                  <Label className="text-xs font-semibold text-slate-700">
+                                    Valor do Pedido (R$)
+                                  </Label>
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="Ex: 3500.00"
+                                    value={valorPedidoFechado}
+                                    onChange={(e) => setValorPedidoFechado(e.target.value)}
+                                    className="bg-white text-xs"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs font-semibold text-slate-700">
+                                    Previsão de Faturamento (Opcional)
+                                  </Label>
+                                  <Input
+                                    type="date"
+                                    value={previsaoFaturamento}
+                                    onChange={(e) => setPrevisaoFaturamento(e.target.value)}
+                                    className="bg-white text-xs"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="space-y-1">
+                                <Label className="text-xs font-semibold text-slate-700">
+                                  Observações do Pedido (Opcional)
+                                </Label>
+                                <Textarea
+                                  placeholder="Condições de pagamento combinadas, prazo de entrega, itens principais..."
+                                  value={observacoesPedido}
+                                  onChange={(e) => setObservacoesPedido(e.target.value)}
+                                  rows={2}
+                                  className="text-xs bg-white"
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {houvePedidoFechado === 'nao' && (
+                            <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-lg text-[11px] text-amber-900 leading-relaxed">
+                              ⚠️ Você marcou que <strong>não houve pedido fechado</strong>. A
+                              reativação sem pedido exige confirmação e não criará pendência de
+                              faturamento.
+                            </div>
+                          )}
                         </div>
                       )}
 

@@ -109,7 +109,12 @@ routerAdd(
           c.set('faixa', faixa)
 
           const estadoAtual = c.getString('estado')
-          if (faixa === 'recente' && ultimaDataStr) {
+          const temPedidoEmAberto = c.getBool('pedido_em_aberto')
+
+          if (temPedidoEmAberto) {
+            // Preservar clientes com pedido em aberto aguardando faturamento:
+            // Não desativa, não expurga operador responsável, preserva status
+          } else if (faixa === 'recente' && ultimaDataStr) {
             if (estadoAtual !== 'reativado') {
               c.set('estado', 'reativado')
               c.set('operador', '')

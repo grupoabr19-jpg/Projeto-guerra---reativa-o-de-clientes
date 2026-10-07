@@ -769,6 +769,35 @@ export async function syncKommoLead(data: {
   return { ok: true, readonly: true, skipped: true, data }
 }
 
+/**
+ * Conclui faturamento de um cliente com pedido em aberto.
+ * Chamada autenticada para POST /backend/v1/queue/concluir-faturamento
+ */
+export async function concluirFaturamentoPedido(params: {
+  cliente_id: string
+  data_faturamento: string
+  valor_faturado: number
+  numero_nf_fatura?: string
+  observacoes?: string
+}): Promise<{ ok: boolean; message: string; cliente: Cliente }> {
+  const res = await fetch(
+    `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/queue/concluir-faturamento`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: pb.authStore.token,
+      },
+      body: JSON.stringify(params),
+    },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || err.message || 'Falha ao concluir faturamento')
+  }
+  return res.json()
+}
+
 // Process spreadsheet rows
 export async function processSpreadsheetRows(data: {
   rows: Record<string, unknown>[]

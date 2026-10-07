@@ -32,7 +32,20 @@ import {
   fetchClientesReagendadosOperador,
   calculateRankingData,
   fetchMetasOperacionais,
+  concluirFaturamentoPedido,
 } from '@/services/api'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/hooks/use-toast'
+import { pb } from '@/lib/pocketbase/client'
 import { isConversao, isLigacaoOuChamada, calcularTaxaConversao } from '@/lib/conversao'
 import type { Interacao, Cliente, RankingUserRow, MetasOperacionaisConfig } from '@/types'
 import { getBrasiliaDateStr, getBrasiliaParts, formatarDataHoraBrasilia } from '@/lib/expediente'
@@ -62,11 +75,22 @@ export function MeuPainelPage() {
   const [dataInicio, setDataInicio] = useState<string>(primeiroDiaMesAtualStr)
   const [dataFim, setDataFim] = useState<string>(ultimoDiaMesAtualStr)
 
+  const { toast } = useToast()
   const [loading, setLoading] = useState(true)
   const [interacoes, setInteracoes] = useState<Interacao[]>([])
   const [reagendados, setReagendados] = useState<Cliente[]>([])
+  const [pedidosEmAberto, setPedidosEmAberto] = useState<Cliente[]>([])
   const [meuRanking, setMeuRanking] = useState<RankingUserRow | null>(null)
   const [metasConfig, setMetasConfig] = useState<MetasOperacionaisConfig | null>(null)
+
+  // Modal de Complementar Faturamento
+  const [modalFaturamentoAberto, setModalFaturamentoAberto] = useState(false)
+  const [clienteParaFaturar, setClienteParaFaturar] = useState<Cliente | null>(null)
+  const [dataFaturamentoInput, setDataFaturamentoInput] = useState(getBrasiliaDateStr(new Date()))
+  const [valorFaturadoInput, setValorFaturadoInput] = useState('')
+  const [nfFaturaInput, setNfFaturaInput] = useState('')
+  const [obsFaturamentoInput, setObsFaturamentoInput] = useState('')
+  const [salvandoFaturamento, setSalvandoFaturamento] = useState(false)
 
   useEffect(() => {
     if (user?.id) {
@@ -78,14 +102,23 @@ export function MeuPainelPage() {
     if (!user?.id) return
     setLoading(true)
     try {
-      const [listaInteracoes, listaReag, rankingInfo, metasRes] = await Promise.all([
-        fetchInteracoesByOperador(user.id),
-        fetchClientesReagendadosOperador(user.id),
-        calculateRankingData({ periodo: '30dias', currentUserId: user.id }),
-        fetchMetasOperacionais(),
-      ])
+      const [listaInteracoes, listaReag, rankingInfo, metasRes, listaPedidosAbertos] =
+        await Promise.all([
+          fetchInteracoesByOperador(user.id),
+          fetchClientesReagendadosOperador(user.id),
+          calculateRankingData({ periodo: '30dias', currentUserId: user.id }),
+          fetchMetasOperacionais(),
+          pb
+            .collection('clientes')
+            .getFullList<Cliente>({
+              filter: `pedido_em_aberto = true && (operador_reativacao = '${user.id}' || operador = '${user.id}')`,
+              sort: '-updated',
+            })
+            .catch(() => [] as Cliente[]),
+        ])
       setInteracoes(listaInteracoes)
       setReagendados(listaReag)
+      setPedidosEmAberto(listaPedidosAbertos)
       setMeuRanking(rankingInfo.currentUserRow || null)
       setMetasConfig(metasRes)
     } catch (err) {
@@ -161,6 +194,73 @@ export function MeuPainelPage() {
     const d = new Date(c.reagendado_para)
     return d > now && d <= proximos7Dias
   })
+
+  const abrirModalFaturamento = (c: Cliente) => {
+    setClienteParaFaturar(c)
+    setDataFaturamentoInput(getBrasiliaDateStr(new Date()))
+    setValorFaturadoInput(
+      c.valor_faturado
+        ? String(c.valor_faturado)
+        : c.valor_ultima_compra
+          ? String(c.valor_ultima_compra)
+          : '',
+    )
+    setNfFaturaInput(c.numero_nf_fatura || c.pedido_reativacao || '')
+    setObsFaturamentoInput('')
+    setModalFaturamentoAberto(true)
+  }
+
+  const handleSalvarFaturamento = async () => {
+    if (!clienteParaFaturar) return
+
+    if (!dataFaturamentoInput) {
+      toast({
+        variant: 'destructive',
+        title: 'Data obrigatória',
+        description: 'Informe a data do faturamento.',
+      })
+      return
+    }
+
+    const valorNum = parseFloat(valorFaturadoInput.replace(/[^\d.,]/g, '').replace(',', '.'))
+    if (isNaN(valorNum) || valorNum <= 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Valor obrigatório',
+        description: 'Informe um valor faturado válido e maior que zero (R$).',
+      })
+      return
+    }
+
+    setSalvandoFaturamento(true)
+    try {
+      const res = await concluirFaturamentoPedido({
+        cliente_id: clienteParaFaturar.id,
+        data_faturamento: dataFaturamentoInput,
+        valor_faturado: valorNum,
+        numero_nf_fatura: nfFaturaInput.trim() || undefined,
+        observacoes: obsFaturamentoInput.trim() || undefined,
+      })
+
+      toast({
+        title: 'Faturamento concluído!',
+        description: res.message || 'Dados de faturamento gravados com sucesso.',
+      })
+
+      setModalFaturamentoAberto(false)
+      setClienteParaFaturar(null)
+      await loadData()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao salvar faturamento'
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao concluir faturamento',
+        description: msg,
+      })
+    } finally {
+      setSalvandoFaturamento(false)
+    }
+  }
 
   // Sequência / Streak (atendimentos nos últimos dias no fuso de Brasília)
   const diasComAtendimento = new Set(interacoes.map((i) => getBrasiliaDateStr(new Date(i.created))))
@@ -720,6 +820,114 @@ export function MeuPainelPage() {
         </Card>
       </div>
 
+      {/* SEÇÃO NOVA: Meus Pedidos em Aberto (Aguardando Faturamento) */}
+      <Card className="border-amber-200 bg-amber-50/20 shadow-sm">
+        <CardHeader className="pb-3 border-b border-amber-100/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center space-x-2.5">
+              <div className="h-8 w-8 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                <Clock className="h-4 w-4" />
+              </div>
+              <div>
+                <CardTitle className="text-sm font-bold text-[#253575] flex items-center gap-2">
+                  <span>Meus Pedidos em Aberto</span>
+                  <Badge className="bg-amber-500 text-white font-mono text-[10px]">
+                    {pedidosEmAberto.length}
+                  </Badge>
+                </CardTitle>
+                <CardDescription className="text-xs text-slate-500">
+                  Clientes reativados com pedido pendente de faturamento na sua carteira
+                </CardDescription>
+              </div>
+            </div>
+            {pedidosEmAberto.length > 0 && (
+              <Badge
+                variant="outline"
+                className="border-amber-300 bg-amber-50 text-amber-900 text-[11px] font-semibold w-fit"
+              >
+                ⏳ Aguardando Complementação
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="p-4">
+          {loading ? (
+            <div className="py-6 text-center text-xs text-slate-400">Carregando pedidos...</div>
+          ) : pedidosEmAberto.length === 0 ? (
+            <div className="py-6 text-center text-xs text-slate-500 space-y-1">
+              <CheckCircle2 className="h-6 w-6 mx-auto text-emerald-500" />
+              <p className="font-semibold text-slate-700">Tudo em dia!</p>
+              <p className="text-slate-400 text-[11px]">
+                Nenhum pedido em aberto aguardando faturamento no momento.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {pedidosEmAberto.map((c) => (
+                <div
+                  key={c.id}
+                  className="p-3.5 bg-white rounded-lg border border-amber-200/90 shadow-2xs hover:border-amber-300 transition-all flex flex-col justify-between gap-3"
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center space-x-1.5">
+                        <Badge
+                          variant="outline"
+                          className="font-mono text-[10px] font-bold text-[#253575] bg-[#253575]/10 border-[#253575]/20"
+                        >
+                          {c.codigo}
+                        </Badge>
+                        <span className="font-bold text-xs text-slate-900 truncate max-w-[200px]">
+                          {c.nome}
+                        </span>
+                      </div>
+                      <Badge className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] shrink-0 font-medium">
+                        Pendente
+                      </Badge>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                      <span>
+                        <strong>Região:</strong> {c.regiao || '—'}
+                      </span>
+                      {c.pedido_reativacao && (
+                        <>
+                          <span>•</span>
+                          <span className="font-mono font-semibold text-emerald-700">
+                            Pedido #{c.pedido_reativacao}
+                          </span>
+                        </>
+                      )}
+                      {c.reativado_em && (
+                        <>
+                          <span>•</span>
+                          <span>
+                            Reativado em {new Date(c.reativado_em).toLocaleDateString('pt-BR')}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-slate-400">
+                      {c.dias_sem_faturar ? `${c.dias_sem_faturar}d sem faturar` : 'Recém-faturado'}
+                    </span>
+                    <Button
+                      size="sm"
+                      onClick={() => abrirModalFaturamento(c)}
+                      className="bg-[#F18800] hover:bg-[#d97b00] text-white text-xs font-bold h-7 px-3 shadow-xs"
+                    >
+                      Complementar Faturamento
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Grid de Seções: Follow-ups de Hoje e Forecast de Reagendados */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Seção 1: Follow-ups de Hoje */}
@@ -996,6 +1204,95 @@ export function MeuPainelPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Modal Dialog: Complementar Faturamento */}
+      <Dialog open={modalFaturamentoAberto} onOpenChange={setModalFaturamentoAberto}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-[#253575] flex items-center gap-2">
+              <Clock className="h-5 w-5 text-[#F18800]" />
+              <span>Complementar Faturamento</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Preencha os dados da nota/fatura para confirmar o faturamento e finalizar a pendência
+              do cliente <strong className="text-slate-800">{clienteParaFaturar?.nome}</strong> (
+              {clienteParaFaturar?.codigo}).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3.5 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs font-bold text-slate-700">Data do Faturamento *</Label>
+              <Input
+                type="date"
+                value={dataFaturamentoInput}
+                onChange={(e) => setDataFaturamentoInput(e.target.value)}
+                className="text-xs bg-white"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-700">Valor Faturado (R$) *</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="Ex: 4850.00"
+                  value={valorFaturadoInput}
+                  onChange={(e) => setValorFaturadoInput(e.target.value)}
+                  className="text-xs bg-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-slate-700">
+                  Número da NF / Fatura
+                </Label>
+                <Input
+                  type="text"
+                  placeholder="Ex: NF-449102"
+                  value={nfFaturaInput}
+                  onChange={(e) => setNfFaturaInput(e.target.value)}
+                  className="text-xs bg-white"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-slate-700">Observações (Opcional)</Label>
+              <Textarea
+                placeholder="Detalhes do faturamento, condições atendidas..."
+                value={obsFaturamentoInput}
+                onChange={(e) => setObsFaturamentoInput(e.target.value)}
+                rows={2}
+                className="text-xs bg-white"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setModalFaturamentoAberto(false)}
+              disabled={salvandoFaturamento}
+              className="text-xs"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSalvarFaturamento}
+              disabled={salvandoFaturamento}
+              className="bg-[#F18800] hover:bg-[#d97b00] text-white font-bold text-xs"
+            >
+              {salvandoFaturamento ? 'Salvando...' : 'Confirmar Faturamento'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

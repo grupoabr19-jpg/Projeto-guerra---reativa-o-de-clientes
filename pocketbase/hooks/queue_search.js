@@ -348,7 +348,8 @@ routerAdd(
       let filterExpr = `(nome ~ '${cleanTerm}' || codigo ~ '${cleanTerm}') && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'`
       if (userRole !== 'admin') {
         const nowIso = new Date().toISOString()
-        filterExpr += ` && (estado != 'reativado' || standby_ate = '' || standby_ate = null || standby_ate <= '${nowIso}')`
+        // Clientes com pedido_em_aberto=true podem ser buscados (serão filtrados para o dono/admin abaixo)
+        filterExpr += ` && (pedido_em_aberto = true || estado != 'reativado' || standby_ate = '' || standby_ate = null || standby_ate <= '${nowIso}')`
       }
 
       // Restrições de perfil/região
@@ -396,10 +397,23 @@ routerAdd(
       }
 
       // Filtrar resultados adicionais para garantir que se standby_ate estiver no futuro e não for admin, NUNCA apareça
+      // EXCETO se pedido_em_aberto=true E o usuário for o operador responsável (dono do pedido)
       let resultadosFiltrados = resultados
       if (userRole !== 'admin') {
         const nowTime = new Date().getTime()
         resultadosFiltrados = resultados.filter((c) => {
+          const temPedidoAberto = c.getBool('pedido_em_aberto')
+          if (temPedidoAberto) {
+            // Se tem pedido em aberto: VISÍVEL apenas para o dono (operador_reativacao ou operador)
+            const opReat = c.getString('operador_reativacao')
+            const opAtual = c.getString('operador')
+            const ehDono =
+              opReat === userId ||
+              opAtual === userId ||
+              matchesCarteiraVendedorTolerante(c, userName)
+            return ehDono
+          }
+
           const est = c.getString('estado')
           const stStr = c.getString('standby_ate')
           if (est === 'reativado' && stStr) {
@@ -444,6 +458,10 @@ routerAdd(
           }
         }
 
+        const temPedidoEmAberto = c.getBool('pedido_em_aberto')
+        const statusFaturamento = c.getString('status_faturamento')
+        const operadorReativacao = c.getString('operador_reativacao')
+
         return {
           id: c.id,
           codigo: c.getString('codigo'),
@@ -456,6 +474,7 @@ routerAdd(
           score: c.getInt('score'),
           estado: estStr,
           operador: c.getString('operador'),
+          operador_reativacao: operadorReativacao,
           lock_timestamp: c.getString('lock_timestamp'),
           ultimo_faturamento_data: ultFat || ultComp || '',
           ultimo_contato: ultimoContatoStr,
@@ -464,6 +483,9 @@ routerAdd(
           standby_ate: stStr,
           reativado_em: c.getString('reativado_em'),
           em_standby: emStandby,
+          pedido_em_aberto: temPedidoEmAberto,
+          status_faturamento: statusFaturamento,
+          pedido_reativacao: c.getString('pedido_reativacao'),
         }
       })
 
@@ -704,17 +726,26 @@ routerAdd(
         }
       }
 
+      const temPedidoAberto = cliente.getBool('pedido_em_aberto')
+      const opReativacao = cliente.getString('operador_reativacao')
+      const ehDonoDoPedido = opReativacao === userId || cliente.getString('operador') === userId
+
       if ((estadoCli === 'reativado' || emStandby) && emStandby && userRole !== 'admin') {
-        return e.json(403, {
-          error:
-            'Este cliente foi reativado recentemente e está no período de standby de 60 dias fora da fila. Somente o administrador pode destravar ou acessar esta ficha.',
-          is_standby: true,
-          standby_ate: standbyAteStr,
-          reativado_em: reativadoEmStr,
-          cliente_id: cliente.id,
-          cliente_nome: cliente.getString('nome'),
-          cliente_codigo: cliente.getString('codigo'),
-        })
+        // Se tem pedido em aberto e o usuário é o dono, PERMITE abrir para complementar faturamento!
+        if (temPedidoAberto && ehDonoDoPedido) {
+          // Permissão concedida para o dono complementar faturamento
+        } else {
+          return e.json(403, {
+            error:
+              'Este cliente foi reativado recentemente e está no período de standby de 60 dias fora da fila. Somente o administrador pode destravar ou acessar esta ficha.',
+            is_standby: true,
+            standby_ate: standbyAteStr,
+            reativado_em: reativadoEmStr,
+            cliente_id: cliente.id,
+            cliente_nome: cliente.getString('nome'),
+            cliente_codigo: cliente.getString('codigo'),
+          })
+        }
       }
 
       // Checa lock de 30 min de outro operador
@@ -1148,6 +1179,155 @@ routerAdd(
       const msg = err && err.message ? err.message : String(err)
       console.error('[queue_search] Erro ao editar atendimento fechado: ' + msg)
       return e.json(500, { error: 'Falha ao editar atendimento: ' + msg })
+    }
+  },
+  $apis.requireAuth(),
+)
+
+/**
+ * 5. POST /backend/v1/queue/concluir-faturamento
+ * Conclui faturamento de pedido em aberto.
+ * Valida permissão: dono do pedido (operador_reativacao ou operador) OU admin/supervisor.
+ * Recebe: cliente_id, data_faturamento, numero_nf_fatura, valor_faturado, observacoes
+ */
+routerAdd(
+  'POST',
+  '/backend/v1/queue/concluir-faturamento',
+  (e) => {
+    try {
+      const authRecord = e.auth
+      if (!authRecord || !authRecord.id) {
+        return e.json(401, { error: 'Autenticação obrigatória' })
+      }
+
+      const userId = authRecord.id
+      const userName = authRecord.getString('name') || authRecord.getString('email') || 'Usuário'
+      const userRole = authRecord.getString('role')
+
+      let body = {}
+      try {
+        body = e.requestInfo().body || {}
+      } catch (_) {}
+
+      const clienteId = (body.cliente_id || '').trim()
+      if (!clienteId) {
+        return e.json(400, { error: 'cliente_id é obrigatório' })
+      }
+
+      const rawDataFat = (body.data_faturamento || '').trim()
+      if (!rawDataFat) {
+        return e.json(400, { error: 'data_faturamento é obrigatória' })
+      }
+
+      const dataFatDate = new Date(rawDataFat)
+      if (isNaN(dataFatDate.getTime())) {
+        return e.json(400, { error: 'data_faturamento inválida. Utilize formato ISO/data válida.' })
+      }
+
+      const valorFaturadoNum = Number(body.valor_faturado)
+      if (isNaN(valorFaturadoNum) || valorFaturadoNum <= 0) {
+        return e.json(400, { error: 'valor_faturado é obrigatório e deve ser maior que zero (R$)' })
+      }
+
+      const numeroNfFatura = String(body.numero_nf_fatura || '').trim()
+      const observacoes = String(body.observacoes || '').trim()
+
+      const cliente = $app.findRecordById('clientes', clienteId)
+      if (!cliente) {
+        return e.json(404, { error: 'Cliente não encontrado' })
+      }
+
+      // Validação de permissão: dono da reativação, operador atual ou admin/supervisor
+      const opReativacao = cliente.getString('operador_reativacao')
+      const opAtual = cliente.getString('operador')
+      const ehDono = opReativacao === userId || opAtual === userId
+      const ehPrivilegiado = userRole === 'admin' || userRole === 'supervisor'
+
+      if (!ehDono && !ehPrivilegiado) {
+        return e.json(403, {
+          error:
+            'Permissão negada. Apenas o operador responsável pelo pedido ou administrador podem concluir o faturamento.',
+        })
+      }
+
+      const valorAnterior = cliente.getFloat('valor_faturado') || 0
+      const statusAnterior = cliente.getString('status_faturamento') || 'pendente'
+
+      // Atualiza cliente
+      cliente.set('pedido_em_aberto', false)
+      cliente.set('status_faturamento', 'faturado')
+      cliente.set('data_faturamento', dataFatDate.toISOString())
+      cliente.set('valor_faturado', valorFaturadoNum)
+      if (numeroNfFatura) {
+        cliente.set('numero_nf_fatura', numeroNfFatura)
+      }
+      // Atualiza dados de faturamento geral do cliente também
+      cliente.set('ultimo_faturamento_data', dataFatDate.toISOString())
+      cliente.set('ultima_compra', dataFatDate.toISOString())
+      cliente.set('valor_ultima_compra', valorFaturadoNum)
+      cliente.set('dias_sem_faturar', 0)
+      cliente.set('faixa', 'recente')
+      $app.save(cliente)
+
+      const agoraIso = new Date().toISOString()
+
+      // Registrar auditoria em interacoes
+      try {
+        const colIt = $app.findCollectionByNameOrId('interacoes')
+        const it = new Record(colIt)
+        it.set('cliente', cliente.id)
+        it.set('operador', userId)
+        it.set('tipo', 'status')
+        it.set('desfecho', 'faturamento_concluido')
+        it.set('motivo', 'Conclusão e complementação de faturamento de pedido em aberto')
+        it.set(
+          'conteudo',
+          `Faturamento concluído por ${userName}.\nData Faturamento: ${dataFatDate.toLocaleDateString('pt-BR')}\nValor Faturado: R$ ${valorFaturadoNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${numeroNfFatura ? `\nNF/Fatura: ${numeroNfFatura}` : ''}${observacoes ? `\nObservações: ${observacoes}` : ''}`,
+        )
+        it.set('estado_anterior', cliente.getString('estado'))
+        it.set('estado_novo', cliente.getString('estado'))
+        if (numeroNfFatura) {
+          it.set('numero_pedido', numeroNfFatura)
+        }
+        $app.save(it)
+      } catch (itErr) {
+        console.log('[concluir_faturamento] Aviso ao criar interacao: ' + itErr.message)
+      }
+
+      // Registrar em eventos_log
+      try {
+        const colEv = $app.findCollectionByNameOrId('eventos_log')
+        const ev = new Record(colEv)
+        ev.set('cliente', cliente.id)
+        ev.set('usuario', userId)
+        ev.set('acao', 'faturamento_concluido')
+        ev.set('detalhes', {
+          codigo: cliente.getString('codigo'),
+          nome: cliente.getString('nome'),
+          status_anterior: statusAnterior,
+          status_novo: 'faturado',
+          data_faturamento: dataFatDate.toISOString(),
+          valor_faturado: valorFaturadoNum,
+          numero_nf_fatura: numeroNfFatura,
+          observacoes: observacoes,
+          operador_id: userId,
+          operador_nome: userName,
+          executado_em: agoraIso,
+        })
+        $app.save(ev)
+      } catch (evErr) {
+        console.log('[concluir_faturamento] Aviso ao criar eventos_log: ' + evErr.message)
+      }
+
+      return e.json(200, {
+        ok: true,
+        message: `Faturamento do cliente ${cliente.getString('nome')} (${cliente.getString('codigo')}) concluído com sucesso!`,
+        cliente: cliente,
+      })
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err)
+      console.error('[concluir_faturamento] Erro: ' + msg)
+      return e.json(500, { error: 'Falha ao concluir faturamento: ' + msg })
     }
   },
   $apis.requireAuth(),
