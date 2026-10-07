@@ -6,17 +6,105 @@ routerAdd(
   'POST',
   '/backend/v1/queue/transfer-client',
   (e) => {
-    const {
-      normalizarTextoNFD,
-      normalizarRegiaoCanonica,
-      buildRegiaoSqlFilter,
-      limparPrefixoVendedor,
-      obterVariantesVendedor,
-      matchesCarteiraVendedorTolerante,
-      buildVendedorSqlTerms,
-      extrairDddCliente,
-      expurgarLocksExpiradosAtomicamente,
-    } = require(`${__hooks}/vendedor_matching.js`)
+    function normalizarTextoNFD(str) {
+      return String(str || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .trim()
+    }
+
+    function normalizarRegiaoCanonica(r) {
+      const norm = normalizarTextoNFD(r)
+      if (!norm) return ''
+      if (norm === 'BRAGANCA' || norm === 'BRAGANCA PAULISTA' || norm.includes('BRAGANCA')) {
+        return 'BRAGANÇA'
+      }
+      if (
+        norm === 'CAMBUI' ||
+        norm === 'MICRO-REGIAO' ||
+        norm === 'MICRO REGIAO' ||
+        norm === 'MICROREGIAO' ||
+        norm.includes('CAMBUI')
+      ) {
+        return 'CAMBUÍ'
+      }
+      if (
+        norm === 'POCOS DE CALDAS' ||
+        norm === 'POCOS CALDAS' ||
+        norm === 'POCOS' ||
+        norm.includes('POCOS') ||
+        norm.includes('CALDAS')
+      ) {
+        return 'POÇOS DE CALDAS'
+      }
+      if (norm === 'JUNDIAI' || norm.includes('JUNDIAI')) {
+        return 'JUNDIAÍ'
+      }
+      if (norm === 'ITAJUBA' || norm.includes('ITAJUBA')) {
+        return 'ITAJUBÁ'
+      }
+      if (norm === 'VARGINHA' || norm.includes('VARGINHA')) {
+        return 'VARGINHA'
+      }
+      if (norm === 'POUSO ALEGRE' || norm.includes('POUSO')) {
+        return 'POUSO ALEGRE'
+      }
+      if (norm === 'EXTREMA' || norm.includes('EXTREMA')) {
+        return 'EXTREMA'
+      }
+      if (norm === 'ATACADO') {
+        return 'ATACADO'
+      }
+      if (norm === 'REPESCAGEM') {
+        return 'REPESCAGEM'
+      }
+      return norm
+    }
+
+    function expurgarLocksExpiradosAtomicamente(appInstance) {
+      const now = new Date()
+      const cutoffLock = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
+      const nowIso = now.toISOString()
+
+      let liberados = 0
+      try {
+        const resBase = appInstance
+          .db()
+          .newQuery(
+            `UPDATE clientes
+             SET estado = 'na_base', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
+             WHERE (estado = 'reservado' OR estado = 'em_atendimento')
+               AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
+               AND (standby_ate IS NULL OR standby_ate = '' OR datetime(standby_ate) <= datetime({:now}))`,
+          )
+          .bind({ cutoff: cutoffLock, now: nowIso })
+          .execute()
+
+        if (resBase && typeof resBase.rowsAffected === 'function') {
+          liberados += resBase.rowsAffected()
+        }
+
+        const resStandby = appInstance
+          .db()
+          .newQuery(
+            `UPDATE clientes
+             SET estado = 'reativado', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
+             WHERE (estado = 'reservado' OR estado = 'em_atendimento')
+               AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
+               AND standby_ate IS NOT NULL AND standby_ate != '' AND datetime(standby_ate) > datetime({:now})`,
+          )
+          .bind({ cutoff: cutoffLock, now: nowIso })
+          .execute()
+
+        if (resStandby && typeof resStandby.rowsAffected === 'function') {
+          liberados += resStandby.rowsAffected()
+        }
+      } catch (err) {
+        console.log('[expurgo_locks] Erro ao executar expurgo de locks: ' + err.message)
+      }
+      return liberados
+    }
 
     try {
       const authRecord = e.auth

@@ -4,17 +4,49 @@
 
 // 1. Cron frequente (a cada 10 minutos): Liberação atômica de locks expirados (> 30 min) e quarentenas vencidas
 cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
-  const {
-    normalizarTextoNFD,
-    normalizarRegiaoCanonica,
-    buildRegiaoSqlFilter,
-    limparPrefixoVendedor,
-    obterVariantesVendedor,
-    matchesCarteiraVendedorTolerante,
-    buildVendedorSqlTerms,
-    extrairDddCliente,
-    expurgarLocksExpiradosAtomicamente,
-  } = require(`${__hooks}/vendedor_matching.js`)
+  function expurgarLocksExpiradosAtomicamente(appInstance) {
+    const now = new Date()
+    const cutoffLock = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
+    const nowIso = now.toISOString()
+
+    let liberados = 0
+    try {
+      const resBase = appInstance
+        .db()
+        .newQuery(
+          `UPDATE clientes
+           SET estado = 'na_base', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
+           WHERE (estado = 'reservado' OR estado = 'em_atendimento')
+             AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
+             AND (standby_ate IS NULL OR standby_ate = '' OR datetime(standby_ate) <= datetime({:now}))`,
+        )
+        .bind({ cutoff: cutoffLock, now: nowIso })
+        .execute()
+
+      if (resBase && typeof resBase.rowsAffected === 'function') {
+        liberados += resBase.rowsAffected()
+      }
+
+      const resStandby = appInstance
+        .db()
+        .newQuery(
+          `UPDATE clientes
+           SET estado = 'reativado', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
+           WHERE (estado = 'reservado' OR estado = 'em_atendimento')
+             AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
+             AND standby_ate IS NOT NULL AND standby_ate != '' AND datetime(standby_ate) > datetime({:now})`,
+        )
+        .bind({ cutoff: cutoffLock, now: nowIso })
+        .execute()
+
+      if (resStandby && typeof resStandby.rowsAffected === 'function') {
+        liberados += resStandby.rowsAffected()
+      }
+    } catch (err) {
+      console.log('[expurgo_locks] Erro ao executar expurgo de locks: ' + err.message)
+    }
+    return liberados
+  }
 
   try {
     const now = new Date()
@@ -60,17 +92,85 @@ cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
 // - Matching tolerante e saneamento de sem_dono_equipe com sinônimos
 // - Grava registro da execução em eventos_log
 cronAdd('crons_atualizacao_diaria_base', '0 3 * * *', () => {
-  const {
-    normalizarTextoNFD,
-    normalizarRegiaoCanonica,
-    buildRegiaoSqlFilter,
-    limparPrefixoVendedor,
-    obterVariantesVendedor,
-    matchesCarteiraVendedorTolerante,
-    buildVendedorSqlTerms,
-    extrairDddCliente,
-    expurgarLocksExpiradosAtomicamente,
-  } = require(`${__hooks}/vendedor_matching.js`)
+  function normalizarTextoNFD(str) {
+    return String(str || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .trim()
+  }
+
+  function limparPrefixoVendedor(vendedorStr) {
+    let v = normalizarTextoNFD(vendedorStr)
+    const prefixos = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ', 'VARC - ', 'ADMV - ', 'ATF - ']
+    for (let i = 0; i < prefixos.length; i++) {
+      const p = normalizarTextoNFD(prefixos[i])
+      if (v.startsWith(p)) {
+        v = v.slice(p.length).trim()
+        break
+      }
+    }
+    return v
+  }
+
+  function extrairDddCliente(clienteRec) {
+    const dddGravado = clienteRec.getString('ddd_telefone')
+    if (dddGravado && dddGravado.length >= 2) return dddGravado.slice(0, 2)
+    const telRaw = (
+      clienteRec.getString('telefone') ||
+      clienteRec.getString('whatsapp') ||
+      ''
+    ).replace(/\D/g, '')
+    if (!telRaw) return ''
+    let s = telRaw
+    if (s.startsWith('0')) s = s.slice(1)
+    if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
+    return s.slice(0, 2)
+  }
+
+  function expurgarLocksExpiradosAtomicamente(appInstance) {
+    const now = new Date()
+    const cutoffLock = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
+    const nowIso = now.toISOString()
+
+    let liberados = 0
+    try {
+      const resBase = appInstance
+        .db()
+        .newQuery(
+          `UPDATE clientes
+           SET estado = 'na_base', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
+           WHERE (estado = 'reservado' OR estado = 'em_atendimento')
+             AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
+             AND (standby_ate IS NULL OR standby_ate = '' OR datetime(standby_ate) <= datetime({:now}))`,
+        )
+        .bind({ cutoff: cutoffLock, now: nowIso })
+        .execute()
+
+      if (resBase && typeof resBase.rowsAffected === 'function') {
+        liberados += resBase.rowsAffected()
+      }
+
+      const resStandby = appInstance
+        .db()
+        .newQuery(
+          `UPDATE clientes
+           SET estado = 'reativado', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
+           WHERE (estado = 'reservado' OR estado = 'em_atendimento')
+             AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
+             AND standby_ate IS NOT NULL AND standby_ate != '' AND datetime(standby_ate) > datetime({:now})`,
+        )
+        .bind({ cutoff: cutoffLock, now: nowIso })
+        .execute()
+
+      if (resStandby && typeof resStandby.rowsAffected === 'function') {
+        liberados += resStandby.rowsAffected()
+      }
+    } catch (err) {
+      console.log('[expurgo_locks] Erro ao executar expurgo de locks: ' + err.message)
+    }
+    return liberados
+  }
 
   try {
     const now = new Date()
