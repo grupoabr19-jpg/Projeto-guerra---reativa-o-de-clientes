@@ -137,6 +137,10 @@ export default function RelatoriosPage() {
   const [buscaAtivos, setBuscaAtivos] = useState('')
   const [filtroMotivoAtivos, setFiltroMotivoAtivos] = useState<string>('todos')
 
+  // Seções recolhíveis (drop-down/accordion) - fechadas por padrão
+  const [openAuditoriaAtivos, setOpenAuditoriaAtivos] = useState(false)
+  const [openAuditoriaDivergencias, setOpenAuditoriaDivergencias] = useState(false)
+
   // Redirecionamento de operador comum para o Meu Painel
   useEffect(() => {
     if (user && user.role === 'operador') {
@@ -2481,12 +2485,17 @@ export default function RelatoriosPage() {
       {/* ========================================================================= */}
       {/* SEÇÃO PRINCIPAL DE AUDITORIA: CLIENTES ATIVOS REMOVIDOS DA BASE */}
       {/* ========================================================================= */}
-      <Card className="border-emerald-300/80 shadow-sm overflow-hidden bg-white">
-        <CardHeader className="bg-gradient-to-r from-emerald-50 via-teal-50/40 to-white border-b border-emerald-100 pb-4">
+      <Card className="border-emerald-300/80 shadow-sm overflow-hidden bg-white transition-all">
+        <CardHeader
+          onClick={() => setOpenAuditoriaAtivos((prev) => !prev)}
+          className={`bg-gradient-to-r from-emerald-50 via-teal-50/40 to-white cursor-pointer select-none transition-colors hover:bg-emerald-100/40 ${
+            openAuditoriaAtivos ? 'border-b border-emerald-100 pb-4' : 'py-3.5'
+          }`}
+        >
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="space-y-1">
               <div className="flex items-center space-x-2">
-                <div className="h-8 w-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                <div className="h-8 w-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
                   <ShieldCheck className="h-4.5 w-4.5" />
                 </div>
                 <div>
@@ -2507,236 +2516,307 @@ export default function RelatoriosPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={handleExportAtivosRemovidosCSV}
-                size="sm"
-                className="bg-emerald-700 hover:bg-emerald-800 text-white h-8 text-xs font-semibold shadow-xs"
-                disabled={loadingAtendimentos || ativosRemovidosFiltrados.length === 0}
-              >
-                <Download className="h-3.5 w-3.5 mr-1.5" />
-                Exportar Auditoria CSV ({ativosRemovidosFiltrados.length})
-              </Button>
-            </div>
-          </div>
-
-          {/* Cards Rápidos de Breakdown por Categoria nesta Seção */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-3">
-            {Object.entries(ativosRemovidosData.breakdown || {}).map(([motivo, count]) => {
-              const perc =
-                ativosRemovidosData.total > 0
-                  ? Math.round((count / ativosRemovidosData.total) * 100)
-                  : 0
-              const isSelected = filtroMotivoAtivos === motivo
-              return (
-                <button
-                  key={motivo}
-                  type="button"
-                  onClick={() => setFiltroMotivoAtivos(isSelected ? 'todos' : motivo)}
-                  className={`text-left p-2.5 rounded-lg border transition-all ${
-                    isSelected
-                      ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
-                      : 'border-slate-200 bg-white hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-800 truncate" title={motivo}>
-                      {motivo}
-                    </span>
-                    <span className="font-mono font-bold text-emerald-700 ml-1">{count}</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400 mt-1 flex justify-between">
-                    <span>{perc}% do total</span>
-                    <span className="text-emerald-600 font-medium">
-                      {isSelected ? 'Filtrado' : 'Filtrar'}
-                    </span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Barra de Filtros Internos da Tabela */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-3 border-t border-emerald-100/60 mt-1">
-            <div className="relative w-full sm:w-80">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Buscar por cliente, código, região ou operador..."
-                value={buscaAtivos}
-                onChange={(e) => setBuscaAtivos(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
-
-            <div className="flex items-center gap-2 self-end sm:self-auto text-xs">
-              {filtroMotivoAtivos !== 'todos' && (
+            <div className="flex items-center gap-2 self-end md:self-auto shrink-0">
+              {openAuditoriaAtivos && (
                 <Button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleExportAtivosRemovidosCSV()
+                  }}
                   size="sm"
-                  variant="ghost"
-                  onClick={() => setFiltroMotivoAtivos('todos')}
-                  className="h-7 text-xs text-slate-500 hover:text-slate-800 px-2"
+                  className="bg-emerald-700 hover:bg-emerald-800 text-white h-8 text-xs font-semibold shadow-xs"
+                  disabled={loadingAtendimentos || ativosRemovidosFiltrados.length === 0}
                 >
-                  Limpar filtro ({filtroMotivoAtivos})
+                  <Download className="h-3.5 w-3.5 mr-1.5" />
+                  Exportar Auditoria CSV ({ativosRemovidosFiltrados.length})
                 </Button>
               )}
-              <span className="text-[11px] text-slate-500">
-                Mostrando{' '}
-                <strong className="text-slate-700">{ativosRemovidosFiltrados.length}</strong> de{' '}
-                <strong className="text-slate-700">{ativosRemovidosData.total}</strong>
-              </span>
+              <div
+                className="h-8 w-8 rounded-lg bg-emerald-100/80 hover:bg-emerald-200/80 text-emerald-800 flex items-center justify-center transition-transform"
+                title={openAuditoriaAtivos ? 'Recolher seção' : 'Expandir seção'}
+              >
+                {openAuditoriaAtivos ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </div>
             </div>
           </div>
-        </CardHeader>
 
-        <CardContent className="p-0">
-          {loadingAtendimentos ? (
-            <div className="py-12 text-center text-xs text-slate-400">
-              Carregando registros de clientes ativos removidos...
-            </div>
-          ) : ativosRemovidosFiltrados.length === 0 ? (
-            <div className="py-12 text-center text-xs text-slate-400">
-              Nenhum cliente ativo removido encontrado para os filtros selecionados (
-              {selectedPeriodo === 'hoje'
-                ? 'Hoje'
-                : selectedPeriodo === '7dias'
-                  ? '7 dias'
-                  : selectedPeriodo === '30dias'
-                    ? '30 dias'
-                    : 'Total'}
-              {selectedRegiao !== 'todas' ? ` • ${selectedRegiao}` : ''}).
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[10px]">
-                  <tr>
-                    <th className="py-3 px-3.5">Código</th>
-                    <th className="py-3 px-3.5">Cliente</th>
-                    <th className="py-3 px-3.5">Região</th>
-                    <th className="py-3 px-3.5">Motivo da Ativação / Limpeza</th>
-                    <th className="py-3 px-3.5">Observação / Detalhe</th>
-                    <th className="py-3 px-3.5">Operador Responsável</th>
-                    <th className="py-3 px-3.5 text-right">Data Remoção</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {ativosRemovidosFiltrados.map((item) => (
-                    <tr key={item.id} className="hover:bg-emerald-50/40 transition-colors">
-                      <td className="py-2.5 px-3.5 font-mono font-bold text-blue-700 whitespace-nowrap">
-                        {item.codigo}
-                      </td>
-                      <td className="py-2.5 px-3.5 font-medium text-slate-900">
-                        <div className="font-semibold">{item.nome}</div>
-                      </td>
-                      <td className="py-2.5 px-3.5">
-                        <Badge
-                          variant="outline"
-                          className="bg-slate-50 text-slate-700 border-slate-300 text-[10px] whitespace-nowrap font-normal"
-                        >
-                          {item.regiao}
-                        </Badge>
-                      </td>
-                      <td className="py-2.5 px-3.5">
-                        <Badge
-                          className={`text-[10px] font-medium whitespace-nowrap ${
-                            item.motivo_categoria === 'Cliente Final — Uso Pessoal'
-                              ? 'bg-sky-100 text-sky-800 border-sky-200'
-                              : item.motivo_categoria === 'Compra por CPF de terceiro'
-                                ? 'bg-blue-100 text-blue-800 border-blue-200'
-                                : item.motivo_categoria.includes('CNPJ')
-                                  ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
-                                  : item.motivo_categoria.includes('Acompanhamento')
-                                    ? 'bg-amber-100 text-amber-800 border-amber-200'
-                                    : 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                          }`}
-                        >
-                          {item.motivo_categoria}
-                        </Badge>
-                      </td>
-                      <td className="py-2.5 px-3.5 text-slate-600 max-w-xs">
-                        <span className="line-clamp-2" title={item.motivo_completo}>
-                          {item.observacao || item.motivo_completo}
+          {openAuditoriaAtivos && (
+            <>
+              {/* Cards Rápidos de Breakdown por Categoria nesta Seção */}
+              <div
+                className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-3"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {Object.entries(ativosRemovidosData.breakdown || {}).map(([motivo, count]) => {
+                  const perc =
+                    ativosRemovidosData.total > 0
+                      ? Math.round((count / ativosRemovidosData.total) * 100)
+                      : 0
+                  const isSelected = filtroMotivoAtivos === motivo
+                  return (
+                    <button
+                      key={motivo}
+                      type="button"
+                      onClick={() => setFiltroMotivoAtivos(isSelected ? 'todos' : motivo)}
+                      className={`text-left p-2.5 rounded-lg border transition-all ${
+                        isSelected
+                          ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
+                          : 'border-slate-200 bg-white hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-slate-800 truncate" title={motivo}>
+                          {motivo}
                         </span>
-                      </td>
-                      <td className="py-2.5 px-3.5 text-slate-700 whitespace-nowrap font-medium">
-                        {item.operador_nome}
-                      </td>
-                      <td className="py-2.5 px-3.5 text-right font-mono text-slate-500 whitespace-nowrap">
-                        {new Date(item.data_remocao).toLocaleDateString('pt-BR')} às{' '}
-                        {new Date(item.data_remocao).toLocaleTimeString('pt-BR', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                        <span className="font-mono font-bold text-emerald-700 ml-1">{count}</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-1 flex justify-between">
+                        <span>{perc}% do total</span>
+                        <span className="text-emerald-600 font-medium">
+                          {isSelected ? 'Filtrado' : 'Filtrar'}
+                        </span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
 
-      {/* Relatório de Divergências de Pedidos Informados */}
-      <Card className="border-slate-200 shadow-sm bg-white">
-        <CardHeader className="py-3 px-4 border-b border-slate-100">
-          <CardTitle className="text-sm font-semibold text-slate-800 flex items-center space-x-2">
-            <AlertTriangle className="h-4 w-4 text-amber-600" />
-            <span>Auditoria e Divergências de Pedidos Reativados</span>
-          </CardTitle>
-          <CardDescription className="text-xs text-slate-500">
-            Validação cruzada dos números de pedido digitados pelo operador contra as planilhas
-            reais importadas do ERP
-          </CardDescription>
+              {/* Barra de Filtros Internos da Tabela */}
+              <div
+                className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-3 border-t border-emerald-100/60 mt-1"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="relative w-full sm:w-80">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por cliente, código, região ou operador..."
+                    value={buscaAtivos}
+                    onChange={(e) => setBuscaAtivos(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 self-end sm:self-auto text-xs">
+                  {filtroMotivoAtivos !== 'todos' && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setFiltroMotivoAtivos('todos')}
+                      className="h-7 text-xs text-slate-500 hover:text-slate-800 px-2"
+                    >
+                      Limpar filtro ({filtroMotivoAtivos})
+                    </Button>
+                  )}
+                  <span className="text-[11px] text-slate-500">
+                    Mostrando{' '}
+                    <strong className="text-slate-700">{ativosRemovidosFiltrados.length}</strong> de{' '}
+                    <strong className="text-slate-700">{ativosRemovidosData.total}</strong>
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
         </CardHeader>
-        <CardContent className="p-4">
-          {importacoes.flatMap((imp) => imp.divergencias_pedidos || []).length === 0 ? (
-            <div className="py-6 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg">
-              Nenhuma divergência registrada. Todos os pedidos confirmados foram validados com
-              sucesso nas planilhas.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
-                  <tr>
-                    <th className="py-2.5 px-3">Código</th>
-                    <th className="py-2.5 px-3">Cliente</th>
-                    <th className="py-2.5 px-3">Pedido Declarado pelo Operador</th>
-                    <th className="py-2.5 px-3">Pedido Faturado no ERP</th>
-                    <th className="py-2.5 px-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {importacoes
-                    .flatMap((imp) => imp.divergencias_pedidos || [])
-                    .map((div, idx) => (
-                      <tr key={idx} className="hover:bg-amber-50/50">
-                        <td className="py-2 px-3 font-mono font-bold text-slate-800">
-                          {div.codigo}
+
+        {openAuditoriaAtivos && (
+          <CardContent className="p-0">
+            {loadingAtendimentos ? (
+              <div className="py-12 text-center text-xs text-slate-400">
+                Carregando registros de clientes ativos removidos...
+              </div>
+            ) : ativosRemovidosFiltrados.length === 0 ? (
+              <div className="py-12 text-center text-xs text-slate-400">
+                Nenhum cliente ativo removido encontrado para os filtros selecionados (
+                {selectedPeriodo === 'hoje'
+                  ? 'Hoje'
+                  : selectedPeriodo === '7dias'
+                    ? '7 dias'
+                    : selectedPeriodo === '30dias'
+                      ? '30 dias'
+                      : 'Total'}
+                {selectedRegiao !== 'todas' ? ` • ${selectedRegiao}` : ''}).
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[10px]">
+                    <tr>
+                      <th className="py-3 px-3.5">Código</th>
+                      <th className="py-3 px-3.5">Cliente</th>
+                      <th className="py-3 px-3.5">Região</th>
+                      <th className="py-3 px-3.5">Motivo da Ativação / Limpeza</th>
+                      <th className="py-3 px-3.5">Observação / Detalhe</th>
+                      <th className="py-3 px-3.5">Operador Responsável</th>
+                      <th className="py-3 px-3.5 text-right">Data Remoção</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {ativosRemovidosFiltrados.map((item) => (
+                      <tr key={item.id} className="hover:bg-emerald-50/40 transition-colors">
+                        <td className="py-2.5 px-3.5 font-mono font-bold text-blue-700 whitespace-nowrap">
+                          {item.codigo}
                         </td>
-                        <td className="py-2 px-3 text-slate-700 font-medium">{div.nome}</td>
-                        <td className="py-2 px-3 font-mono text-amber-700">{div.pedidoEsperado}</td>
-                        <td className="py-2 px-3 font-mono text-rose-600 font-bold">
-                          {div.pedidoPlanilha}
+                        <td className="py-2.5 px-3.5 font-medium text-slate-900">
+                          <div className="font-semibold">{item.nome}</div>
                         </td>
-                        <td className="py-2 px-3">
+                        <td className="py-2.5 px-3.5">
                           <Badge
                             variant="outline"
-                            className="border-amber-400 text-amber-700 bg-amber-50 text-[10px]"
+                            className="bg-slate-50 text-slate-700 border-slate-300 text-[10px] whitespace-nowrap font-normal"
                           >
-                            Divergência
+                            {item.regiao}
                           </Badge>
+                        </td>
+                        <td className="py-2.5 px-3.5">
+                          <Badge
+                            className={`text-[10px] font-medium whitespace-nowrap ${
+                              item.motivo_categoria === 'Cliente Final — Uso Pessoal'
+                                ? 'bg-sky-100 text-sky-800 border-sky-200'
+                                : item.motivo_categoria === 'Compra por CPF de terceiro'
+                                  ? 'bg-blue-100 text-blue-800 border-blue-200'
+                                  : item.motivo_categoria.includes('CNPJ')
+                                    ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                                    : item.motivo_categoria.includes('Acompanhamento')
+                                      ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                      : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                            }`}
+                          >
+                            {item.motivo_categoria}
+                          </Badge>
+                        </td>
+                        <td className="py-2.5 px-3.5 text-slate-600 max-w-xs">
+                          <span className="line-clamp-2" title={item.motivo_completo}>
+                            {item.observacao || item.motivo_completo}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3.5 text-slate-700 whitespace-nowrap font-medium">
+                          {item.operador_nome}
+                        </td>
+                        <td className="py-2.5 px-3.5 text-right font-mono text-slate-500 whitespace-nowrap">
+                          {new Date(item.data_remocao).toLocaleDateString('pt-BR')} às{' '}
+                          {new Date(item.data_remocao).toLocaleTimeString('pt-BR', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
                         </td>
                       </tr>
                     ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        )}
       </Card>
+
+      {/* Relatório de Divergências de Pedidos Informados */}
+      {(() => {
+        const totalDivergencias = importacoes.flatMap(
+          (imp) => imp.divergencias_pedidos || [],
+        ).length
+        return (
+          <Card className="border-slate-200 shadow-sm bg-white overflow-hidden transition-all">
+            <CardHeader
+              onClick={() => setOpenAuditoriaDivergencias((prev) => !prev)}
+              className={`cursor-pointer select-none transition-colors hover:bg-slate-50/80 ${
+                openAuditoriaDivergencias ? 'py-3 px-4 border-b border-slate-100' : 'py-3 px-4'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center space-x-2">
+                    <CardTitle className="text-sm font-semibold text-slate-800 flex items-center space-x-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span>Auditoria e Divergências de Pedidos Reativados</span>
+                    </CardTitle>
+                    <Badge
+                      variant="outline"
+                      className={`font-mono text-xs px-2 py-0.5 ${
+                        totalDivergencias > 0
+                          ? 'border-amber-400 text-amber-700 bg-amber-50'
+                          : 'border-slate-300 text-slate-600 bg-slate-50'
+                      }`}
+                    >
+                      {totalDivergencias} {totalDivergencias === 1 ? 'divergência' : 'divergências'}
+                    </Badge>
+                  </div>
+                  <CardDescription className="text-xs text-slate-500">
+                    Validação cruzada dos números de pedido digitados pelo operador contra as
+                    planilhas reais importadas do ERP
+                  </CardDescription>
+                </div>
+
+                <div
+                  className="h-8 w-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center shrink-0 transition-transform"
+                  title={openAuditoriaDivergencias ? 'Recolher seção' : 'Expandir seção'}
+                >
+                  {openAuditoriaDivergencias ? (
+                    <ChevronUp className="h-4 w-4" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4" />
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+
+            {openAuditoriaDivergencias && (
+              <CardContent className="p-4">
+                {totalDivergencias === 0 ? (
+                  <div className="py-6 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg">
+                    Nenhuma divergência registrada. Todos os pedidos confirmados foram validados com
+                    sucesso nas planilhas.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
+                        <tr>
+                          <th className="py-2.5 px-3">Código</th>
+                          <th className="py-2.5 px-3">Cliente</th>
+                          <th className="py-2.5 px-3">Pedido Declarado pelo Operador</th>
+                          <th className="py-2.5 px-3">Pedido Faturado no ERP</th>
+                          <th className="py-2.5 px-3">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {importacoes
+                          .flatMap((imp) => imp.divergencias_pedidos || [])
+                          .map((div, idx) => (
+                            <tr key={idx} className="hover:bg-amber-50/50">
+                              <td className="py-2 px-3 font-mono font-bold text-slate-800">
+                                {div.codigo}
+                              </td>
+                              <td className="py-2 px-3 text-slate-700 font-medium">{div.nome}</td>
+                              <td className="py-2 px-3 font-mono text-amber-700">
+                                {div.pedidoEsperado}
+                              </td>
+                              <td className="py-2 px-3 font-mono text-rose-600 font-bold">
+                                {div.pedidoPlanilha}
+                              </td>
+                              <td className="py-2 px-3">
+                                <Badge
+                                  variant="outline"
+                                  className="border-amber-400 text-amber-700 bg-amber-50 text-[10px]"
+                                >
+                                  Divergência
+                                </Badge>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            )}
+          </Card>
+        )
+      })()}
     </div>
   )
 }
