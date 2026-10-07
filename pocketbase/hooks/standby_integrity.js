@@ -61,6 +61,38 @@ onRecordCreateRequest((e) => {
         'Este cliente está em período de standby de 60 dias. Ficha bloqueada para novos desfechos.',
       )
     }
+
+    // REGRA 3: Validação de valor e peso obrigatórios para garantir mensuração de métricas
+    // Não se aplica a 'sem_contato', 'duplicado' ou edições especiais de admin
+    if (desfecho !== 'sem_contato' && desfecho !== 'duplicado') {
+      const valor = record.getFloat('valor_potencial')
+      const peso = record.getFloat('toneladas_potencial')
+      const respostas = record.get('respostas') || {}
+      const rawValor = respostas.q15 !== undefined ? respostas.q15 : valor
+      const rawPeso = respostas.q16 !== undefined ? respostas.q16 : peso
+
+      const numValor = parseFloat(
+        String(rawValor || '')
+          .replace(/[^\d.,]/g, '')
+          .replace(',', '.'),
+      )
+      const numPeso = parseFloat(
+        String(rawPeso || '')
+          .replace(/[^\d.,]/g, '')
+          .replace(',', '.'),
+      )
+
+      if (isNaN(numValor) || numValor < 0 || String(rawValor || '').trim() === '') {
+        throw new BadRequestError(
+          'O preenchimento do Valor Potencial (Q15) é imprescindível para termos um bom retorno das métricas.',
+        )
+      }
+      if (isNaN(numPeso) || numPeso < 0 || String(rawPeso || '').trim() === '') {
+        throw new BadRequestError(
+          'O preenchimento do Volume em Toneladas (Q16) é imprescindível para termos um bom retorno das métricas.',
+        )
+      }
+    }
   } catch (err) {
     if (err instanceof BadRequestError || (err && err.name === 'BadRequestError')) {
       throw err
