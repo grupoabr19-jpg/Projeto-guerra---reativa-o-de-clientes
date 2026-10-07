@@ -307,3 +307,15 @@ function expurgarLocksExpiradosAtomicamente(appInstance) {
   }
   return liberados
 }
+
+module.exports = {
+  normalizarTextoNFD,
+  normalizarRegiaoCanonica,
+  buildRegiaoSqlFilter,
+  limparPrefixoVendedor,
+  obterVariantesVendedor,
+  matchesCarteiraVendedorTolerante,
+  buildVendedorSqlTerms,
+  extrairDddCliente,
+  expurgarLocksExpiradosAtomicamente,
+}

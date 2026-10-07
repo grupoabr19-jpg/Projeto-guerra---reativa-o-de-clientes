@@ -2,6 +2,18 @@
 // Endpoint de reserva do próximo cliente na fila / carteira
 // Implementa as 7 correções de blindagem da auditoria 0080
 
+const {
+  normalizarTextoNFD,
+  normalizarRegiaoCanonica,
+  buildRegiaoSqlFilter,
+  limparPrefixoVendedor,
+  obterVariantesVendedor,
+  matchesCarteiraVendedorTolerante,
+  buildVendedorSqlTerms,
+  extrairDddCliente,
+  expurgarLocksExpiradosAtomicamente,
+} = require('./vendedor_matching.js')
+
 routerAdd(
   'POST',
   '/backend/v1/queue/reserve-next',
@@ -286,7 +298,7 @@ routerAdd(
         // Helper para montar filtro da base
         const montarBaseFilter = (paramsFiltro) => {
           const { comFiltroVendedor, comFiltroSegmento, incluirSemDonoRota } = paramsFiltro
-          let f = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && !(standby_ate > '${nowIsoQueue}')`
+          let f = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
 
           if (regiaoFilter) {
             f += ` && ${regiaoFilter}`

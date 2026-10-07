@@ -2,6 +2,18 @@
 // Busca na carteira, abertura de cliente específico e destrave/edição administrativa
 // Implementa as 7 correções da auditoria 0080
 
+const {
+  normalizarTextoNFD,
+  normalizarRegiaoCanonica,
+  buildRegiaoSqlFilter,
+  limparPrefixoVendedor,
+  obterVariantesVendedor,
+  matchesCarteiraVendedorTolerante,
+  buildVendedorSqlTerms,
+  extrairDddCliente,
+  expurgarLocksExpiradosAtomicamente,
+} = require('./vendedor_matching.js')
+
 routerAdd(
   'POST',
   '/backend/v1/queue/search-carteira',
@@ -130,7 +142,7 @@ routerAdd(
       let filterExpr = `(nome ~ '${cleanTerm}' || codigo ~ '${cleanTerm}') && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'`
       if (userRole !== 'admin') {
         const nowIso = new Date().toISOString()
-        filterExpr += ` && !(estado = 'reativado' && standby_ate > '${nowIso}')`
+        filterExpr += ` && (estado != 'reativado' || standby_ate = '' || standby_ate = null || standby_ate <= '${nowIso}')`
       }
 
       // Restrições de perfil/região

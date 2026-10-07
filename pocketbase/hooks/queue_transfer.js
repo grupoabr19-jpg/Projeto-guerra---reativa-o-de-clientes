@@ -2,6 +2,18 @@
 // Transferência de clientes entre operadores da mesma região/rota
 // Implementa as 7 correções da auditoria 0080
 
+const {
+  normalizarTextoNFD,
+  normalizarRegiaoCanonica,
+  buildRegiaoSqlFilter,
+  limparPrefixoVendedor,
+  obterVariantesVendedor,
+  matchesCarteiraVendedorTolerante,
+  buildVendedorSqlTerms,
+  extrairDddCliente,
+  expurgarLocksExpiradosAtomicamente,
+} = require('./vendedor_matching.js')
+
 routerAdd(
   'POST',
   '/backend/v1/queue/transfer-client',

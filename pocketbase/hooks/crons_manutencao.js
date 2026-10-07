@@ -2,6 +2,18 @@
 // Rotinas de manutenção e atualização diária da base
 // Implementa as 7 correções da auditoria 0080
 
+const {
+  normalizarTextoNFD,
+  normalizarRegiaoCanonica,
+  buildRegiaoSqlFilter,
+  limparPrefixoVendedor,
+  obterVariantesVendedor,
+  matchesCarteiraVendedorTolerante,
+  buildVendedorSqlTerms,
+  extrairDddCliente,
+  expurgarLocksExpiradosAtomicamente,
+} = require('./vendedor_matching.js')
+
 // 1. Cron frequente (a cada 10 minutos): Liberação atômica de locks expirados (> 30 min) e quarentenas vencidas
 cronAdd('crons_limpeza_fila', '*/10 * * * *', () => {
   try {

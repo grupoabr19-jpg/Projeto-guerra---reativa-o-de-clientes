@@ -735,9 +735,10 @@ routerAdd(
             }
             if (vendedorRow) rec.set('vendedor', vendedorRow)
 
+            let segNorm = ''
             if (row.segmento) {
               const segRaw = String(row.segmento).trim()
-              const segNorm = segRaw
+              segNorm = segRaw
                 .toLowerCase()
                 .normalize('NFD')
                 .replace(/[\u0300-\u036f]/g, '')
