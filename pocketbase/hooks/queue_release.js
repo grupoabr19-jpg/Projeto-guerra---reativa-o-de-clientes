@@ -35,14 +35,15 @@ routerAdd(
           }
         }
 
-        // CONSUMO DE RETOMADA:
-        // Se o cliente liberado possuía reagendamento vencido (ou marcado como retomada servida):
-        // empurrar reagendado_para para o próximo início de expediente útil (07:00 BRT do próximo dia útil)
-        // e registrar retomada_servida_em para garantir que no próximo clique o operador receba outro cliente da carteira!
-        const reagParaStr = cliente.getString('reagendado_para')
-        let novoEstado = emStandby ? 'reativado' : 'na_base'
+        // CONSUMO DE RETOMADA / DEVOLUÇÃO COM BLINDAGEM DE FILA:
+        // TODO abandono/devolução (com ou sem reagendamento prévio, exceto se estiver em standby) deve:
+        // setar reagendado_para = 07:00 BRT do próximo dia útil (sexta->segunda, sábado->segunda, respeitando expediente 7h-17h),
+        // retomada_servida_em = agora, reagendado_operador = userId, estado = "reagendado", operador = "", lock_timestamp = null.
+        // Assim o cliente sai do dia e nunca reaparece no mesmo dia.
+        let novoEstado = emStandby ? 'reativado' : 'reagendado'
+        let proximaAberturaIso = null
 
-        if (reagParaStr && !emStandby) {
+        if (!emStandby) {
           // Calcular próximo dia útil às 07:00 (Brasília UTC-3 => 10:00 UTC)
           const brtMs = nowMs - 3 * 60 * 60 * 1000
           const brtDate = new Date(brtMs)
@@ -74,10 +75,11 @@ routerAdd(
             0,
             0,
           )
-          const proximaAberturaIso = new Date(proximaAberturaExpedienteUtcMs).toISOString()
+          proximaAberturaIso = new Date(proximaAberturaExpedienteUtcMs).toISOString()
 
           cliente.set('reagendado_para', proximaAberturaIso)
           cliente.set('retomada_servida_em', now.toISOString())
+          cliente.set('reagendado_operador', userId)
           novoEstado = 'reagendado'
         }
 
@@ -93,7 +95,8 @@ routerAdd(
           ev.set('acao', 'lock_liberado')
           ev.set('detalhes', {
             motivo: body.motivo || 'liberacao_manual_ou_abandono',
-            reagendado_adiado_para: reagParaStr ? cliente.getString('reagendado_para') : null,
+            reagendado_adiado_para: proximaAberturaIso,
+            reagendado_operador: userId,
           })
           $app.save(ev)
         } catch (_) {}

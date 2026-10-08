@@ -351,6 +351,9 @@ export async function createRegiao(data: Partial<Regiao>) {
 export async function reserveNextQueueClient(options?: {
   segmento?: string
   ordenacao?: 'score' | 'antigos' | 'novos'
+  devolver_e_proximo?: boolean
+  cliente_atual_id?: string
+  rascunho_respostas?: Record<string, unknown>
 }) {
   const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/queue/reserve-next`, {
     method: 'POST',

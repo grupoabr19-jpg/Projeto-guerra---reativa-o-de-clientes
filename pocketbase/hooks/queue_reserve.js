@@ -246,6 +246,8 @@ routerAdd(
 
       const filtroSegmento = body.segmento ? String(body.segmento).trim() : ''
       const ordenacaoEscolhida = body.ordenacao ? String(body.ordenacao).trim() : 'score'
+      const devolverEProximo = Boolean(body.devolver_e_proximo)
+      const clienteDevolvidoId = body.cliente_atual_id ? String(body.cliente_atual_id).trim() : ''
 
       const userId = authRecord.id
       const userName = (authRecord.getString('name') || '').trim()
@@ -309,6 +311,90 @@ routerAdd(
         } else {
           // Fallback para supervisor/admin ou outro membro do atacado
           atacadoDddsPermitidos = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
+        }
+      }
+
+      // 0. FLUXO ATÔMICO DEVOLVER_E_PROXIMO:
+      // Se solicitado pelo operador ("Devolver atual e puxar o próximo"), liberar atomicamente o cliente atual
+      // empurrando para 07:00 BRT do próximo dia útil, liberando operador e lock, para abrir caminho imediato para o próximo.
+      let idsExcluidosNestaChamada = []
+      if (clienteDevolvidoId) {
+        idsExcluidosNestaChamada.push(clienteDevolvidoId)
+      }
+
+      if (devolverEProximo) {
+        try {
+          const lockedToRelease = $app.findRecordsByFilter(
+            'clientes',
+            `operador = '${userId}' && (estado = 'reservado' || estado = 'em_atendimento')`,
+            '-lock_timestamp',
+            10,
+            0,
+          )
+          for (let rIdx = 0; rIdx < lockedToRelease.length; rIdx++) {
+            const toRel = lockedToRelease[rIdx]
+            idsExcluidosNestaChamada.push(toRel.id)
+
+            // Se estiver em standby, preserva standby e reativado
+            const stStr = toRel.getString('standby_ate')
+            let isSt = false
+            if (stStr) {
+              const pSt = new Date(stStr)
+              if (!isNaN(pSt.getTime()) && pSt.getTime() > now.getTime()) {
+                isSt = true
+              }
+            }
+
+            if (!isSt) {
+              // Calcular próximo dia útil às 07:00 BRT (10:00 UTC)
+              const nowMsRel = now.getTime()
+              const brtMsRel = nowMsRel - 3 * 60 * 60 * 1000
+              const brtDateRel = new Date(brtMsRel)
+              const dowRel = brtDateRel.getUTCDay()
+              let dAddRel = 1
+              if (dowRel === 5) dAddRel = 3
+              else if (dowRel === 6) dAddRel = 2
+
+              const proxBrtRel = new Date(brtMsRel + dAddRel * 24 * 60 * 60 * 1000)
+              const targetIsoRel = new Date(
+                Date.UTC(
+                  proxBrtRel.getUTCFullYear(),
+                  proxBrtRel.getUTCMonth(),
+                  proxBrtRel.getUTCDate(),
+                  10,
+                  0,
+                  0,
+                  0,
+                ),
+              ).toISOString()
+
+              toRel.set('reagendado_para', targetIsoRel)
+              toRel.set('retomada_servida_em', now.toISOString())
+              toRel.set('reagendado_operador', userId)
+              toRel.set('estado', 'reagendado')
+            } else {
+              toRel.set('estado', 'reativado')
+            }
+
+            if (body.rascunho_respostas) {
+              toRel.set('rascunho_respostas', body.rascunho_respostas)
+            }
+            toRel.set('operador', '')
+            toRel.set('lock_timestamp', null)
+            $app.save(toRel)
+
+            try {
+              const colEv = $app.findCollectionByNameOrId('eventos_log')
+              const ev = new Record(colEv)
+              ev.set('cliente', toRel.id)
+              ev.set('usuario', userId)
+              ev.set('acao', 'lock_liberado_devolver_e_proximo')
+              ev.set('detalhes', { motivo: 'devolver_e_proximo_automatico' })
+              $app.save(ev)
+            } catch (_) {}
+          }
+        } catch (devErr) {
+          console.log('[queue_reserve] Erro ao devolver_e_proximo: ' + devErr.message)
         }
       }
 
@@ -575,6 +661,27 @@ routerAdd(
         }
       }
 
+      // CINTO DE SEGURANÇA / BLINDAGEM ANTI-REPETIÇÃO:
+      // Função para testar se um candidato é válido ou se foi recentemente servido/devolvido por este operador hoje
+      const isCandidatoRepetidoRecente = (c) => {
+        if (!c) return true
+        if (idsExcluidosNestaChamada.includes(c.id)) return true
+
+        const retomadaServida = c.getString('retomada_servida_em')
+        const reagOp = c.getString('reagendado_operador')
+        if (reagOp === userId && retomadaServida) {
+          const retDate = new Date(retomadaServida)
+          if (!isNaN(retDate.getTime())) {
+            // Se foi servido nas últimas 12 horas para este operador
+            const diffH = (now.getTime() - retDate.getTime()) / (1000 * 60 * 60)
+            if (diffH >= 0 && diffH < 12) {
+              return true
+            }
+          }
+        }
+        return false
+      }
+
       let cand = null
 
       // =========================================================================
@@ -600,8 +707,10 @@ routerAdd(
           0,
         )
         if (reagendados && reagendados.length > 0) {
-          // Prioridade máxima: follow-ups atribuídos diretamente a este operador
-          const myReags = reagendados.filter((r) => r.getString('reagendado_operador') === userId)
+          // Prioridade máxima: follow-ups atribuídos diretamente a este operador (não repetidos)
+          const myReags = reagendados.filter(
+            (r) => r.getString('reagendado_operador') === userId && !isCandidatoRepetidoRecente(r),
+          )
           if (myReags.length > 0) {
             const transferido = myReags.find((r) => r.getBool('prioridade_transferencia') === true)
             cand = transferido || myReags[0]
@@ -609,6 +718,7 @@ routerAdd(
             // No Atacado, filtra por DDD
             for (let k = 0; k < reagendados.length; k++) {
               const rCand = reagendados[k]
+              if (isCandidatoRepetidoRecente(rCand)) continue
               const ddd = extrairDddCliente(rCand)
               if (atacadoDddsPermitidos.includes(ddd)) {
                 cand = rCand
@@ -619,6 +729,7 @@ routerAdd(
             // No Varejo: Prioridade 1 = carteira própria (matching tolerante)
             for (let k = 0; k < reagendados.length; k++) {
               const rCand = reagendados[k]
+              if (isCandidatoRepetidoRecente(rCand)) continue
               if (matchesCarteiraVendedorTolerante(rCand, userName)) {
                 cand = rCand
                 break
@@ -626,11 +737,18 @@ routerAdd(
             }
             // Se for Líder de Rota e não achou da carteira própria, suporta reagendados da rota
             if (!cand && isLider) {
-              cand = reagendados[0]
+              for (let k = 0; k < reagendados.length; k++) {
+                const rCand = reagendados[k]
+                if (!isCandidatoRepetidoRecente(rCand)) {
+                  cand = rCand
+                  break
+                }
+              }
             }
           } else {
             for (let k = 0; k < reagendados.length; k++) {
               const rCand = reagendados[k]
+              if (isCandidatoRepetidoRecente(rCand)) continue
               if (isRepescagem) {
                 if (!jaContatadoPeloVendedorOriginal(rCand)) {
                   cand = rCand
@@ -800,9 +918,12 @@ routerAdd(
         // SELEÇÃO DO CANDIDATO NO POOL
         // =========================================================================
         if (pool && pool.length > 0) {
+          // Aplicar filtro do cinto de segurança anti-repetição
+          const poolNaoRepetido = pool.filter((c) => !isCandidatoRepetidoRecente(c))
+
           if (isRepescagem) {
-            for (let m = 0; m < pool.length; m++) {
-              const item = pool[m]
+            for (let m = 0; m < poolNaoRepetido.length; m++) {
+              const item = poolNaoRepetido[m]
               if (!jaContatadoPeloVendedorOriginal(item)) {
                 cand = item
                 break
@@ -810,7 +931,7 @@ routerAdd(
             }
           } else if (isAtacado && (userRole === 'operador' || userRole === 'lider')) {
             // ATACADO: Filtrar por DDDs permitidos
-            const poolAtacadoOperador = pool.filter((c) => {
+            const poolAtacadoOperador = poolNaoRepetido.filter((c) => {
               const ddd = extrairDddCliente(c)
               return atacadoDddsPermitidos.includes(ddd)
             })
@@ -831,14 +952,18 @@ routerAdd(
           } else if (isVarejoOperadorOuLider) {
             // VAREJO:
             // Prioridade 1: Carteira própria do vendedor (matching tolerante)
-            const poolPropria = pool.filter((c) => matchesCarteiraVendedorTolerante(c, userName))
+            const poolPropria = poolNaoRepetido.filter((c) =>
+              matchesCarteiraVendedorTolerante(c, userName),
+            )
 
             let poolElegivel = []
             if (poolPropria.length > 0) {
               poolElegivel = poolPropria
             } else if (isLider) {
               // Prioridade 2 do Líder: suporte de vazão da equipe (clientes sem dono da rota)
-              const poolSuporte = pool.filter((c) => c.getBool('sem_dono_equipe') === true)
+              const poolSuporte = poolNaoRepetido.filter(
+                (c) => c.getBool('sem_dono_equipe') === true,
+              )
               poolElegivel = poolSuporte
             }
 
@@ -881,7 +1006,7 @@ routerAdd(
             }
           } else {
             // Supervisor ou admin atendendo
-            const faixa60 = pool.filter((c) => {
+            const faixa60 = poolNaoRepetido.filter((c) => {
               const f = c.getString('faixa')
               const d = c.getInt('dias_sem_faturar')
               return f === '60_89' || (d >= 60 && d <= 89)
@@ -889,7 +1014,7 @@ routerAdd(
             if (faixa60.length > 0) {
               cand = faixa60[0]
             } else {
-              const faixa90 = pool.filter((c) => {
+              const faixa90 = poolNaoRepetido.filter((c) => {
                 const f = c.getString('faixa')
                 const d = c.getInt('dias_sem_faturar')
                 return f === '90_plus' || d >= 90
@@ -898,7 +1023,7 @@ routerAdd(
                 faixa90.sort((a, b) => b.getInt('dias_sem_faturar') - a.getInt('dias_sem_faturar'))
                 cand = faixa90[0]
               } else {
-                cand = pool[0]
+                cand = poolNaoRepetido[0]
               }
             }
           }

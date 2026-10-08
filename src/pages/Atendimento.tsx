@@ -166,6 +166,7 @@ export default function AtendimentoPage() {
 
   // Diálogos shadcn de confirmação
   const [showConfirmAbandonar, setShowConfirmAbandonar] = useState(false)
+  const [showConfirmDevolverEProximo, setShowConfirmDevolverEProximo] = useState(false)
   const [showConfirmReativarSemPedido, setShowConfirmReativarSemPedido] = useState(false)
   const [showConfirmDestravarStandby, setShowConfirmDestravarStandby] = useState(false)
   const [clienteParaDestravar, setClienteParaDestravar] = useState<{
@@ -364,12 +365,16 @@ export default function AtendimentoPage() {
     }
   }
 
-  const handlePuxarNovoAtendimento = async () => {
+  const handlePuxarNovoAtendimento = async (optionsParam?: { devolverEProximo?: boolean }) => {
+    const isDevolverEProximo = Boolean(optionsParam?.devolverEProximo)
     setReservandoNovo(true)
     try {
       const res = await reserveNextQueueClient({
         segmento: filtroSegmento === 'todos' ? undefined : filtroSegmento,
         ordenacao: filtroOrdenacao,
+        devolver_e_proximo: isDevolverEProximo,
+        cliente_atual_id: cliente ? cliente.id : undefined,
+        rascunho_respostas: isDevolverEProximo ? answers : undefined,
       })
       if (res.cliente) {
         setAvisoSegmentoZerado(null)
@@ -383,11 +388,21 @@ export default function AtendimentoPage() {
           })
         } else {
           toast({
-            title: 'Cliente reservado',
-            description: res.message || 'Novo contato reservado com sucesso.',
+            title: isDevolverEProximo ? 'Próximo cliente chamado' : 'Cliente reservado',
+            description:
+              res.message ||
+              (isDevolverEProximo
+                ? 'Contato anterior devolvido para amanhã e próximo cliente reservado com sucesso.'
+                : 'Novo contato reservado com sucesso.'),
           })
         }
       } else {
+        // Se devolveu o atual mas não há mais clientes elegíveis na carteira
+        if (isDevolverEProximo) {
+          setCliente(null)
+          navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila')
+        }
+
         // Distingue carteira esgotada real de filtro de segmento ativo que zerou a busca
         if (res.segmento_zerado && filtroSegmento !== 'todos') {
           setAvisoSegmentoZerado({
@@ -437,6 +452,17 @@ export default function AtendimentoPage() {
       })
     } finally {
       setReservandoNovo(false)
+    }
+  }
+
+  // Ação ao clicar no botão "Próximo da Fila" do cabeçalho
+  const handleClickProximoDaFila = () => {
+    // Se o operador já está com um cliente carregado em tela:
+    // Oferece diálogo de confirmação "Devolver atual e puxar o próximo"
+    if (cliente) {
+      setShowConfirmDevolverEProximo(true)
+    } else {
+      handlePuxarNovoAtendimento()
     }
   }
 
@@ -1544,7 +1570,7 @@ export default function AtendimentoPage() {
               {/* Botão Novo Atendimento (Puxar próximo da fila) */}
               <Button
                 size="sm"
-                onClick={handlePuxarNovoAtendimento}
+                onClick={handleClickProximoDaFila}
                 disabled={reservandoNovo}
                 className="bg-[#F18800] hover:bg-[#d97b00] text-white font-semibold text-xs h-9 px-4 shadow-sm shadow-[#F18800]/25 shrink-0"
               >
@@ -1659,7 +1685,7 @@ export default function AtendimentoPage() {
 
             <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
               <Button
-                onClick={handlePuxarNovoAtendimento}
+                onClick={() => handlePuxarNovoAtendimento()}
                 disabled={reservandoNovo}
                 className="bg-[#F18800] hover:bg-[#d97b00] text-white text-xs font-semibold shadow-sm shadow-[#F18800]/25"
               >
@@ -3330,6 +3356,54 @@ export default function AtendimentoPage() {
                       Confirmar Destrave
                     </>
                   )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* AlertDialog de Confirmação: Devolver Atual e Puxar o Próximo da Fila */}
+          <AlertDialog
+            open={showConfirmDevolverEProximo}
+            onOpenChange={setShowConfirmDevolverEProximo}
+          >
+            <AlertDialogContent className="max-w-md">
+              <AlertDialogHeader>
+                <div className="flex items-center space-x-2 text-[#F18800]">
+                  <RotateCcw className="h-5 w-5" />
+                  <AlertDialogTitle>Devolver atual e puxar o próximo?</AlertDialogTitle>
+                </div>
+                <AlertDialogDescription className="text-xs text-slate-600 space-y-2 pt-2">
+                  <p>
+                    Você já está com o cliente{' '}
+                    <strong className="text-slate-900">{cliente?.nome}</strong> (
+                    <span className="font-mono">{cliente?.codigo}</span>) carregado na tela.
+                  </p>
+                  <p className="bg-amber-50 border border-amber-200 text-amber-900 p-2.5 rounded-md">
+                    Ao confirmar, o atendimento atual será devolvido (reagendado para o próximo dia
+                    útil às 07:00), liberando a sua carteira para chamar o próximo cliente elegível
+                    imediatamente.
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    O rascunho de respostas atual será preservado e este cliente não voltará a
+                    aparecer na sua fila hoje.
+                  </p>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={reservandoNovo} className="text-xs">
+                  Continuar com este cliente
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault()
+                    setShowConfirmDevolverEProximo(false)
+                    handlePuxarNovoAtendimento({ devolverEProximo: true })
+                  }}
+                  disabled={reservandoNovo}
+                  className="bg-[#F18800] hover:bg-[#d97b00] text-white font-bold text-xs"
+                >
+                  <PhoneCall className="h-3.5 w-3.5 mr-1.5" />
+                  {reservandoNovo ? 'Puxando...' : 'Devolver e Puxar Próximo'}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
