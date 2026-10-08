@@ -282,6 +282,24 @@ function extrairMotivoDeDesfecho(
   }
 
   if (
+    d === 'restricao_financeira' ||
+    combined.includes('restrição financeira') ||
+    combined.includes('restricao financeira') ||
+    combined.includes('crédito bloqueado') ||
+    combined.includes('credito bloqueado') ||
+    combined.includes('sem limite')
+  ) {
+    return {
+      categoria: 'credito_capital',
+      perguntaOrigem: 'Desfecho — Restrição Financeira / Crédito Bloqueado',
+      respostaBruta:
+        motivoRaw ||
+        conteudoRaw ||
+        'Cliente com restrição financeira / crédito bloqueado / sem limite',
+    }
+  }
+
+  if (
     d === 'compra_terceiros' ||
     combined.includes('compra de terceiros') ||
     combined.includes('concorrente')
@@ -529,8 +547,12 @@ export async function fetchRelatorioDiagnostico(options?: {
       if (desfechoFiltro === 'reagendado' && c.estado !== 'reagendado') return false
       if (
         desfechoFiltro === 'venda_perdida' &&
-        !['compra_terceiros', 'nao_quer_negociar', 'sem_contato'].includes(c.estado || '')
+        !['compra_terceiros', 'nao_quer_negociar', 'restricao_financeira', 'sem_contato'].includes(
+          c.estado || '',
+        )
       )
+        return false
+      if (desfechoFiltro === 'restricao_financeira' && c.estado !== 'restricao_financeira')
         return false
       if (
         desfechoFiltro === 'em_atendimento' &&

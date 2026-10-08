@@ -169,6 +169,20 @@ export function normalizarDesfechoForms(valor?: unknown): {
     }
   }
 
+  if (
+    low.includes('restrição') ||
+    low.includes('restricao') ||
+    low.includes('crédito bloqueado') ||
+    low.includes('credito bloqueado') ||
+    low.includes('sem limite')
+  ) {
+    return {
+      desfechoNormalizado: 'restricao_financeira',
+      desfechoCru: cru,
+      deveAtualizarEstadoCliente: false,
+    }
+  }
+
   if (low.includes('não quer') || low.includes('nao quer') || low.includes('recus')) {
     return {
       desfechoNormalizado: 'nao_quer_negociar',

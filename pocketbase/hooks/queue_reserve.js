@@ -383,6 +383,7 @@ routerAdd(
               'sem_contato',
               'venda_perdida',
               'nao_quer_negociar',
+              'restricao_financeira',
               'compra_terceiros',
               'sem_perfil',
               'duplicado',

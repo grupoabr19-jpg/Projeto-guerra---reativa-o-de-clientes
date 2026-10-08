@@ -903,6 +903,7 @@ export default function RelatoriosPage() {
                     <SelectItem value="todos">Todos os Desfechos</SelectItem>
                     <SelectItem value="reativado">Reativado (Compra)</SelectItem>
                     <SelectItem value="reagendado">Reagendado</SelectItem>
+                    <SelectItem value="restricao_financeira">Restrição Financeira</SelectItem>
                     <SelectItem value="venda_perdida">Venda Perdida (Recusa)</SelectItem>
                     <SelectItem value="em_atendimento">Em Atendimento</SelectItem>
                     <SelectItem value="na_base">Na Base (Sem Contato)</SelectItem>

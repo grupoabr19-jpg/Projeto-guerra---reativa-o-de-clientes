@@ -220,8 +220,10 @@ routerAdd(
           conditions.push("estado = 'reagendado'")
         } else if (desfechoParam === 'venda_perdida') {
           conditions.push(
-            "(estado = 'compra_terceiros' OR estado = 'nao_quer_negociar' OR estado = 'sem_contato')",
+            "(estado = 'compra_terceiros' OR estado = 'nao_quer_negociar' OR estado = 'restricao_financeira' OR estado = 'sem_contato')",
           )
+        } else if (desfechoParam === 'restricao_financeira') {
+          conditions.push("estado = 'restricao_financeira'")
         } else if (desfechoParam === 'em_atendimento') {
           conditions.push("(estado = 'em_atendimento' OR estado = 'reservado')")
         } else if (desfechoParam === 'na_base') {
@@ -262,6 +264,7 @@ routerAdd(
           SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_faturamento_recente_cruzamento,
           SUM(CASE WHEN estado = 'compra_terceiros' THEN 1 ELSE 0 END) as compra_terceiros,
           SUM(CASE WHEN estado = 'nao_quer_negociar' THEN 1 ELSE 0 END) as nao_quer_negociar,
+          SUM(CASE WHEN estado = 'restricao_financeira' THEN 1 ELSE 0 END) as restricao_financeira,
           SUM(CASE WHEN estado = 'sem_contato' THEN 1 ELSE 0 END) as sem_contato,
           SUM(CASE WHEN estado = 'reativado' THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado_total,
           SUM(CASE WHEN estado = 'reativado' THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas_total
@@ -285,6 +288,7 @@ routerAdd(
         toneladas_faturamento_recente_cruzamento: -0,
         compra_terceiros: 0,
         nao_quer_negociar: 0,
+        restricao_financeira: 0,
         sem_contato: 0,
         valor_recuperado_total: -0,
         toneladas_recuperadas_total: -0,
@@ -354,6 +358,11 @@ routerAdd(
           ? kpiModel.nao_quer_negociar
           : kpiModel.naoQuerNegociar || 0,
       )
+      const restricaoFinanceiraCount = Number(
+        kpiModel.restricao_financeira !== undefined
+          ? kpiModel.restricao_financeira
+          : kpiModel.restricaoFinanceira || 0,
+      )
       const semContatoCount = Number(
         kpiModel.sem_contato !== undefined ? kpiModel.sem_contato : kpiModel.semContato || 0,
       )
@@ -379,7 +388,7 @@ routerAdd(
           SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados,
           SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
           SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas,
-          SUM(CASE WHEN estado = 'compra_terceiros' OR estado = 'nao_quer_negociar' OR estado = 'sem_contato' THEN 1 ELSE 0 END) as perdidos,
+          SUM(CASE WHEN estado = 'compra_terceiros' OR estado = 'nao_quer_negociar' OR estado = 'restricao_financeira' OR estado = 'sem_contato' THEN 1 ELSE 0 END) as perdidos,
           SUM(CASE WHEN estado = 'reagendado' THEN 1 ELSE 0 END) as reagendados
         FROM clientes
         WHERE ${whereClause}
@@ -447,7 +456,7 @@ routerAdd(
           COUNT(*) as total_clientes,
           SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados,
           SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
-          SUM(CASE WHEN estado = 'compra_terceiros' OR estado = 'nao_quer_negociar' OR estado = 'sem_contato' THEN 1 ELSE 0 END) as perdidos
+          SUM(CASE WHEN estado = 'compra_terceiros' OR estado = 'nao_quer_negociar' OR estado = 'restricao_financeira' OR estado = 'sem_contato' THEN 1 ELSE 0 END) as perdidos
         FROM clientes
         WHERE ${whereClause}
         GROUP BY faixa_nome
@@ -720,6 +729,7 @@ routerAdd(
           reativado_cruzamento: faturamentoCruzamentoCount,
           compra_terceiros: compraTerceirosCount,
           nao_quer_negociar: naoQuerNegociarCount,
+          restricao_financeira: restricaoFinanceiraCount,
           sem_contato: semContatoCount,
         },
         cruzamentos: {

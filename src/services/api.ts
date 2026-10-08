@@ -1181,8 +1181,12 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
       if (desfechoFiltro === 'reagendado' && c.estado !== 'reagendado') return false
       if (
         desfechoFiltro === 'venda_perdida' &&
-        !['compra_terceiros', 'nao_quer_negociar', 'sem_contato'].includes(c.estado || '')
+        !['compra_terceiros', 'nao_quer_negociar', 'restricao_financeira', 'sem_contato'].includes(
+          c.estado || '',
+        )
       )
+        return false
+      if (desfechoFiltro === 'restricao_financeira' && c.estado !== 'restricao_financeira')
         return false
       if (
         desfechoFiltro === 'em_atendimento' &&
@@ -1213,9 +1217,12 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
       if (desfechoFiltro === 'reagendado' && d !== 'reagendado' && !it.reagendado_para) return false
       if (
         desfechoFiltro === 'venda_perdida' &&
-        !['compra_terceiros', 'nao_quer_negociar', 'sem_contato'].includes(d)
+        !['compra_terceiros', 'nao_quer_negociar', 'restricao_financeira', 'sem_contato'].includes(
+          d,
+        )
       )
         return false
+      if (desfechoFiltro === 'restricao_financeira' && d !== 'restricao_financeira') return false
       if (desfechoFiltro === 'contatado' && d !== 'contatado') return false
     }
 
@@ -1327,6 +1334,7 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
     const isVendaPerdida =
       it.desfecho === 'compra_terceiros' ||
       it.desfecho === 'nao_quer_negociar' ||
+      it.desfecho === 'restricao_financeira' ||
       it.desfecho === 'sem_contato'
 
     if (m) {
@@ -1392,6 +1400,7 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
     (i) =>
       i.desfecho === 'compra_terceiros' ||
       i.desfecho === 'nao_quer_negociar' ||
+      i.desfecho === 'restricao_financeira' ||
       i.desfecho === 'sem_contato',
   ).length
   const taxaGeral = calcularTaxaConversao(totalGeralConversoes, totalGeralLigacoes)

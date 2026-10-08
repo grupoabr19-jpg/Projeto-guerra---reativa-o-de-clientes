@@ -601,7 +601,12 @@ export default function AtendimentoPage() {
       const q3Val = answers.q3 !== undefined && answers.q3 !== null ? String(answers.q3).trim() : ''
       const fezOrcamento = q3Val === 'Sim'
 
-      if (fezOrcamento && desfechoFinal !== 'sem_contato' && desfechoFinal !== 'duplicado') {
+      if (
+        fezOrcamento &&
+        desfechoFinal !== 'sem_contato' &&
+        desfechoFinal !== 'duplicado' &&
+        desfechoFinal !== 'restricao_financeira'
+      ) {
         const rawValor = answers.q15 !== undefined ? String(answers.q15).trim() : ''
         const rawPeso = answers.q16 !== undefined ? String(answers.q16).trim() : ''
         const numValor = parseFloat(rawValor.replace(/[^\d.,]/g, '').replace(',', '.'))
@@ -1082,6 +1087,11 @@ export default function AtendimentoPage() {
         updatePayload.quarentena_ate = quarentena.toISOString()
         updatePayload.operador = ''
         updatePayload.lock_timestamp = ''
+      } else if (desfechoFinal === 'restricao_financeira') {
+        // Desfecho fechado sem compra: cliente sai da esteira, lock liberado, sem quarentena e sem operador
+        updatePayload.operador = ''
+        updatePayload.lock_timestamp = ''
+        updatePayload.quarentena_ate = ''
       } else if (desfechoFinal === 'duplicado') {
         updatePayload.duplicado_de_codigo = duplicadoCodigo
         updatePayload.operador = ''
@@ -1127,13 +1137,15 @@ export default function AtendimentoPage() {
         conteudo:
           desfechoFinal === 'ativo_fora_base'
             ? `Atendimento finalizado: CLIENTE ATIVO — FORA DA BASE DE INATIVOS.\nMotivo: ${textoMotivoFinalizacao}\nObservação do operador: ${obsAtivoForaBase || 'Nenhuma'}\n(Cliente removido permanentemente da base de inativos e protegido contra reimportações/recálculo)`
-            : `Atendimento finalizado com desfecho: ${desfechoFinal.toUpperCase()}.\nObservações: ${observacoes || 'Nenhuma'}${
-                numeroPedido ? `\nPedido: ${numeroPedido}` : ''
-              }${
-                desfechoFinal === 'reativado' && houvePedidoFechado === 'sim'
-                  ? `\n[PEDIDO EM ABERTO REGISTRADO]${valorPedidoFechado ? `\nValor Estimado: R$ ${valorPedidoFechado}` : ''}${previsaoFaturamento ? `\nPrevisão de Faturamento: ${previsaoFaturamento}` : ''}${observacoesPedido ? `\nObs Pedido: ${observacoesPedido}` : ''}`
-                  : ''
-              }`,
+            : desfechoFinal === 'restricao_financeira'
+              ? `Atendimento finalizado com desfecho: RESTRIÇÃO FINANCEIRA.\nObservações: ${observacoes || 'Nenhuma'}`
+              : `Atendimento finalizado com desfecho: ${desfechoFinal.toUpperCase()}.\nObservações: ${observacoes || 'Nenhuma'}${
+                  numeroPedido ? `\nPedido: ${numeroPedido}` : ''
+                }${
+                  desfechoFinal === 'reativado' && houvePedidoFechado === 'sim'
+                    ? `\n[PEDIDO EM ABERTO REGISTRADO]${valorPedidoFechado ? `\nValor Estimado: R$ ${valorPedidoFechado}` : ''}${previsaoFaturamento ? `\nPrevisão de Faturamento: ${previsaoFaturamento}` : ''}${observacoesPedido ? `\nObs Pedido: ${observacoesPedido}` : ''}`
+                    : ''
+                }`,
         reagendado_para: reagendarData
           ? ajustarParaExpediente(new Date(reagendarData)).dataAjustada.toISOString()
           : undefined,
@@ -2466,6 +2478,11 @@ export default function AtendimentoPage() {
                             color: 'border-slate-400 bg-slate-100 text-slate-900',
                           },
                           {
+                            id: 'restricao_financeira',
+                            label: 'Restrição Financeira (Crédito Bloqueado / Sem Limite)',
+                            color: 'border-amber-500 bg-amber-50 text-amber-950',
+                          },
+                          {
                             id: 'duplicado',
                             label: 'Registro Duplicado no ERP',
                             color: 'border-purple-400 bg-purple-50 text-purple-900',
@@ -2907,7 +2924,8 @@ export default function AtendimentoPage() {
                               if (
                                 fezOrcamento &&
                                 desfechoFinal !== 'sem_contato' &&
-                                desfechoFinal !== 'duplicado'
+                                desfechoFinal !== 'duplicado' &&
+                                desfechoFinal !== 'restricao_financeira'
                               ) {
                                 if (currentStep === 15) {
                                   const rawVal =
@@ -3505,7 +3523,8 @@ export default function AtendimentoPage() {
                           if (
                             fezOrcamento &&
                             desfechoFinal !== 'sem_contato' &&
-                            desfechoFinal !== 'duplicado'
+                            desfechoFinal !== 'duplicado' &&
+                            desfechoFinal !== 'restricao_financeira'
                           ) {
                             if (currentStep === 15) {
                               const rawVal =

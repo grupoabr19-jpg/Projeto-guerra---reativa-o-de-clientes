@@ -121,6 +121,7 @@ routerAdd(
           SUM(CASE WHEN pedido_em_aberto = 1 THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_pedidos_em_aberto,
           SUM(CASE WHEN estado = 'compra_terceiros' THEN 1 ELSE 0 END) as compra_terceiros,
           SUM(CASE WHEN estado = 'nao_quer_negociar' THEN 1 ELSE 0 END) as nao_quer_negociar,
+          SUM(CASE WHEN estado = 'restricao_financeira' THEN 1 ELSE 0 END) as restricao_financeira,
           SUM(CASE WHEN estado = 'sem_contato' THEN 1 ELSE 0 END) as sem_contato,
           SUM(CASE WHEN estado = 'reativado' THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado_total,
           SUM(CASE WHEN estado = 'reativado' THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas_total
@@ -146,6 +147,7 @@ routerAdd(
         valor_pedidos_em_aberto: -0,
         compra_terceiros: 0,
         nao_quer_negociar: 0,
+        restricao_financeira: 0,
         sem_contato: 0,
         valor_recuperado_total: -0,
         toneladas_recuperadas_total: -0,
@@ -240,6 +242,11 @@ routerAdd(
         kpiModel.nao_quer_negociar !== undefined && kpiModel.nao_quer_negociar !== null
           ? kpiModel.nao_quer_negociar
           : kpiModel.naoQuerNegociar || 0,
+      )
+      const restricaoFinanceiraCount = Number(
+        kpiModel.restricao_financeira !== undefined && kpiModel.restricao_financeira !== null
+          ? kpiModel.restricao_financeira
+          : kpiModel.restricaoFinanceira || 0,
       )
       const semContatoCount = Number(
         kpiModel.sem_contato !== undefined && kpiModel.sem_contato !== null
@@ -348,6 +355,7 @@ routerAdd(
           reativado_cruzamento: faturamentoCruzamentoCount,
           compra_terceiros: compraTerceirosCount,
           nao_quer_negociar: naoQuerNegociarCount,
+          restricao_financeira: restricaoFinanceiraCount,
           sem_contato: semContatoCount,
         },
         regioesMap: regioesMap,

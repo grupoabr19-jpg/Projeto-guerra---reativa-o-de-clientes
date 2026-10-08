@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-08T14:37:24.493Z",
+  "generatedAt": "2026-10-08T15:07:11.050Z",
   "collections": [
     {
       "name": "users",
@@ -224,7 +224,8 @@
             "nao_quer_negociar",
             "duplicado",
             "sem_contato",
-            "ativo_fora_base"
+            "ativo_fora_base",
+            "restricao_financeira"
           ]
         },
         {

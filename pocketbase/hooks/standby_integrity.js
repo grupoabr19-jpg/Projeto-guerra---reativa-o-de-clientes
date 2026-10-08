@@ -67,8 +67,12 @@ onRecordCreateRequest((e) => {
     // - SOMENTE quando Q3 = "Sim" (ou 'sim'), Q15 (valor) e Q16 (peso) são OBRIGATÓRIOS.
     // - Quando Q3 = "Não", Q15 e Q16 não são exigidos (e devem ser limpos se preenchidos).
     // - Se Q3 vier vazia (ficha aberta antes da mudança), tratar como não respondida sem travar.
-    // - Isenções existentes mantidas: sem_contato e duplicado nunca exigem.
-    if (desfecho !== 'sem_contato' && desfecho !== 'duplicado') {
+    // - Isenções existentes mantidas: sem_contato, duplicado e restricao_financeira nunca exigem.
+    if (
+      desfecho !== 'sem_contato' &&
+      desfecho !== 'duplicado' &&
+      desfecho !== 'restricao_financeira'
+    ) {
       const respostas = record.get('respostas') || {}
       const q3Val =
         respostas.q3 !== undefined && respostas.q3 !== null ? String(respostas.q3).trim() : ''
@@ -273,6 +277,7 @@ onRecordUpdateRequest((e) => {
       'sem_contato',
       'venda_perdida',
       'nao_quer_negociar',
+      'restricao_financeira',
       'compra_terceiros',
       'sem_perfil',
       'duplicado',

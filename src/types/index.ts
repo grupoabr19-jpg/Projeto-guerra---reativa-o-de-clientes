@@ -56,6 +56,7 @@ export type ClienteEstado =
   | 'contatado'
   | 'compra_terceiros'
   | 'nao_quer_negociar'
+  | 'restricao_financeira'
   | 'duplicado'
   | 'sem_contato'
   | 'suspenso'
@@ -523,6 +524,7 @@ export interface MetricasBaseKpisResponse {
     reativado_cruzamento?: number
     compra_terceiros: number
     nao_quer_negociar: number
+    restricao_financeira?: number
     sem_contato: number
   }
   regioesMap: Record<
@@ -634,6 +636,7 @@ export interface ReportsAnalyticsResponse {
     reativado_cruzamento?: number
     compra_terceiros: number
     nao_quer_negociar: number
+    restricao_financeira?: number
     sem_contato: number
   }
   cruzamentos: {

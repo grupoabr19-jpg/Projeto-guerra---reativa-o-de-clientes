@@ -232,6 +232,7 @@ export default function Dashboard() {
     reativado: 0,
     compra_terceiros: 0,
     nao_quer_negociar: 0,
+    restricao_financeira: 0,
     sem_contato: 0,
   }
 
@@ -1460,6 +1461,12 @@ export default function Dashboard() {
                   count: estadosContagem.nao_quer_negociar,
                   color: 'bg-slate-400',
                   barBg: 'bg-slate-200',
+                },
+                {
+                  label: 'Restrição Financeira',
+                  count: estadosContagem.restricao_financeira || 0,
+                  color: 'bg-amber-600',
+                  barBg: 'bg-amber-100',
                 },
                 {
                   label: 'Sem Contato (Esgotado)',
