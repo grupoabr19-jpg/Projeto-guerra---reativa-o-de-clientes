@@ -313,15 +313,15 @@ routerAdd(
       }
 
       // 1. Verifica se o operador já tem um cliente reservado ou em atendimento ativo (dentro do lock de 30 min)
-      // REGRA DE SANEAMENTO ATÔMICO: Se o lock ativo apontar para cliente que JÁ TEM desfecho gravado
-      // ou reagendamento futuro/ativo, o servidor ignora e saneia o registro (limpa lock e acerta estado),
-      // e segue para o próximo da fila — nunca mais devolve cliente concluído em loop!
+      // REGRA DE SANEAMENTO ATÔMICO CIRÚRGICA:
+      // Se o cliente apontado já tem desfecho concluído (em interacoes, respostas_formulario ou campos de desfecho do cliente)
+      // ou reagendamento futuro/gravado, o servidor limpa o lock direto no banco e prossegue para o próximo elegível — nunca devolve cliente concluído!
       try {
         const currentLocked = $app.findRecordsByFilter(
           'clientes',
           `operador = '${userId}' && (estado = 'reservado' || estado = 'em_atendimento') && lock_timestamp >= '${cutoffTime}'`,
           '-lock_timestamp',
-          5,
+          10,
           0,
         )
 
@@ -330,9 +330,22 @@ routerAdd(
             const candLock = currentLocked[lcIdx]
             const candReagPara = candLock.getString('reagendado_para')
             const candEstado = candLock.getString('estado')
+            const candPedidoEmAberto = candLock.getBool('pedido_em_aberto')
 
-            // Checar se o cliente já tem interação de conclusão/desfecho recente ou se já foi concluído
+            // Se for pedido em aberto pendente de faturamento, o operador mantém o vínculo legitimamente
+            if (candPedidoEmAberto) {
+              return e.json(200, {
+                cliente: candLock,
+                ja_reservado: true,
+                carteira_esgotada: false,
+                message: 'Você possui um cliente com pedido em aberto aguardando faturamento.',
+              })
+            }
+
+            // Checar se o cliente já tem desfecho concluído gravado em interacoes ou respostas_formulario
             let temDesfechoGravado = false
+            let ultimoDesfecho = ''
+
             try {
               const ultimasInteracoes = $app.findRecordsByFilter(
                 'interacoes',
@@ -343,40 +356,81 @@ routerAdd(
               )
               if (ultimasInteracoes && ultimasInteracoes.length > 0) {
                 temDesfechoGravado = true
+                ultimoDesfecho = ultimasInteracoes[0].getString('desfecho')
               }
             } catch (_) {}
+
+            if (!temDesfechoGravado) {
+              try {
+                const ultimasRespostas = $app.findRecordsByFilter(
+                  'respostas_formulario',
+                  `cliente = '${candLock.id}' && desfecho != ''`,
+                  '-created',
+                  1,
+                  0,
+                )
+                if (ultimasRespostas && ultimasRespostas.length > 0) {
+                  temDesfechoGravado = true
+                  ultimoDesfecho = ultimasRespostas[0].getString('desfecho')
+                }
+              } catch (_) {}
+            }
+
+            // Checar estados de desfecho gravados no próprio cliente
+            const estadosConcluidos = [
+              'reativado',
+              'reagendado',
+              'sem_contato',
+              'venda_perdida',
+              'nao_quer_negociar',
+              'compra_terceiros',
+              'sem_perfil',
+              'duplicado',
+              'ativo_fora_base',
+            ]
+            const clienteEmEstadoConcluido = estadosConcluidos.includes(candEstado)
 
             const temReagendamentoFuturoOuGravado = Boolean(
               candReagPara && candReagPara.trim() !== '',
             )
 
-            if (temDesfechoGravado || temReagendamentoFuturoOuGravado) {
-              // Saneamento defensivo: limpa lock e operador e ajusta o estado
+            if (temDesfechoGravado || temReagendamentoFuturoOuGravado || clienteEmEstadoConcluido) {
+              // Saneamento cirúrgico no banco: zera lock_timestamp e operador, ajusta o estado ao desfecho real
+              const desfechoEfetivo =
+                ultimoDesfecho ||
+                (temReagendamentoFuturoOuGravado
+                  ? 'reagendado'
+                  : clienteEmEstadoConcluido
+                    ? candEstado
+                    : 'na_base')
+
               console.log(
-                `[queue_reserve] Saneando cliente concluído preso em lock: ${candLock.id} (código ${candLock.getString('codigo')}, desfecho: ${temDesfechoGravado}, reag: ${temReagendamentoFuturoOuGravado})`,
+                `[queue_reserve] Saneando cliente concluído preso em lock: ${candLock.id} (código ${candLock.getString('codigo')}, desfecho: ${desfechoEfetivo})`,
               )
+
               try {
                 $app
                   .db()
                   .newQuery(
                     `UPDATE clientes
-                   SET operador = '',
-                       lock_timestamp = '1970-01-01 00:00:00.000Z',
-                       estado = CASE
-                         WHEN reagendado_para IS NOT NULL AND reagendado_para != '' THEN 'reagendado'
-                         WHEN estado = 'em_atendimento' OR estado = 'reservado' THEN 'na_base'
-                         ELSE estado
-                       END
-                   WHERE id = {:id}`,
+                     SET operador = '',
+                         lock_timestamp = '1970-01-01 00:00:00.000Z',
+                         estado = CASE
+                           WHEN reagendado_para IS NOT NULL AND reagendado_para != '' THEN 'reagendado'
+                           WHEN {:desfecho} != '' AND {:desfecho} != 'reservado' AND {:desfecho} != 'em_atendimento' THEN {:desfecho}
+                           WHEN estado = 'em_atendimento' OR estado = 'reservado' THEN 'na_base'
+                           ELSE estado
+                         END
+                     WHERE id = {:id}`,
                   )
-                  .bind({ id: candLock.id })
+                  .bind({ id: candLock.id, desfecho: desfechoEfetivo })
                   .execute()
               } catch (sanErr) {
                 console.log(
                   '[queue_reserve] Erro ao sanear cliente com desfecho: ' + sanErr.message,
                 )
               }
-              // Não devolve este cliente concluído! Continua verificando outros ou segue para a fila
+              // Não devolve este cliente concluído! Continua verificando os demais ou prossegue para a fila
               continue
             }
 

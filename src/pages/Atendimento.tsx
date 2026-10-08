@@ -809,6 +809,14 @@ export default function AtendimentoPage() {
   // Devolver cliente à fila e liberar lock (abrir diálogo shadcn)
   const handleReleaseLock = () => {
     if (!cliente) return
+    if (cliente.operador && user && cliente.operador !== user.id && user.role !== 'admin') {
+      toast({
+        variant: 'destructive',
+        title: 'Operação não permitida',
+        description: 'Não é possível devolver cliente reservado por outro operador.',
+      })
+      return
+    }
     setShowConfirmAbandonar(true)
   }
 
@@ -1021,9 +1029,11 @@ export default function AtendimentoPage() {
       })
 
       // 2. Determinar novos campos no Cliente
+      // Valores reais aceitos pelo PocketBase para zerar campos: string vazia ''
       const updatePayload: Partial<Cliente> = {
         estado: desfechoFinal,
-        lock_timestamp: undefined, // remove o lock
+        lock_timestamp: '', // remove o lock atomicamente no PocketBase
+        operador: '', // padrão: desvincula operador ao concluir
       }
 
       // Regras específicas da Máquina de Estados:
@@ -1045,29 +1055,37 @@ export default function AtendimentoPage() {
         } else {
           updatePayload.pedido_em_aberto = false
           updatePayload.status_faturamento = 'nenhum'
-          updatePayload.operador = undefined
+          updatePayload.operador = ''
         }
 
-        updatePayload.lock_timestamp = undefined
-        updatePayload.quarentena_ate = undefined
+        updatePayload.lock_timestamp = ''
+        updatePayload.quarentena_ate = ''
       } else if (desfechoFinal === 'reagendado') {
         const rawDate = new Date(reagendarData)
         const ajuste = ajustarParaExpediente(rawDate)
         updatePayload.reagendado_para = ajuste.dataAjustada.toISOString()
         updatePayload.reagendado_operador = user.id
+        updatePayload.operador = ''
+        updatePayload.lock_timestamp = ''
       } else if (desfechoFinal === 'sem_contato') {
         const currentTentativas = (cliente.tentativas_sem_contato || 0) + 1
         updatePayload.tentativas_sem_contato = currentTentativas
         if (currentTentativas >= 3) {
           updatePayload.telefone_invalido = true
         }
+        updatePayload.operador = ''
+        updatePayload.lock_timestamp = ''
       } else if (desfechoFinal === 'nao_quer_negociar') {
         // Quarentena de 90 dias configurável
         const quarentena = new Date()
         quarentena.setDate(quarentena.getDate() + 90)
         updatePayload.quarentena_ate = quarentena.toISOString()
+        updatePayload.operador = ''
+        updatePayload.lock_timestamp = ''
       } else if (desfechoFinal === 'duplicado') {
         updatePayload.duplicado_de_codigo = duplicadoCodigo
+        updatePayload.operador = ''
+        updatePayload.lock_timestamp = ''
       } else if (desfechoFinal === 'ativo_fora_base') {
         // Regra da Frente 2: Cliente Ativo — Fora da Base de Inativos
         // Marcação permanente no banco para nunca mais voltar para a fila de inativos
@@ -1082,9 +1100,9 @@ export default function AtendimentoPage() {
           // Regra da Frente 4: desfecho 'cliente_final' migra para a Base Cliente Final
           updatePayload.base_categoria = 'cliente_final'
         }
-        updatePayload.operador = undefined
-        updatePayload.lock_timestamp = undefined
-        updatePayload.quarentena_ate = undefined
+        updatePayload.operador = ''
+        updatePayload.lock_timestamp = ''
+        updatePayload.quarentena_ate = ''
       }
 
       await updateCliente(cliente.id, updatePayload)
@@ -3239,6 +3257,45 @@ export default function AtendimentoPage() {
                       Confirmar Destrave
                     </>
                   )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* AlertDialog de Confirmação de Abandono / Devolução de Cliente à Fila */}
+          <AlertDialog open={showConfirmAbandonar} onOpenChange={setShowConfirmAbandonar}>
+            <AlertDialogContent className="max-w-md">
+              <AlertDialogHeader>
+                <div className="flex items-center space-x-2 text-rose-600">
+                  <RotateCcw className="h-5 w-5" />
+                  <AlertDialogTitle>Abandonar e Devolver à Fila?</AlertDialogTitle>
+                </div>
+                <AlertDialogDescription className="text-xs text-slate-600 space-y-2 pt-2">
+                  <p>
+                    Tem certeza de que deseja liberar o cliente{' '}
+                    <strong className="text-slate-900">{cliente?.nome}</strong> (
+                    <span className="font-mono">{cliente?.codigo}</span>)?
+                  </p>
+                  <p className="bg-rose-50 border border-rose-200 text-rose-900 p-2.5 rounded-md">
+                    O lock atômico será desfeito, o rascunho preenchido será preservado e o contato
+                    ficará imediatamente disponível para a fila da equipe.
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Esta ação será registrada no histórico de eventos e na linha do tempo.
+                  </p>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="text-xs">Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault()
+                    handleConfirmReleaseLock()
+                  }}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                  Sim, Devolver à Fila
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

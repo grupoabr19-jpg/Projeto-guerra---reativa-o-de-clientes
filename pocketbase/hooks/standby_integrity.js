@@ -259,6 +259,37 @@ onRecordUpdateRequest((e) => {
         }
       }
     }
+
+    // REGRA DE BLINDAGEM ATÔMICA DO DESFECHO (Requisito D):
+    // Toda transição de 'em_atendimento' ou 'reservado' para qualquer desfecho
+    // reseta lock_timestamp e desvincula operador atomicamente no backend,
+    // preservando o vínculo do operador apenas se houver pedido em aberto pendente de faturamento.
+    const novoEstadoTrans = record.getString('estado')
+    const eraAtendimentoOuReservado =
+      estadoOriginal === 'em_atendimento' || estadoOriginal === 'reservado'
+    const estadosConclusaoDesfecho = [
+      'reativado',
+      'reagendado',
+      'sem_contato',
+      'venda_perdida',
+      'nao_quer_negociar',
+      'compra_terceiros',
+      'sem_perfil',
+      'duplicado',
+      'ativo_fora_base',
+      'na_base',
+    ]
+
+    if (eraAtendimentoOuReservado && estadosConclusaoDesfecho.includes(novoEstadoTrans)) {
+      const temPedidoEmAberto = record.getBool('pedido_em_aberto')
+      // Sempre remove o lock_timestamp da sessão
+      record.set('lock_timestamp', null)
+
+      // Só mantém operador vinculado se for pedido em aberto pendente de faturamento
+      if (!temPedidoEmAberto) {
+        record.set('operador', '')
+      }
+    }
   } catch (err) {
     if (err instanceof BadRequestError || (err && err.name === 'BadRequestError')) {
       throw err
