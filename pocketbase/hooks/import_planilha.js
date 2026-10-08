@@ -3,7 +3,7 @@ routerAdd(
   '/backend/v1/import/process-rows',
   (e) => {
     try {
-      const userId = e.auth?.id
+      const userId = e.auth && e.auth.id ? e.auth.id : null
       if (!userId) return e.unauthorizedError('auth required')
 
       const body = e.requestInfo().body || {}
@@ -1517,7 +1517,7 @@ routerAdd(
           // Resiliência de registro individual: falhas em campos inválidos ou validação de formato
           // NÃO derrubam o lote inteiro. Rejeitam a linha com detalhe e continuam o lote.
           countRejeitadas++
-          const cId = String(row?.codigo || '')
+          const cId = String((row && row.codigo) || '')
             .trim()
             .toUpperCase()
           console.error(

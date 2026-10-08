@@ -3,7 +3,7 @@ routerAdd(
   '/backend/v1/queue/release-lock',
   (e) => {
     try {
-      const userId = e.auth?.id
+      const userId = e.auth && e.auth.id ? e.auth.id : null
       if (!userId) return e.unauthorizedError('auth required')
 
       const body = e.requestInfo().body || {}

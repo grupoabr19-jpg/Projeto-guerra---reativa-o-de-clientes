@@ -78,9 +78,10 @@ routerAdd('POST', '/backend/v1/kommo/test', (e) => {
         headers: headers,
         timeout: 5,
       })
-      const pipelinesRaw = pipRes.json?._embedded?.pipelines || []
+      const pipelinesRaw =
+        (pipRes && pipRes.json && pipRes.json._embedded && pipRes.json._embedded.pipelines) || []
       pipelines = pipelinesRaw.map((p) => {
-        const stagesRaw = p._embedded?.statuses || []
+        const stagesRaw = (p && p._embedded && p._embedded.statuses) || []
         return {
           id: p.id,
           name: p.name,
@@ -105,7 +106,9 @@ routerAdd('POST', '/backend/v1/kommo/test', (e) => {
         headers: headers,
         timeout: 5,
       })
-      const usersRaw = usersRes.json?._embedded?.users || []
+      const usersRaw =
+        (usersRes && usersRes.json && usersRes.json._embedded && usersRes.json._embedded.users) ||
+        []
       users = usersRaw.map((u) => ({
         id: u.id,
         name: u.name,
@@ -122,7 +125,12 @@ routerAdd('POST', '/backend/v1/kommo/test', (e) => {
         headers: headers,
         timeout: 5,
       })
-      const contactFieldsRaw = contactFieldsRes.json?._embedded?.custom_fields || []
+      const contactFieldsRaw =
+        (contactFieldsRes &&
+          contactFieldsRes.json &&
+          contactFieldsRes.json._embedded &&
+          contactFieldsRes.json._embedded.custom_fields) ||
+        []
       contactFields = contactFieldsRaw.map((f) => ({
         id: f.id,
         name: f.name,
@@ -140,7 +148,12 @@ routerAdd('POST', '/backend/v1/kommo/test', (e) => {
         headers: headers,
         timeout: 5,
       })
-      const leadFieldsRaw = leadFieldsRes.json?._embedded?.custom_fields || []
+      const leadFieldsRaw =
+        (leadFieldsRes &&
+          leadFieldsRes.json &&
+          leadFieldsRes.json._embedded &&
+          leadFieldsRes.json._embedded.custom_fields) ||
+        []
       leadFields = leadFieldsRaw.map((f) => ({
         id: f.id,
         name: f.name,
@@ -346,8 +359,13 @@ routerAdd('GET', '/backend/v1/kommo/inspect-lead', (e) => {
 
     // 2b. If talk found, fetch messages
     let talkMessages = null
-    const rawTalk = talksData?._embedded?.talks?.[0]
-    const talkId = rawTalk?.talk_id || rawTalk?.id
+    const rawTalk =
+      (talksData &&
+        talksData._embedded &&
+        talksData._embedded.talks &&
+        talksData._embedded.talks[0]) ||
+      null
+    const talkId = rawTalk ? rawTalk.talk_id || rawTalk.id : null
     if (talkId) {
       try {
         const msgRes = $http.send({
@@ -388,7 +406,13 @@ routerAdd('GET', '/backend/v1/kommo/inspect-lead', (e) => {
 
     // 4. Contact events if lead has contacts
     let contactEvents = null
-    const contactId = leadData?._embedded?.contacts?.[0]?.id
+    const contactId =
+      (leadData &&
+        leadData._embedded &&
+        leadData._embedded.contacts &&
+        leadData._embedded.contacts[0] &&
+        leadData._embedded.contacts[0].id) ||
+      null
     if (contactId) {
       try {
         const res = $http.send({
