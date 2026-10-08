@@ -33,6 +33,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Switch } from '@/components/ui/switch'
 import {
   Select,
@@ -243,6 +244,27 @@ export default function Dashboard() {
     total: 0,
     breakdown: {},
     itens: [],
+  }
+
+  // Helpers de formatação para abreviação elegante de valores grandes com tooltip
+  const formatCompactCurrency = (valor: number): string => {
+    if (valor >= 1_000_000_000) {
+      const val = valor / 1_000_000_000
+      return `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} bi`
+    }
+    if (valor >= 1_000_000) {
+      const val = valor / 1_000_000
+      return `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} mi`
+    }
+    if (valor >= 100_000) {
+      const val = valor / 1_000
+      return `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} mil`
+    }
+    return `R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
+
+  const formatFullCurrency = (valor: number): string => {
+    return `R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 
   return (
@@ -1009,7 +1031,7 @@ export default function Dashboard() {
       )}
 
       {/* SEÇÃO DA BASE DE CLIENTES E INATIVOS (KPIS ORIGINAIS DA CARTEIRA) */}
-      <div className="pt-2 space-y-3">
+      <div className="pt-2 space-y-4">
         {erroBaseKpis && (
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 flex items-center justify-between text-xs text-amber-900 shadow-2xs">
             <div className="flex items-center space-x-2">
@@ -1027,216 +1049,393 @@ export default function Dashboard() {
             </Button>
           </div>
         )}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
-            Métricas de Carteira e Recuperação da Base
-          </h3>
-          <span className="text-[11px] text-slate-500">
-            Reativações reais da equipe separadas de faturamento recente do cruzamento
-          </span>
+
+        {/* Cabeçalho da Seção */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-slate-200">
+          <div className="flex items-center space-x-2">
+            <div className="h-7 w-7 rounded-lg bg-[#253575] text-white flex items-center justify-center shadow-xs">
+              <Users className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-[#142758] uppercase tracking-wider">
+                Métricas de Carteira e Recuperação da Base
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Reativações reais da equipe separadas de faturamento recente do cruzamento
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 self-start sm:self-auto">
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+              7 Indicadores
+            </span>
+          </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3.5">
-          {/* 0. NOVO CARD: PEDIDOS EM ABERTO */}
-          <Card className="border-amber-300 bg-gradient-to-br from-amber-50 via-white to-orange-50/40 shadow-sm hover:border-amber-400 transition-colors">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <div>
-                <CardTitle className="text-xs font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
-                  <span>Pedidos em Aberto</span>
-                  <Badge className="bg-amber-600 text-white text-[9px] px-1 py-0">Pendente</Badge>
-                </CardTitle>
-                <span className="text-[10px] text-amber-800 block">Aguardando faturamento</span>
+
+        {/* Grid dos 7 Indicadores em Layout Arejado (4 colunas no desktop xl, 2 colunas sm/md, 1 mobile) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {/* CARD 1: TOTAL INATIVOS BASE (Base) */}
+          <Card className="border-slate-200/90 bg-white shadow-xs hover:shadow-md hover:border-[#253575]/40 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+            <div className="p-4 pb-3">
+              <div className="flex items-start justify-between gap-2 min-h-[42px]">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                      Total Inativos Base
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                    Carteira geral sob acompanhamento
+                  </span>
+                </div>
+                <div className="h-8 w-8 rounded-lg bg-[#253575]/10 flex items-center justify-center text-[#253575] shrink-0 group-hover:bg-[#253575] group-hover:text-white transition-colors">
+                  <Users className="h-4 w-4" />
+                </div>
               </div>
-              <div className="h-8 w-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 shrink-0 shadow-2xs">
-                <ShoppingBag className="h-4 w-4" />
+
+              {/* Valor Principal Protagonista */}
+              <div className="mt-4">
+                <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
+                  {totalBase.toLocaleString('pt-BR')}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
+                  Aguardando contato ou reconciliação
+                </p>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-baseline justify-between">
-                <div className="text-2xl font-black text-amber-800 tabular-nums font-mono">
+            </div>
+
+            {/* Rodapé Alinhado */}
+            <div className="px-4 py-2.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+              <span>Base total cadastrada</span>
+              <span className="font-mono text-slate-400 text-[10px]">100%</span>
+            </div>
+          </Card>
+
+          {/* CARD 2: NA FILA DE TRABALHO (Base) */}
+          <Card className="border-slate-200/90 bg-white shadow-xs hover:shadow-md hover:border-[#253575]/40 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+            <div className="p-4 pb-3">
+              <div className="flex items-start justify-between gap-2 min-h-[42px]">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                      Na Fila de Trabalho
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                    Esteira disponível para contato
+                  </span>
+                </div>
+                <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center text-[#253575] shrink-0 group-hover:bg-[#253575] group-hover:text-white transition-colors">
+                  <Clock className="h-4 w-4" />
+                </div>
+              </div>
+
+              {/* Valor Principal Protagonista */}
+              <div className="mt-4">
+                <div className="text-3xl font-extrabold text-[#253575] tabular-nums tracking-tight">
+                  {naFila.toLocaleString('pt-BR')}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
+                  Clientes prontos para abordagem
+                </p>
+              </div>
+            </div>
+
+            {/* Rodapé Alinhado */}
+            <div className="px-4 py-2.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+              <span>Disponíveis p/ operadores</span>
+              <span className="font-mono text-slate-500 font-semibold text-[11px]">
+                {totalBase > 0 ? `${Math.round((naFila / totalBase) * 100)}% da base` : '—'}
+              </span>
+            </div>
+          </Card>
+
+          {/* CARD 3: CLIENTES REATIVADOS (Resultado Real da Equipe) */}
+          <Card className="border-emerald-200/90 bg-emerald-50/20 shadow-xs hover:shadow-md hover:border-emerald-400 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+            <div className="p-4 pb-3">
+              <div className="flex items-start justify-between gap-2 min-h-[42px]">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-emerald-950 uppercase tracking-wider">
+                      Clientes Reativados
+                    </span>
+                    <Badge className="bg-emerald-700 text-white hover:bg-emerald-700 text-[10px] font-semibold px-1.5 py-0 rounded border-0 shrink-0">
+                      Real Equipe
+                    </Badge>
+                  </div>
+                  <span className="text-[11px] text-emerald-800 line-clamp-1 mt-0.5">
+                    Atendidos c/ operador e pedido
+                  </span>
+                </div>
+                <div className="h-8 w-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 group-hover:bg-emerald-700 group-hover:text-white transition-colors">
+                  <UserCheck className="h-4 w-4" />
+                </div>
+              </div>
+
+              {/* Valor Principal Protagonista */}
+              <div className="mt-4">
+                <div className="text-3xl font-extrabold text-emerald-800 tabular-nums tracking-tight">
+                  {reativados.toLocaleString('pt-BR')}
+                </div>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-emerald-800 cursor-pointer hover:text-emerald-950">
+                        <ArrowUpRight className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
+                        <span className="truncate">{formatCompactCurrency(valorRecuperado)}</span>
+                        <span className="text-emerald-700 font-normal shrink-0">
+                          ({toneladasRecuperadas.toLocaleString('pt-BR')} ton)
+                        </span>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-slate-900 text-white text-xs p-2 max-w-xs shadow-lg">
+                      <p className="font-bold">Reativações Reais da Equipe:</p>
+                      <p className="font-mono text-emerald-400">
+                        {formatFullCurrency(valorRecuperado)}
+                      </p>
+                      <p className="text-slate-300 text-[11px] mt-0.5">
+                        Volume: {toneladasRecuperadas.toLocaleString('pt-BR')} toneladas
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            </div>
+
+            {/* Rodapé Alinhado */}
+            <div className="px-4 py-2.5 bg-emerald-100/50 border-t border-emerald-200/70 flex items-center justify-between text-[11px] text-emerald-900">
+              <span className="font-medium">Conversões confirmadas</span>
+              <span className="font-semibold text-emerald-800 text-[11px]">Sucesso comprovado</span>
+            </div>
+          </Card>
+
+          {/* CARD 4: TAXA DE RECUPERAÇÃO (Resultado) */}
+          <Card className="border-slate-200/90 bg-white shadow-xs hover:shadow-md hover:border-[#253575]/40 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+            <div className="p-4 pb-3">
+              <div className="flex items-start justify-between gap-2 min-h-[42px]">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                      Taxa de Recuperação
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                    Eficiência de reativação real
+                  </span>
+                </div>
+                <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center text-[#253575] shrink-0 group-hover:bg-[#253575] group-hover:text-white transition-colors">
+                  <Percent className="h-4 w-4" />
+                </div>
+              </div>
+
+              {/* Valor Principal Protagonista */}
+              <div className="mt-4">
+                <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
+                  {taxaReativacao.toLocaleString('pt-BR', {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1,
+                  })}
+                  %
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
+                  Meta operacional da esteira: &ge; 18%
+                </p>
+              </div>
+            </div>
+
+            {/* Rodapé Alinhado com Barra de Progresso Relativa à Meta */}
+            <div className="px-4 py-2.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+              <span className="truncate">Meta: &ge; 18%</span>
+              <span
+                className={`font-semibold text-[11px] ${
+                  taxaReativacao >= 18 ? 'text-emerald-700' : 'text-slate-600'
+                }`}
+              >
+                {taxaReativacao >= 18 ? 'Meta Atingida' : 'Em andamento'}
+              </span>
+            </div>
+          </Card>
+
+          {/* CARD 5: PEDIDOS EM ABERTO (Financeiro / Pendente) */}
+          <Card className="border-amber-200/90 bg-white shadow-xs hover:shadow-md hover:border-amber-400 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+            <div className="p-4 pb-3">
+              <div className="flex items-start justify-between gap-2 min-h-[42px]">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider">
+                      Pedidos em Aberto
+                    </span>
+                    <Badge className="bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-100 text-[10px] font-semibold px-1.5 py-0 rounded shrink-0">
+                      Pendente
+                    </Badge>
+                  </div>
+                  <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                    Aguardando faturamento / emissão NF
+                  </span>
+                </div>
+                <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-700 shrink-0 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                  <ShoppingBag className="h-4 w-4" />
+                </div>
+              </div>
+
+              {/* Valor Principal Protagonista */}
+              <div className="mt-4">
+                <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
                   {pedidosEmAbertoCount}
                 </div>
-                <Link
-                  to="/clientes"
-                  className="text-[11px] font-semibold text-amber-800 hover:text-amber-950 hover:underline flex items-center"
-                >
-                  Listar &rarr;
-                </Link>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <p className="mt-1 text-[11px] font-semibold text-slate-700 cursor-pointer hover:text-slate-900 truncate">
+                        {formatCompactCurrency(valorPedidosEmAberto)}
+                      </p>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-slate-900 text-white text-xs p-2 max-w-xs shadow-lg">
+                      <p className="font-bold">Valor em Aberto:</p>
+                      <p className="font-mono text-amber-400">
+                        {formatFullCurrency(valorPedidosEmAberto)}
+                      </p>
+                      <p className="text-slate-300 text-[11px] mt-0.5">
+                        {pedidosEmAbertoCount}{' '}
+                        {pedidosEmAbertoCount === 1 ? 'pedido aguardando' : 'pedidos aguardando'}{' '}
+                        emissão de NF
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
-              <div className="mt-1 space-y-0.5">
-                <p className="text-[11px] font-bold text-amber-900 tabular-nums truncate">
-                  R$ {valorPedidosEmAberto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </p>
-                <p className="text-[10px] text-slate-500 leading-tight">
-                  Reativações com pedido aguardando emissão de NF
-                </p>
-              </div>
-            </CardContent>
+            </div>
+
+            {/* Rodapé Alinhado com Link de Ação CTA em Laranja */}
+            <div className="px-4 py-2.5 bg-amber-50/40 border-t border-amber-100 flex items-center justify-between text-[11px]">
+              <span className="text-slate-500 truncate">Reativações c/ pedido</span>
+              <Link
+                to="/clientes"
+                className="font-bold text-[#F18800] hover:text-[#d97706] hover:underline inline-flex items-center gap-0.5 shrink-0 transition-colors"
+              >
+                Listar &rarr;
+              </Link>
+            </div>
           </Card>
 
-          {/* 1. TOTAL INATIVOS BASE */}
-          <Card className="border-slate-200 shadow-sm hover:shadow transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Total Inativos Base
-              </CardTitle>
-              <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-                <Users className="h-4 w-4" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-slate-900 tabular-nums">{totalBase}</div>
-              <p className="text-[11px] text-slate-500 mt-1 flex items-center">
-                Aguardando contato ou reconciliação
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* 2. NA FILA DE TRABALHO */}
-          <Card className="border-slate-200 shadow-sm hover:shadow transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Na Fila de Trabalho
-              </CardTitle>
-              <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-                <Clock className="h-4 w-4" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-amber-600 tabular-nums">{naFila}</div>
-              <p className="text-[11px] text-slate-500 mt-1 flex items-center">
-                Clientes disponíveis para novo contato
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* 3. CLIENTES REATIVADOS (APENAS REATIVAÇÕES REAIS DA EQUIPE) */}
-          <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50/50 via-white to-white shadow-sm hover:shadow transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <div>
-                <CardTitle className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
-                  <span>Clientes Reativados</span>
-                  <Badge className="bg-emerald-600 text-white text-[9px] px-1 py-0">
-                    Real Equipe
-                  </Badge>
-                </CardTitle>
-                <span className="text-[10px] text-emerald-700 block">
-                  Atendidos c/ operador e pedido
-                </span>
-              </div>
-              <div className="h-8 w-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
-                <UserCheck className="h-4 w-4" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-emerald-600 tabular-nums">{reativados}</div>
-              <p className="text-[11px] text-emerald-700 mt-1 flex items-center font-medium">
-                <ArrowUpRight className="h-3 w-3 mr-0.5 shrink-0" />
-                <span className="truncate">
-                  R$ {valorRecuperado.toLocaleString('pt-BR')} ({toneladasRecuperadas} ton)
-                </span>
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* 4. TAXA DE RECUPERAÇÃO (APENAS REATIVAÇÕES REAIS) */}
-          <Card className="border-slate-200 shadow-sm hover:shadow transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Taxa de Recuperação
-              </CardTitle>
-              <div className="h-8 w-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
-                <Percent className="h-4 w-4" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-indigo-600 tabular-nums">
-                {taxaReativacao}%
-              </div>
-              <p className="text-[11px] text-slate-500 mt-1 flex items-center">
-                Meta da operação: &ge; 18%
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* 5. NOVO CARD: FATURAMENTO RECENTE NA BASE (IDENTIFICADOS NO CRUZAMENTO) */}
-          <Card className="border-amber-200 bg-gradient-to-br from-amber-50/70 via-white to-orange-50/30 shadow-sm hover:border-amber-400 transition-colors">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <div>
-                <CardTitle className="text-xs font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
-                  <span>Faturamento Recente</span>
-                  <Badge className="bg-amber-500 text-white text-[9px] px-1 py-0">Cruzamento</Badge>
-                </CardTitle>
-                <span className="text-[10px] text-amber-800 block">
-                  Identificados na base sem operador
-                </span>
-              </div>
-              <div className="h-8 w-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 shrink-0 shadow-2xs">
-                <Sparkles className="h-4 w-4" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-baseline justify-between">
-                <div className="text-2xl font-black text-amber-700 tabular-nums font-mono">
-                  {faturamentoCruzamentoCount}
+          {/* CARD 6: FATURAMENTO RECENTE (Financeiro / Cruzamento) */}
+          <Card className="border-amber-200/90 bg-white shadow-xs hover:shadow-md hover:border-amber-400 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+            <div className="p-4 pb-3">
+              <div className="flex items-start justify-between gap-2 min-h-[42px]">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider">
+                      Faturamento Recente
+                    </span>
+                    <Badge className="bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-100 text-[10px] font-semibold px-1.5 py-0 rounded shrink-0">
+                      Cruzamento
+                    </Badge>
+                  </div>
+                  <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                    Identificados na base sem operador
+                  </span>
                 </div>
-                <Link
-                  to="/relatorios"
-                  className="text-[11px] font-semibold text-amber-800 hover:text-amber-950 hover:underline flex items-center"
-                >
-                  Limpar &rarr;
-                </Link>
+                <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-700 shrink-0 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                  <Sparkles className="h-4 w-4" />
+                </div>
               </div>
-              <div className="mt-1 space-y-0.5">
-                <p className="text-[11px] font-bold text-amber-900 tabular-nums truncate">
-                  R$ {valorFaturamentoCruzamento.toLocaleString('pt-BR')} (
-                  {toneladasFaturamentoCruzamento} ton)
-                </p>
-                <p className="text-[10px] text-slate-500 leading-tight">
-                  Identificados no cruzamento • insumo para limpeza de base
-                </p>
+
+              {/* Valor Principal Protagonista */}
+              <div className="mt-4">
+                <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
+                  {faturamentoCruzamentoCount.toLocaleString('pt-BR')}
+                </div>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-slate-700 cursor-pointer hover:text-slate-900">
+                        <span className="truncate">
+                          {formatCompactCurrency(valorFaturamentoCruzamento)}
+                        </span>
+                        <span className="text-slate-500 font-normal shrink-0">
+                          ({toneladasFaturamentoCruzamento.toLocaleString('pt-BR')} ton)
+                        </span>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-slate-900 text-white text-xs p-2 max-w-xs shadow-lg">
+                      <p className="font-bold">Faturamento Recente via Cruzamento:</p>
+                      <p className="font-mono text-amber-400">
+                        {formatFullCurrency(valorFaturamentoCruzamento)}
+                      </p>
+                      <p className="text-slate-300 text-[11px] mt-0.5">
+                        Volume: {toneladasFaturamentoCruzamento.toLocaleString('pt-BR')} toneladas
+                      </p>
+                      <p className="text-slate-400 text-[10px] mt-1 border-t border-slate-700 pt-1">
+                        Insumo para exclusão/limpeza de base
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
-            </CardContent>
+            </div>
+
+            {/* Rodapé Alinhado com Link de Ação CTA em Laranja */}
+            <div className="px-4 py-2.5 bg-amber-50/40 border-t border-amber-100 flex items-center justify-between text-[11px]">
+              <span className="text-slate-500 truncate">Insumo para esteira</span>
+              <Link
+                to="/relatorios"
+                className="font-bold text-[#F18800] hover:text-[#d97706] hover:underline inline-flex items-center gap-0.5 shrink-0 transition-colors"
+              >
+                Limpar &rarr;
+              </Link>
+            </div>
           </Card>
 
-          {/* 6. ATIVOS FORA DA BASE (LIMPEZA CONCLUÍDA) */}
-          <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50/70 via-white to-teal-50/40 shadow-sm hover:border-emerald-400 transition-colors">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <div>
-                <CardTitle className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
-                  <span>Ativos Fora da Base</span>
-                  <Badge className="bg-emerald-600 text-white text-[9px] px-1 py-0">Limpeza</Badge>
-                </CardTitle>
-                <span className="text-[10px] text-emerald-700 block">
-                  Clientes ativos removidos da esteira
-                </span>
-              </div>
-              <div className="h-8 w-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0 shadow-2xs">
-                <ShieldCheck className="h-4 w-4" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-baseline justify-between">
-                <div className="text-2xl font-black text-emerald-700 tabular-nums font-mono">
-                  {loadingAtendimentos ? '—' : ativosRemovidosData.total}
+          {/* CARD 7: ATIVOS FORA DA BASE (Base / Limpeza) */}
+          <Card className="border-slate-200/90 bg-white shadow-xs hover:shadow-md hover:border-[#253575]/40 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+            <div className="p-4 pb-3">
+              <div className="flex items-start justify-between gap-2 min-h-[42px]">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider">
+                      Ativos Fora da Base
+                    </span>
+                    <Badge className="bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-100 text-[10px] font-semibold px-1.5 py-0 rounded shrink-0">
+                      Limpeza
+                    </Badge>
+                  </div>
+                  <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                    Clientes ativos removidos da esteira
+                  </span>
                 </div>
-                <Link
-                  to="/relatorios"
-                  className="text-[11px] font-semibold text-emerald-800 hover:text-emerald-950 hover:underline flex items-center"
-                >
-                  Ver no Relatório &rarr;
-                </Link>
+                <div className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 shrink-0 group-hover:bg-[#253575] group-hover:text-white transition-colors">
+                  <ShieldCheck className="h-4 w-4" />
+                </div>
               </div>
-              <p className="text-[10px] text-slate-500 mt-1">
-                {selectedPeriodo === 'hoje'
-                  ? 'Removidos hoje'
-                  : selectedPeriodo === '7dias'
-                    ? 'Últimos 7 dias'
-                    : selectedPeriodo === '30dias'
-                      ? 'Últimos 30 dias'
-                      : 'Acumulado total'}
-                {selectedRegion !== 'todas' ? ` • ${selectedRegion}` : ' • Todas rotas'}
-              </p>
-            </CardContent>
+
+              {/* Valor Principal Protagonista */}
+              <div className="mt-4">
+                <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
+                  {loadingAtendimentos ? '—' : ativosRemovidosData.total.toLocaleString('pt-BR')}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
+                  {selectedPeriodo === 'hoje'
+                    ? 'Removidos hoje'
+                    : selectedPeriodo === '7dias'
+                      ? 'Últimos 7 dias'
+                      : selectedPeriodo === '30dias'
+                        ? 'Últimos 30 dias'
+                        : 'Acumulado total'}
+                  {selectedRegion !== 'todas' ? ` • ${selectedRegion}` : ' • Todas rotas'}
+                </p>
+              </div>
+            </div>
+
+            {/* Rodapé Alinhado com Link de Ação CTA em Laranja */}
+            <div className="px-4 py-2.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-[11px]">
+              <span className="text-slate-500 truncate">Auditoria de esteira</span>
+              <Link
+                to="/relatorios"
+                className="font-bold text-[#F18800] hover:text-[#d97706] hover:underline inline-flex items-center gap-0.5 shrink-0 transition-colors"
+              >
+                Ver no Relatório &rarr;
+              </Link>
+            </div>
           </Card>
         </div>
       </div>
