@@ -172,8 +172,19 @@ export async function fetchInteracoesByCliente(clienteId: string) {
   return pb.collection('interacoes').getFullList<Interacao>({
     filter: `cliente = '${clienteId}'`,
     sort: '-created',
-    expand: 'operador',
+    expand: 'operador,respostas_formulario_via_interacao',
   })
+}
+
+export async function fetchRespostasFormularioByCliente(clienteId: string) {
+  try {
+    return await pb.collection('respostas_formulario').getFullList<RespostaFormulario>({
+      filter: `cliente = '${clienteId}'`,
+      sort: '-created',
+    })
+  } catch {
+    return []
+  }
 }
 
 export async function createInteracao(data: {
@@ -199,8 +210,37 @@ export async function saveRespostasFormulario(data: {
   desfecho: string
   valor_potencial?: number
   toneladas_potencial?: number
+  anexos?: File[]
 }) {
-  return pb.collection('respostas_formulario').create<RespostaFormulario>(data)
+  const formData = new FormData()
+  formData.append('cliente', data.cliente)
+  formData.append('operador', data.operador)
+  if (data.interacao) {
+    formData.append('interacao', data.interacao)
+  }
+  formData.append('desfecho', data.desfecho)
+  formData.append('respostas', JSON.stringify(data.respostas || {}))
+
+  if (data.valor_potencial !== undefined && data.valor_potencial !== null) {
+    formData.append('valor_potencial', String(data.valor_potencial))
+  }
+  if (data.toneladas_potencial !== undefined && data.toneladas_potencial !== null) {
+    formData.append('toneladas_potencial', String(data.toneladas_potencial))
+  }
+
+  if (data.anexos && data.anexos.length > 0) {
+    const limitedFiles = data.anexos.slice(0, 3)
+    for (const file of limitedFiles) {
+      formData.append('anexos', file)
+    }
+  }
+
+  return pb.collection('respostas_formulario').create<RespostaFormulario>(formData)
+}
+
+export function getFileUrl(collectionName: string, recordId: string, fileName: string): string {
+  const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
+  return `${basePbUrl}/api/files/${collectionName}/${recordId}/${encodeURIComponent(fileName)}`
 }
 
 export async function fetchUltimaRespostaFormulario(clienteId: string) {

@@ -140,6 +140,7 @@ export interface Interacao {
   expand?: {
     operador?: User
     cliente?: Cliente
+    respostas_formulario_via_interacao?: RespostaFormulario | RespostaFormulario[]
   }
   tipo: 'ligacao' | 'whatsapp' | 'email' | 'status' | 'nota' | 'formulario'
   conteudo?: string
