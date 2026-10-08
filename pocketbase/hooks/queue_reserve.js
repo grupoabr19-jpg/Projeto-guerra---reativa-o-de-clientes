@@ -396,6 +396,46 @@ routerAdd(
             )
 
             if (temDesfechoGravado || temReagendamentoFuturoOuGravado || clienteEmEstadoConcluido) {
+              // FRENTE 1: Retomada legítima do próprio reagendamento vencido
+              // Se o cliente preso tem reagendado_para <= agora E reagendado_operador === userId:
+              // renovar o lock para a sessão atual e devolver o cliente como atendimento legítimo
+              const candReagOperador = candLock.getString('reagendado_operador')
+              const agoraIso = new Date().toISOString()
+              const isReagendamentoVencidoProprio = Boolean(
+                candReagPara &&
+                candReagPara.trim() !== '' &&
+                candReagPara <= agoraIso &&
+                candReagOperador === userId,
+              )
+
+              if (isReagendamentoVencidoProprio) {
+                try {
+                  candLock.set('estado', 'reservado')
+                  candLock.set('operador', userId)
+                  candLock.set('lock_timestamp', agoraIso)
+                  $app.save(candLock)
+                  console.log(
+                    '[queue_reserve] Reagendamento vencido retomado legitimamente: ' +
+                      candLock.id +
+                      ' (' +
+                      candLock.getString('codigo') +
+                      ')',
+                  )
+                  return e.json(200, {
+                    cliente: candLock,
+                    ja_reservado: false,
+                    carteira_esgotada: false,
+                    message: 'Reagendamento do seu próprio contato retomado com sucesso.',
+                  })
+                } catch (reagRetomarErr) {
+                  console.log(
+                    '[queue_reserve] Erro ao renovar lock de reagendamento vencido próprio: ' +
+                      reagRetomarErr.message,
+                  )
+                }
+              }
+
+              // Se pertencer a outro operador, ou se já tem desfecho gravado, ou se é reagendamento futuro:
               // Saneamento cirúrgico no banco: zera lock_timestamp e operador, ajusta o estado ao desfecho real
               const desfechoEfetivo =
                 ultimoDesfecho ||
@@ -406,7 +446,13 @@ routerAdd(
                     : 'na_base')
 
               console.log(
-                `[queue_reserve] Saneando cliente concluído preso em lock: ${candLock.id} (código ${candLock.getString('codigo')}, desfecho: ${desfechoEfetivo})`,
+                '[queue_reserve] Saneando cliente concluído preso em lock: ' +
+                  candLock.id +
+                  ' (código ' +
+                  candLock.getString('codigo') +
+                  ', desfecho: ' +
+                  desfechoEfetivo +
+                  ')',
               )
 
               try {
@@ -908,6 +954,14 @@ routerAdd(
         cand.set('prioridade_transferencia', false)
       }
       $app.save(cand)
+
+      console.log(
+        '[queue_reserve] Cliente novo servido da fila: ' +
+          cand.id +
+          ' (' +
+          cand.getString('codigo') +
+          ')',
+      )
 
       // Registra evento de auditoria
       try {

@@ -384,6 +384,7 @@ routerAdd(
           // - pedido_confirmado = false
           // - valor_ultima_compra = item.valorPotencial se maior que 0
           // - toneladas_historico = item.toneladasPotencial se maior que 0
+          // Em TODOS os desfechos importados: garantir limpeza de lock e consistência de estado
           if (item.desfechoNormalizado === 'reativado' && item.valorPotencial > 0) {
             const dataBase = item.dataConclusaoIso ? new Date(item.dataConclusaoIso) : new Date()
             const standbyBase = new Date(dataBase.getTime() + 60 * 24 * 60 * 60 * 1000)
@@ -395,7 +396,7 @@ routerAdd(
             cRec.set('standby_ate', standbyBase.toISOString().replace('T', ' ').slice(0, 19))
             cRec.set('pedido_reativacao', item.numeroPedido || 'FORMS-IMPORT')
             cRec.set('pedido_confirmado', false)
-            cRec.set('lock_timestamp', '') // libera qualquer lock residual
+            cRec.set('lock_timestamp', '1970-01-01 00:00:00.000Z') // libera qualquer lock residual
 
             if (item.valorPotencial > 0) {
               cRec.set('valor_ultima_compra', item.valorPotencial)
@@ -406,6 +407,15 @@ routerAdd(
 
             txApp.save(cRec)
             reativacoesCompletas++
+          } else if (item.desfechoNormalizado) {
+            // Outros desfechos importados: limpar lock e transitar estado se estiver em_atendimento/reservado
+            const estadoAtual = cRec.getString('estado')
+            if (estadoAtual === 'em_atendimento' || estadoAtual === 'reservado') {
+              cRec.set('estado', item.desfechoNormalizado)
+              cRec.set('operador', '')
+              cRec.set('lock_timestamp', '1970-01-01 00:00:00.000Z')
+              txApp.save(cRec)
+            }
           }
 
           importadas++

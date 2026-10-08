@@ -130,6 +130,81 @@ onRecordCreateRequest((e) => {
   e.next()
 }, 'respostas_formulario')
 
+// 1.1 Hook após criação de resposta de formulário: blindagem atômica server-side da transição do cliente
+// Garante transição imediata de estado e liberação de lock/operador no banco, eliminando clientes presos em 'em_atendimento'
+onRecordAfterCreateSuccess((e) => {
+  const record = e.record
+  const clienteId = record.getString('cliente')
+  const desfecho = record.getString('desfecho')
+
+  if (!clienteId || !desfecho) {
+    e.next()
+    return
+  }
+
+  const desfechosTransitar = [
+    'reativado',
+    'reagendado',
+    'sem_contato',
+    'venda_perdida',
+    'compra_terceiros',
+    'nao_quer_negociar',
+    'restricao_financeira',
+    'duplicado',
+    'ativo_fora_base',
+  ]
+
+  if (!desfechosTransitar.includes(desfecho)) {
+    e.next()
+    return
+  }
+
+  try {
+    const cliente = $app.findRecordById('clientes', clienteId)
+    if (!cliente) {
+      e.next()
+      return
+    }
+
+    const temPedidoEmAberto = cliente.getBool('pedido_em_aberto')
+
+    // Se houver pedido em aberto, o operador mantém o vínculo legitimamente conforme fluxo existente
+    if (temPedidoEmAberto) {
+      cliente.set('estado', desfecho)
+      cliente.set('lock_timestamp', '1970-01-01 00:00:00.000Z')
+      $app.save(cliente)
+      console.log(
+        '[standby_integrity] Transição atômica server-side com pedido em aberto: ' +
+          clienteId +
+          ' -> ' +
+          desfecho,
+      )
+      e.next()
+      return
+    }
+
+    // Transição atômica completa: estado correto, lock_timestamp zerado, operador desvinculado
+    cliente.set('estado', desfecho)
+    cliente.set('lock_timestamp', '1970-01-01 00:00:00.000Z')
+    cliente.set('operador', '')
+    $app.save(cliente)
+    console.log(
+      '[standby_integrity] Transição atômica server-side aplicada: ' +
+        clienteId +
+        ' -> ' +
+        desfecho +
+        ' (lock e operador zerados)',
+    )
+  } catch (err) {
+    console.log(
+      '[standby_integrity] Erro na transição atômica server-side de respostas_formulario: ' +
+        err.message,
+    )
+  }
+
+  e.next()
+}, 'respostas_formulario')
+
 // 2. Hook ao criar registro na coleção "interacoes"
 onRecordCreateRequest((e) => {
   const authRecord = e.auth

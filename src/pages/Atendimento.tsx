@@ -447,8 +447,26 @@ export default function AtendimentoPage() {
       setCliente(c)
 
       // Se o cliente for aberto em modo_edicao_admin ou já estiver fechado, NÃO mudar para 'em_atendimento'
+      const estadosConcluidos = [
+        'reativado',
+        'reagendado',
+        'sem_contato',
+        'venda_perdida',
+        'compra_terceiros',
+        'nao_quer_negociar',
+        'restricao_financeira',
+        'duplicado',
+        'ativo_fora_base',
+      ]
+      const cAny = c as unknown as Record<string, unknown>
+      const desfechoExtra = typeof cAny.desfecho === 'string' ? cAny.desfecho : ''
+      const jaTemDesfechoConcluido =
+        estadosConcluidos.includes(c.estado) ||
+        Boolean(desfechoExtra && estadosConcluidos.includes(desfechoExtra))
+
       const isFechado =
-        c.estado !== 'em_atendimento' && c.estado !== 'na_base' && c.estado !== 'reservado'
+        jaTemDesfechoConcluido ||
+        (c.estado !== 'em_atendimento' && c.estado !== 'na_base' && c.estado !== 'reservado')
 
       if (!isFechado && c.estado !== 'em_atendimento' && user) {
         await updateCliente(c.id, {
@@ -1115,7 +1133,35 @@ export default function AtendimentoPage() {
         updatePayload.quarentena_ate = ''
       }
 
-      await updateCliente(cliente.id, updatePayload)
+      // Resiliência no update do cliente com retry em caso de falha de rede/concorrência
+      let updateSucesso = false
+      let updateErrorMsg = ''
+      try {
+        await updateCliente(cliente.id, updatePayload)
+        updateSucesso = true
+      } catch (errFirstUpdate) {
+        console.warn(
+          'Primeira tentativa de updateCliente falhou, tentando retry...',
+          errFirstUpdate,
+        )
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 600))
+          await updateCliente(cliente.id, updatePayload)
+          updateSucesso = true
+        } catch (errRetryUpdate: unknown) {
+          updateErrorMsg =
+            errRetryUpdate instanceof Error ? errRetryUpdate.message : String(errRetryUpdate)
+          console.error('Segunda tentativa de updateCliente falhou:', errRetryUpdate)
+        }
+      }
+
+      // Se ambas as tentativas de update do cliente falharem, interromper antes de navegar
+      if (!updateSucesso) {
+        throw new Error(
+          'Falha de comunicação ao atualizar o status do cliente. Por favor, clique novamente em Confirmar para tentar gravar.' +
+            (updateErrorMsg ? ` Detalhe: ${updateErrorMsg}` : ''),
+        )
+      }
 
       const textoMotivoFinalizacao =
         desfechoFinal === 'ativo_fora_base'
@@ -1166,6 +1212,7 @@ export default function AtendimentoPage() {
         title: 'Atendimento concluído!',
         description: 'Atendimento registrado e sincronizado com sucesso.',
       })
+      // Limpeza completa do estado local do cliente antes de navegar
       setCliente(null)
       setShowQuestionarioModal(false)
       navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila')
