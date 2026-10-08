@@ -1059,6 +1059,14 @@ export default function AtendimentoPage() {
         operador: '', // padrão: desvincula operador ao concluir
       }
 
+      // Regra de higienização de reagendamento:
+      // Se o desfecho for 'reagendado', preenche nova data e operador.
+      // Se for QUALQUER OUTRO desfecho, limpa explicitamente reagendado_para e reagendado_operador!
+      if (desfechoFinal !== 'reagendado') {
+        updatePayload.reagendado_para = ''
+        updatePayload.reagendado_operador = ''
+      }
+
       // Regras específicas da Máquina de Estados:
       if (desfechoFinal === 'reativado') {
         const agora = new Date()

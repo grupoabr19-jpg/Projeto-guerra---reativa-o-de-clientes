@@ -93,6 +93,7 @@ export interface Cliente {
   lock_timestamp?: string
   reagendado_para?: string
   reagendado_operador?: string
+  retomada_servida_em?: string
   prioridade_transferencia?: boolean
   tentativas_sem_contato?: number
   ciclos_followup?: number

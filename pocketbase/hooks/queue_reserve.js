@@ -398,14 +398,17 @@ routerAdd(
             if (temDesfechoGravado || temReagendamentoFuturoOuGravado || clienteEmEstadoConcluido) {
               // FRENTE 1: Retomada legítima do próprio reagendamento vencido
               // Se o cliente preso tem reagendado_para <= agora E reagendado_operador === userId:
-              // renovar o lock para a sessão atual e devolver o cliente como atendimento legítimo
+              // renovar o lock para a sessão atual e devolver o cliente como atendimento legítimo.
+              // Proteção anti-loop: não re-servir se a retomada já tiver sido consumida e liberada (retomada_servida_em >= reagendado_para)
               const candReagOperador = candLock.getString('reagendado_operador')
+              const candRetomadaServidaEm = candLock.getString('retomada_servida_em') || ''
               const agoraIso = new Date().toISOString()
               const isReagendamentoVencidoProprio = Boolean(
                 candReagPara &&
                 candReagPara.trim() !== '' &&
                 candReagPara <= agoraIso &&
-                candReagOperador === userId,
+                candReagOperador === userId &&
+                (!candRetomadaServidaEm || candRetomadaServidaEm < candReagPara),
               )
 
               if (isReagendamentoVencidoProprio) {
@@ -413,6 +416,7 @@ routerAdd(
                   candLock.set('estado', 'reservado')
                   candLock.set('operador', userId)
                   candLock.set('lock_timestamp', agoraIso)
+                  candLock.set('retomada_servida_em', agoraIso)
                   $app.save(candLock)
                   console.log(
                     '[queue_reserve] Reagendamento vencido retomado legitimamente: ' +
@@ -947,9 +951,13 @@ routerAdd(
       // =========================================================================
       // LOCK ATÔMICO
       // =========================================================================
+      const agoraReservaIso = new Date().toISOString()
       cand.set('estado', 'reservado')
       cand.set('operador', userId)
-      cand.set('lock_timestamp', new Date().toISOString())
+      cand.set('lock_timestamp', agoraReservaIso)
+      if (cand.getString('reagendado_para')) {
+        cand.set('retomada_servida_em', agoraReservaIso)
+      }
       if (cand.getBool('prioridade_transferencia')) {
         cand.set('prioridade_transferencia', false)
       }

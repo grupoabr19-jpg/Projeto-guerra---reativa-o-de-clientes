@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-08T16:54:31.778Z",
+  "generatedAt": "2026-10-08T17:53:41.319Z",
   "collections": [
     {
       "name": "users",
@@ -487,6 +487,12 @@
           "required": false,
           "system": false,
           "collectionRef": "users"
+        },
+        {
+          "name": "retomada_servida_em",
+          "type": "date",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
