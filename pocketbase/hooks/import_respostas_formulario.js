@@ -253,34 +253,44 @@ routerAdd(
           const cRec = item.clienteRec
 
           // Montar o objeto json respostas com compatibilidade completa para a ficha de 17 perguntas
-          const jsonRespostas = {
-            q1: cRec.getString('codigo'),
-            q2: cRec.getString('nome'),
-            q3: item.valorPotencial > 0 ? 'Sim' : 'Não',
-            q4: `${cRec.getString('regiao')} — Vendedor: ${cRec.getString('vendedor') || 'Não atribuído'}`,
-            q5: item.motivoInterrupcao || '',
-            q6: item.probabilidadeRetomada || '',
-            q7: 'Nenhum / Não informado',
-            q8:
-              item.naturezaFalha ||
-              (item.houveErro === 'Não'
-                ? 'Nenhum erro relatado no histórico recente'
-                : item.houveErro || ''),
-            q9:
-              item.naturezaFalha || (item.houveErro === 'Não' ? 'Nenhum erro ocorrido' : 'Outros'),
-            q10: item.necessarioVoltar || 'Sem necessidade de ação reparatória',
-            q11_anexo: item.anexoUrl || '',
-            q12: item.probabilidadeRetomada || '',
-            q13: 'Telefone / Ligação',
-            q14_desfecho: item.desfechoNormalizado || item.desfechoCru || '',
-            ...(item.valorPotencial > 0 ? { q15: item.valorPotencial } : {}),
-            ...(item.toneladasPotencial > 0 ? { q16: item.toneladasPotencial } : {}),
-            q17_obs: item.observacaoGeral || '',
-            importado_forms: true,
-            operador_email: item.rawEmail,
-            operador_nome: item.rawNome,
-            data_conclusao_forms: item.dataConclusaoRaw,
-            ...(item.respostasPayload || {}),
+          // Usando Object.assign e atribuição direta sem spread para total compatibilidade com Goja runtime
+          const jsonRespostas = Object.assign(
+            {},
+            {
+              q1: cRec.getString('codigo'),
+              q2: cRec.getString('nome'),
+              q3: item.valorPotencial > 0 ? 'Sim' : 'Não',
+              q4: `${cRec.getString('regiao')} — Vendedor: ${cRec.getString('vendedor') || 'Não atribuído'}`,
+              q5: item.motivoInterrupcao || '',
+              q6: item.probabilidadeRetomada || '',
+              q7: 'Nenhum / Não informado',
+              q8:
+                item.naturezaFalha ||
+                (item.houveErro === 'Não'
+                  ? 'Nenhum erro relatado no histórico recente'
+                  : item.houveErro || ''),
+              q9:
+                item.naturezaFalha ||
+                (item.houveErro === 'Não' ? 'Nenhum erro ocorrido' : 'Outros'),
+              q10: item.necessarioVoltar || 'Sem necessidade de ação reparatória',
+              q11_anexo: item.anexoUrl || '',
+              q12: item.probabilidadeRetomada || '',
+              q13: 'Telefone / Ligação',
+              q14_desfecho: item.desfechoNormalizado || item.desfechoCru || '',
+              q17_obs: item.observacaoGeral || '',
+              importado_forms: true,
+              operador_email: item.rawEmail,
+              operador_nome: item.rawNome,
+              data_conclusao_forms: item.dataConclusaoRaw,
+            },
+            item.respostasPayload || {},
+          )
+
+          if (item.valorPotencial > 0) {
+            jsonRespostas.q15 = item.valorPotencial
+          }
+          if (item.toneladasPotencial > 0) {
+            jsonRespostas.q16 = item.toneladasPotencial
           }
 
           // 1. Criar respostas_formulario

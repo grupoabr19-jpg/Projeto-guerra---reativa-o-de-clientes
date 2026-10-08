@@ -106,7 +106,7 @@ onRecordCreateRequest((e) => {
         record.set('valor_potencial', null)
         record.set('toneladas_potencial', null)
         if (respostas.q15 !== undefined || respostas.q16 !== undefined) {
-          const novasRespostas = { ...respostas }
+          const novasRespostas = Object.assign({}, respostas)
           delete novasRespostas.q15
           delete novasRespostas.q16
           record.set('respostas', novasRespostas)
