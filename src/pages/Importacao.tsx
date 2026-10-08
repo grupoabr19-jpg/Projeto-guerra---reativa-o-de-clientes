@@ -32,11 +32,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { fetchImportacoes, processSpreadsheetRows, fetchConfiguracoes } from '@/services/api'
 import { parseSpreadsheetWithSheetJS, type ParseProgress } from '@/lib/sheetParser'
 import type { Importacao } from '@/types'
 import { normalizarSegmento } from '@/lib/segmentos'
 import { Progress } from '@/components/ui/progress'
+import { ImportacaoRespostasFormularioTab } from '@/components/ImportacaoRespostasFormularioTab'
 
 // Normaliza strings para comparação case/espaço/acento insensitive
 function normalizeHeader(str: string): string {
@@ -860,1048 +862,1106 @@ export default function ImportacaoPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-slate-900">
-            Importação e Reconciliação de Planilhas
+          <h2 className="text-xl font-bold tracking-tight text-[#253575]">
+            Central de Importações e Respostas
           </h2>
           <p className="text-xs text-slate-500">
-            Upload de arquivos CSV/XLSX com validação por código (CXXXXXX), sem duplicidade e com
-            reconciliação automática.
+            Upload de arquivos CSV/XLSX da base de inativos e importação das respostas do formulário
+            de pesquisa (Microsoft Forms).
           </p>
         </div>
         <Button
           variant="outline"
           size="sm"
           onClick={downloadSampleTemplate}
-          className="h-8 text-xs"
+          className="h-8 text-xs border-slate-300 text-slate-700 hover:bg-slate-100"
         >
           <Download className="h-3.5 w-3.5 mr-1.5" />
-          Baixar Planilha Modelo
+          Baixar Modelo Base Inativos
         </Button>
       </div>
 
-      {/* Upload Zone Card */}
-      <Card className="border-slate-200 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-sm font-semibold text-slate-800 flex items-center space-x-2">
-            <UploadCloud className="h-4 w-4 text-blue-600" />
-            <span>Upload de Nova Planilha de Inativos</span>
-          </CardTitle>
-          <CardDescription className="text-xs text-slate-500">
-            Arraste ou selecione a planilha do ERP. A chave única é o Código do Cliente (upsert sem
-            duplicar). Reenviar a mesma planilha não duplica clientes — o sistema sobrepõe por
-            código e grava só o que é novo ou mudou.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {/* Dropzone */}
-          <div
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-xl p-8 text-center transition-all bg-slate-50/50 flex flex-col items-center justify-center ${
-              isParsing
-                ? 'border-blue-400 bg-blue-50/40 cursor-wait'
-                : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50 cursor-pointer'
-            }`}
-            onClick={() => !isParsing && document.getElementById('file-upload-input')?.click()}
+      {/* Abas da Página: Base de Inativos vs Respostas do Formulário */}
+      <Tabs defaultValue="base_inativos" className="space-y-6">
+        <TabsList className="bg-slate-100 p-1 rounded-xl h-10 border border-slate-200">
+          <TabsTrigger
+            value="base_inativos"
+            className="text-xs font-semibold px-4 py-2 data-[state=active]:bg-white data-[state=active]:text-[#253575] data-[state=active]:shadow-xs flex items-center gap-2"
           >
-            <input
-              id="file-upload-input"
-              type="file"
-              accept=".xlsx,.xls,.csv,.txt"
-              className="hidden"
-              disabled={isParsing || isProcessing}
-              onChange={handleFileChange}
-            />
-            <div className="h-12 w-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-3 shadow-inner">
-              {isParsing ? (
-                <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
-              ) : (
-                <FileSpreadsheet className="h-6 w-6" />
-              )}
-            </div>
-            {isParsing ? (
-              <div className="space-y-2.5 w-full max-w-sm">
-                <div>
-                  <p className="text-sm font-semibold text-blue-800">
-                    Lendo arquivo em segundo plano (Web Worker)
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">{parseProgress.message}</p>
-                </div>
-                <Progress value={parseProgress.percent} className="h-2 bg-blue-100" />
-                <div className="flex justify-between text-[11px] font-mono text-slate-400">
-                  <span>Processando sem travar interface</span>
-                  <span>{parseProgress.percent}%</span>
-                </div>
-              </div>
-            ) : file ? (
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-slate-800">{file.name}</p>
-                <p className="text-xs text-slate-500">
-                  {rawRows.length.toLocaleString('pt-BR')} linhas prontas para importação.
-                  {availableSheets.length > 1 && ` (Aba ativa: "${selectedSheet}")`}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-slate-700">
-                  Clique para selecionar ou arraste o arquivo .XLSX ou .CSV aqui
-                </p>
-                <p className="text-xs text-slate-400">
-                  Suporte nativo a planilhas pesadas com processamento fora da thread principal (Web
-                  Worker).
-                </p>
-              </div>
-            )}
-          </div>
-          {/* Seletor de Aba (se arquivo tiver múltiplas abas) */}
-          {availableSheets.length > 1 && file && (
-            <div className="flex items-center space-x-3 bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs">
-              <span className="font-semibold text-slate-700">Selecionar Aba da Planilha:</span>
-              <Select
-                value={selectedSheet}
-                onValueChange={(val) => {
-                  setSelectedSheet(val)
-                  if (file) parseFile(file, val)
-                }}
-                disabled={isParsing || isProcessing}
+            <UploadCloud className="h-4 w-4" />
+            <span>Base de Inativos (ERP)</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="respostas_forms"
+            className="text-xs font-semibold px-4 py-2 data-[state=active]:bg-[#253575] data-[state=active]:text-white data-[state=active]:shadow-xs flex items-center gap-2"
+          >
+            <FileText className="h-4 w-4 text-[#F18800]" />
+            <span>Respostas do Formulário (CSV / Forms)</span>
+            <Badge className="bg-[#F18800] text-white text-[10px] px-1.5 py-0 h-4 ml-1">Novo</Badge>
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Conteúdo da Aba 1: Base de Inativos existente */}
+        <TabsContent value="base_inativos" className="space-y-6 m-0 focus-visible:outline-none">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold text-slate-800 flex items-center space-x-2">
+                <UploadCloud className="h-4 w-4 text-blue-600" />
+                <span>Upload de Nova Planilha de Inativos</span>
+              </CardTitle>
+              <CardDescription className="text-xs text-slate-500">
+                Arraste ou selecione a planilha do ERP. A chave única é o Código do Cliente (upsert
+                sem duplicar). Reenviar a mesma planilha não duplica clientes — o sistema sobrepõe
+                por código e grava só o que é novo ou mudou.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* Dropzone */}
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-xl p-8 text-center transition-all bg-slate-50/50 flex flex-col items-center justify-center ${
+                  isParsing
+                    ? 'border-blue-400 bg-blue-50/40 cursor-wait'
+                    : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50 cursor-pointer'
+                }`}
+                onClick={() => !isParsing && document.getElementById('file-upload-input')?.click()}
               >
-                <SelectTrigger className="h-8 text-xs w-48 bg-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableSheets.map((s) => (
-                    <SelectItem key={s} value={s} className="text-xs">
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <span className="text-[11px] text-slate-500">
-                Alterne a aba caso os dados brutos estejam em &ldquo;BD&rdquo; ou
-                &ldquo;Dados&rdquo;.
-              </span>
-            </div>
-          )}
-          {/* Feedback de Erro Visível */}
-          {uploadError && (
-            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-lg flex items-start space-x-3 text-xs text-rose-800">
-              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
-              <div className="space-y-2 flex-1">
-                <span className="font-semibold block">Aviso sobre o processamento:</span>
-                <p className="text-[11px] text-rose-700 leading-relaxed font-mono">{uploadError}</p>
-                <div className="flex items-center gap-2 pt-1">
-                  {failedChunks.length > 0 && (
-                    <Button
-                      size="sm"
-                      onClick={handleRetryFailedChunks}
-                      disabled={isProcessing}
-                      className="h-7 text-xs bg-rose-600 hover:bg-rose-700 text-white font-medium shadow-sm"
-                    >
-                      <RefreshCw
-                        className={`h-3 w-3 mr-1.5 ${isProcessing ? 'animate-spin' : ''}`}
-                      />
-                      Reenviar {failedChunks.length} Lote(s) Falho(s)
-                    </Button>
+                <input
+                  id="file-upload-input"
+                  type="file"
+                  accept=".xlsx,.xls,.csv,.txt"
+                  className="hidden"
+                  disabled={isParsing || isProcessing}
+                  onChange={handleFileChange}
+                />
+                <div className="h-12 w-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-3 shadow-inner">
+                  {isParsing ? (
+                    <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+                  ) : (
+                    <FileSpreadsheet className="h-6 w-6" />
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setUploadError(null)}
-                    className="h-7 text-xs border-rose-300 text-rose-700 hover:bg-rose-100"
-                  >
-                    Fechar Aviso
-                  </Button>
                 </div>
+                {isParsing ? (
+                  <div className="space-y-2.5 w-full max-w-sm">
+                    <div>
+                      <p className="text-sm font-semibold text-blue-800">
+                        Lendo arquivo em segundo plano (Web Worker)
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">{parseProgress.message}</p>
+                    </div>
+                    <Progress value={parseProgress.percent} className="h-2 bg-blue-100" />
+                    <div className="flex justify-between text-[11px] font-mono text-slate-400">
+                      <span>Processando sem travar interface</span>
+                      <span>{parseProgress.percent}%</span>
+                    </div>
+                  </div>
+                ) : file ? (
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-slate-800">{file.name}</p>
+                    <p className="text-xs text-slate-500">
+                      {rawRows.length.toLocaleString('pt-BR')} linhas prontas para importação.
+                      {availableSheets.length > 1 && ` (Aba ativa: "${selectedSheet}")`}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-slate-700">
+                      Clique para selecionar ou arraste o arquivo .XLSX ou .CSV aqui
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      Suporte nativo a planilhas pesadas com processamento fora da thread principal
+                      (Web Worker).
+                    </p>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
-          {/* Barra de Progresso do Envio em Chunks */}
-          {isProcessing && (
-            <div className="p-4 bg-blue-50/80 border border-blue-200 rounded-lg space-y-2">
-              <div className="flex items-center justify-between text-xs text-blue-900 font-semibold">
-                <span className="flex items-center gap-2">
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-600" />
-                  <span>Enviando dados em lotes para o servidor...</span>
-                </span>
-                <span className="font-mono">{processProgress.percent}%</span>
-              </div>
-              <Progress value={processProgress.percent} className="h-2.5 bg-blue-100" />
-              <p className="text-[11px] text-blue-700">{processProgress.message}</p>
-            </div>
-          )}
-          {/* Configuração de substituição total */}
-          <div className="flex items-start space-x-3 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
-            <Checkbox
-              id="subst-total"
-              checked={substituicaoTotal}
-              onCheckedChange={(checked) => setSubstituicaoTotal(Boolean(checked))}
-              className="mt-0.5"
-            />
-            <div className="space-y-1">
-              <Label
-                htmlFor="subst-total"
-                className="text-xs font-semibold text-slate-800 cursor-pointer"
-              >
-                Esta planilha substitui os dados existentes da base?
-              </Label>
-              <p className="text-[11px] text-slate-500">
-                Se ativado, clientes que estavam no status "Na Base" mas NÃO constarem nesta nova
-                planilha serão marcados automaticamente como "Suspenso".
-              </p>
-            </div>
-          </div>
-          {/* Seletor do Modo de Importação e Explicação */}
-          {headers.length > 0 && (
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center space-x-2">
-                  <Layers className="h-4 w-4 text-blue-600" />
-                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                    Modo de Importação em Uso:
-                  </span>
-                  <Badge
-                    className={
-                      effectiveModo === 'base_mestre'
-                        ? 'bg-blue-600 text-white text-xs'
-                        : effectiveModo === 'faturamento_reconciliacao'
-                          ? 'bg-amber-600 text-white text-xs'
-                          : 'bg-emerald-600 text-white text-xs'
-                    }
-                  >
-                    {effectiveModo === 'base_mestre'
-                      ? 'Base Mestre (Upsert)'
-                      : effectiveModo === 'faturamento_reconciliacao'
-                        ? 'Faturamento / Reconciliação'
-                        : 'Enriquecimento (Margem)'}
-                  </Badge>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-[11px] text-slate-500">Alterar modo:</span>
+              {/* Seletor de Aba (se arquivo tiver múltiplas abas) */}
+              {availableSheets.length > 1 && file && (
+                <div className="flex items-center space-x-3 bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs">
+                  <span className="font-semibold text-slate-700">Selecionar Aba da Planilha:</span>
                   <Select
-                    value={effectiveModo}
-                    onValueChange={(val: any) => {
-                      setModoImportacao(val)
-                      setModoAlteradoManualmente(true)
+                    value={selectedSheet}
+                    onValueChange={(val) => {
+                      setSelectedSheet(val)
+                      if (file) parseFile(file, val)
                     }}
+                    disabled={isParsing || isProcessing}
                   >
-                    <SelectTrigger className="h-7 text-xs w-56 bg-white border-slate-300">
+                    <SelectTrigger className="h-8 text-xs w-48 bg-white">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="base_mestre" className="text-xs">
-                        Base Mestre (Cria e atualiza)
-                      </SelectItem>
-                      <SelectItem value="faturamento_reconciliacao" className="text-xs">
-                        Faturamento / Reconciliação
-                      </SelectItem>
-                      <SelectItem value="enriquecimento_margem" className="text-xs">
-                        Enriquecimento (Margem)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Descrição e Regras do Modo Selecionado */}
-              <div className="text-xs rounded-lg p-3 border">
-                {effectiveModo === 'base_mestre' && (
-                  <div className="space-y-1 text-blue-900 bg-blue-50/60 p-2.5 rounded border border-blue-100">
-                    <p className="font-semibold flex items-center gap-1.5">
-                      <Sparkles className="h-3.5 w-3.5 text-blue-600" />
-                      Modo Base Mestre (requer Código + Razão Social)
-                    </p>
-                    <p className="text-[11px] text-blue-800 leading-relaxed">
-                      Realiza upsert por código único (ex: C020106). Cria novos clientes inativos,
-                      atualiza cadastros existentes, recalcula o score ponderado e alimenta a fila
-                      de reativação.
-                    </p>
-                  </div>
-                )}
-                {effectiveModo === 'faturamento_reconciliacao' && (
-                  <div className="space-y-1 text-amber-900 bg-amber-50/70 p-2.5 rounded border border-amber-200">
-                    <p className="font-semibold flex items-center gap-1.5">
-                      <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
-                      Planilha sem código de cliente — Modo Faturamento / Reconciliação
-                    </p>
-                    <p className="text-[11px] text-amber-800 leading-relaxed">
-                      Clientes existentes serão atualizados por{' '}
-                      <strong>Razão Social / Nome normalizado</strong> (+ cidade/UF).{' '}
-                      <strong>Nenhum cliente novo será criado.</strong> Atualiza último pedido,
-                      notas fiscais, faturamento R$, peso e canal. Clientes que faturaram saem
-                      imediatamente da fila de reativação.
-                    </p>
-                  </div>
-                )}
-                {effectiveModo === 'enriquecimento_margem' && (
-                  <div className="space-y-1 text-emerald-900 bg-emerald-50/70 p-2.5 rounded border border-emerald-200">
-                    <p className="font-semibold flex items-center gap-1.5">
-                      <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
-                      Modo Enriquecimento (Margem)
-                    </p>
-                    <p className="text-[11px] text-emerald-800 leading-relaxed">
-                      Match por código ou nome normalizado. Atualiza apenas métricas de margem (%) e
-                      valor que alimentam o bônus de score e gatilhos de fechamento.{' '}
-                      <strong>Não cria clientes novos nem altera a fila.</strong>
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          {/* Alerta de Layout Detectado Automaticamente */}
-          {detectedLayout && (
-            <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-lg flex items-start space-x-3 text-xs text-blue-900">
-              <Sparkles className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <div className="flex items-center space-x-2">
-                  <span className="font-semibold text-blue-950">
-                    Layout detectado: {detectedLayout.nome}
-                  </span>
-                  <Badge className="bg-blue-600 text-white text-[10px]">Auto-Mapeado</Badge>
-                </div>
-                <p className="text-[11px] text-blue-800 leading-relaxed">
-                  {detectedLayout.descricao} Todos os campos abaixo já foram vinculados às colunas
-                  originais e permanecem editáveis manualmente.
-                </p>
-              </div>
-            </div>
-          )}
-          {/* Mapeamento de Colunas */}
-          {headers.length > 0 && (
-            <div className="space-y-3 pt-2 border-t border-slate-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <h4 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">
-                    Mapeamento de Colunas Detectadas ({headers.length} encontradas)
-                  </h4>
-                  {detectedLayout && (
-                    <span className="text-[11px] font-mono text-emerald-600 font-medium">
-                      ✓ Layout compatível: {detectedLayout.nome}
-                    </span>
-                  )}
-                </div>
-                <span className="text-[11px] text-slate-400">
-                  Pelo menos um dos dois (Código ou Nome) é obrigatório.
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-white p-3 rounded-lg border border-slate-200">
-                {/* Código */}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700 flex items-center justify-between">
-                    <span>Código do Cliente</span>
-                    {effectiveModo === 'base_mestre' ? (
-                      <span className="text-[10px] text-red-500 font-bold">Obrigatório</span>
-                    ) : (
-                      <span className="text-[10px] text-slate-400 font-medium">Opcional</span>
-                    )}
-                  </Label>
-                  <Select
-                    value={mapping.codigo || '__none__'}
-                    onValueChange={(val) =>
-                      setMapping({ ...mapping, codigo: val === '__none__' ? '' : val })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
-                        (Nenhum / Deixar Vazio)
-                      </SelectItem>
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h} className="text-xs">
-                          {h}
+                      {availableSheets.map((s) => (
+                        <SelectItem key={s} value={s} className="text-xs">
+                          {s}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-
-                {/* Nome */}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700 flex items-center justify-between">
-                    <span>Razão Social / Nome</span>
-                    <span className="text-[10px] text-red-500 font-bold">
-                      {effectiveModo === 'faturamento_reconciliacao'
-                        ? 'Chave de Match'
-                        : 'Obrigatório'}
-                    </span>
-                  </Label>
-                  <Select
-                    value={mapping.nome || '__none__'}
-                    onValueChange={(val) =>
-                      setMapping({ ...mapping, nome: val === '__none__' ? '' : val })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
-                        (Nenhum / Deixar Vazio)
-                      </SelectItem>
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h} className="text-xs">
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Região */}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700">Região / Território</Label>
-                  <Select
-                    value={mapping.regiao || '__none__'}
-                    onValueChange={(val) =>
-                      setMapping({ ...mapping, regiao: val === '__none__' ? '' : val })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
-                        (Nenhum / Deixar Vazio)
-                      </SelectItem>
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h} className="text-xs">
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Vendedor */}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700">Vendedor Carteira</Label>
-                  <Select
-                    value={mapping.vendedor || '__none__'}
-                    onValueChange={(val) =>
-                      setMapping({ ...mapping, vendedor: val === '__none__' ? '' : val })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
-                        (Nenhum / Deixar Vazio)
-                      </SelectItem>
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h} className="text-xs">
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Telefone */}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700">Telefone Fixo / PABX</Label>
-                  <Select
-                    value={mapping.telefone || '__none__'}
-                    onValueChange={(val) =>
-                      setMapping({ ...mapping, telefone: val === '__none__' ? '' : val })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
-                        (Nenhum / Deixar Vazio)
-                      </SelectItem>
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h} className="text-xs">
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* WhatsApp */}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700">WhatsApp / Celular</Label>
-                  <Select
-                    value={mapping.whatsapp || '__none__'}
-                    onValueChange={(val) =>
-                      setMapping({ ...mapping, whatsapp: val === '__none__' ? '' : val })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
-                        (Nenhum / Deixar Vazio)
-                      </SelectItem>
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h} className="text-xs">
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Data Última Compra */}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700">
-                    Último Faturamento / Data
-                  </Label>
-                  <Select
-                    value={mapping.ultima_compra || '__none__'}
-                    onValueChange={(val) =>
-                      setMapping({ ...mapping, ultima_compra: val === '__none__' ? '' : val })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
-                        (Nenhum / Deixar Vazio)
-                      </SelectItem>
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h} className="text-xs">
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Valor R$ / Limite */}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700">
-                    Valor R$ / Faturamento / Limite
-                  </Label>
-                  <Select
-                    value={mapping.valor_ultima_compra || '__none__'}
-                    onValueChange={(val) =>
-                      setMapping({ ...mapping, valor_ultima_compra: val === '__none__' ? '' : val })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
-                        (Nenhum / Deixar Vazio)
-                      </SelectItem>
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h} className="text-xs">
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Cidade */}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700">Cidade</Label>
-                  <Select
-                    value={mapping.cidade || '__none__'}
-                    onValueChange={(val) =>
-                      setMapping({ ...mapping, cidade: val === '__none__' ? '' : val })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
-                        (Nenhum / Deixar Vazio)
-                      </SelectItem>
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h} className="text-xs">
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Estado / UF */}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700">Estado / UF</Label>
-                  <Select
-                    value={mapping.estado_uf || '__none__'}
-                    onValueChange={(val) =>
-                      setMapping({ ...mapping, estado_uf: val === '__none__' ? '' : val })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
-                        (Nenhum / Deixar Vazio)
-                      </SelectItem>
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h} className="text-xs">
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Dias Sem Faturar */}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700">
-                    Dias Sem Faturar (Recência)
-                  </Label>
-                  <Select
-                    value={mapping.dias_sem_faturar || '__none__'}
-                    onValueChange={(val) =>
-                      setMapping({ ...mapping, dias_sem_faturar: val === '__none__' ? '' : val })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
-                        (Nenhum / Deixar Vazio)
-                      </SelectItem>
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h} className="text-xs">
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Faixa Última Compra */}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700">Faixa de Inatividade</Label>
-                  <Select
-                    value={mapping.faixa || '__none__'}
-                    onValueChange={(val) =>
-                      setMapping({ ...mapping, faixa: val === '__none__' ? '' : val })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
-                        (Nenhum / Deixar Vazio)
-                      </SelectItem>
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h} className="text-xs">
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Pedido */}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-slate-700">
-                    Número do Pedido (Reconciliação)
-                  </Label>
-                  <Select
-                    value={mapping.pedido || '__none__'}
-                    onValueChange={(val) =>
-                      setMapping({ ...mapping, pedido: val === '__none__' ? '' : val })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-xs text-slate-400 italic">
-                        (Nenhum / Deixar Vazio)
-                      </SelectItem>
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h} className="text-xs">
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-          )}
-          {/* Prévia das primeiras 5 linhas */}
-          {rawRows.length > 0 && (
-            <div className="space-y-2">
-              <div className="text-xs font-semibold text-slate-700">
-                Prévia das Primeiras Linhas Carregadas
-              </div>
-              <div className="overflow-x-auto border border-slate-200 rounded-lg max-h-48">
-                <table className="w-full text-[11px] text-left">
-                  <thead className="bg-slate-50 text-slate-600 font-medium sticky top-0">
-                    <tr>
-                      <th className="py-2 px-2.5 border-b">#</th>
-                      {headers.slice(0, 7).map((h) => (
-                        <th key={h} className="py-2 px-2.5 border-b">
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {rawRows.slice(0, 5).map((row, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50">
-                        <td className="py-1.5 px-2.5 text-slate-400">{idx + 1}</td>
-                        {headers.slice(0, 7).map((h) => (
-                          <td
-                            key={h}
-                            className="py-1.5 px-2.5 text-slate-700 truncate max-w-[150px]"
-                          >
-                            {String(row[h] || '')}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-          {/* Relatório do resultado da importação */}
-          {importResult && (
-            <div className="p-4 bg-emerald-50/90 border border-emerald-200 rounded-xl space-y-4">
-              <div className="flex items-center justify-between flex-wrap gap-2 font-bold text-sm">
-                <div className="flex items-center space-x-2">
-                  {(importResult.lotesFalhos?.length || 0) > 0 ? (
-                    <AlertTriangle className="h-5 w-5 text-amber-600" />
-                  ) : (
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                  )}
-                  <span
-                    className={
-                      (importResult.lotesFalhos?.length || 0) > 0
-                        ? 'text-amber-900'
-                        : 'text-emerald-900'
-                    }
-                  >
-                    {(importResult.lotesFalhos?.length || 0) > 0
-                      ? 'Processamento Parcial (com lotes a reenviar)'
-                      : 'Carga e Processamento Concluídos com Sucesso!'}
+                  <span className="text-[11px] text-slate-500">
+                    Alterne a aba caso os dados brutos estejam em &ldquo;BD&rdquo; ou
+                    &ldquo;Dados&rdquo;.
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  {importResult.lotesTotal && (
-                    <Badge
-                      variant="outline"
-                      className="bg-white border-slate-300 text-slate-700 text-xs"
-                    >
-                      Lotes: {importResult.lotesSucesso || 0}/{importResult.lotesTotal} OK
-                    </Badge>
-                  )}
-                  <Badge
-                    variant="outline"
-                    className="bg-white border-emerald-300 text-emerald-800 text-xs"
-                  >
-                    Modo:{' '}
-                    {importResult.modo === 'base_mestre'
-                      ? 'Base Mestre'
-                      : importResult.modo === 'faturamento_reconciliacao'
-                        ? 'Faturamento / Reconciliação'
-                        : 'Enriquecimento (Margem)'}
-                  </Badge>
-                </div>
-              </div>
-
-              {/* Alerta de Lotes Falhos com Botão de Ação Direta */}
-              {importResult.lotesFalhos && importResult.lotesFalhos.length > 0 && (
-                <div className="p-3 bg-amber-100 border border-amber-300 rounded-lg text-xs text-amber-900 space-y-2">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <span className="font-semibold">
-                      Atenção: {importResult.lotesFalhos.length} lote(s) não responderam e precisam
-                      ser reenviados:
-                    </span>
-                    <Button
-                      size="sm"
-                      onClick={handleRetryFailedChunks}
-                      disabled={isProcessing}
-                      className="h-6 text-xs bg-amber-700 hover:bg-amber-800 text-white font-medium"
-                    >
-                      <RefreshCw className={`h-3 w-3 mr-1 ${isProcessing ? 'animate-spin' : ''}`} />
-                      Reenviar Apenas Lotes Falhos
-                    </Button>
-                  </div>
-                  <div className="space-y-1 font-mono text-[11px] bg-white/70 p-2 rounded">
-                    {importResult.lotesFalhos.map((f, idx) => (
-                      <div key={idx} className="text-amber-900">
-                        • Lote {f.lote}: {f.erro}
-                      </div>
-                    ))}
+              )}
+              {/* Feedback de Erro Visível */}
+              {uploadError && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-lg flex items-start space-x-3 text-xs text-rose-800">
+                  <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="space-y-2 flex-1">
+                    <span className="font-semibold block">Aviso sobre o processamento:</span>
+                    <p className="text-[11px] text-rose-700 leading-relaxed font-mono">
+                      {uploadError}
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
+                      {failedChunks.length > 0 && (
+                        <Button
+                          size="sm"
+                          onClick={handleRetryFailedChunks}
+                          disabled={isProcessing}
+                          className="h-7 text-xs bg-rose-600 hover:bg-rose-700 text-white font-medium shadow-sm"
+                        >
+                          <RefreshCw
+                            className={`h-3 w-3 mr-1.5 ${isProcessing ? 'animate-spin' : ''}`}
+                          />
+                          Reenviar {failedChunks.length} Lote(s) Falho(s)
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setUploadError(null)}
+                        className="h-7 text-xs border-rose-300 text-rose-700 hover:bg-rose-100"
+                      >
+                        Fechar Aviso
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 text-xs">
-                <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                  <span className="text-slate-500 block text-[11px]">Total de Linhas</span>
-                  <span className="font-bold text-slate-800 text-base">{importResult.total}</span>
-                </div>
-                {importResult.modo === 'base_mestre' ? (
-                  <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                    <span className="text-slate-500 block text-[11px]">Novos</span>
-                    <span className="font-bold text-emerald-600 text-base">
-                      {importResult.novas}
+              {/* Barra de Progresso do Envio em Chunks */}
+              {isProcessing && (
+                <div className="p-4 bg-blue-50/80 border border-blue-200 rounded-lg space-y-2">
+                  <div className="flex items-center justify-between text-xs text-blue-900 font-semibold">
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                      <span>Enviando dados em lotes para o servidor...</span>
                     </span>
+                    <span className="font-mono">{processProgress.percent}%</span>
                   </div>
-                ) : (
-                  <div className="bg-white p-2.5 rounded-lg border border-amber-100">
-                    <span className="text-slate-500 block text-[11px]">Matches por Nome</span>
-                    <span className="font-bold text-amber-700 text-base">
-                      {importResult.matchesNome}
-                    </span>
-                  </div>
-                )}
-                <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                  <span className="text-slate-500 block text-[11px]">Atualizados</span>
-                  <span className="font-bold text-blue-600 text-base">
-                    {importResult.atualizadas}
-                  </span>
+                  <Progress value={processProgress.percent} className="h-2.5 bg-blue-100" />
+                  <p className="text-[11px] text-blue-700">{processProgress.message}</p>
                 </div>
-                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                  <span className="text-slate-500 block text-[11px]">Inalterados (Pulados)</span>
-                  <span className="font-bold text-slate-700 text-base">
-                    {importResult.inalteradas}
-                  </span>
-                </div>
-                <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                  <span className="text-slate-500 block text-[11px]">Reconciliados</span>
-                  <span className="font-bold text-purple-600 text-base">
-                    {importResult.reconciliadosFaturaram}
-                  </span>
-                </div>
-                <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                  <span className="text-slate-500 block text-[11px]">Sem Match</span>
-                  <span className="font-bold text-slate-600 text-base">
-                    {importResult.semCorrespondencia}
-                  </span>
-                </div>
-                <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                  <span className="text-slate-500 block text-[11px]">Rejeitadas</span>
-                  <span
-                    className={`font-bold text-base ${importResult.rejeitadas > 0 ? 'text-rose-600' : 'text-slate-400'}`}
+              )}
+              {/* Configuração de substituição total */}
+              <div className="flex items-start space-x-3 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
+                <Checkbox
+                  id="subst-total"
+                  checked={substituicaoTotal}
+                  onCheckedChange={(checked) => setSubstituicaoTotal(Boolean(checked))}
+                  className="mt-0.5"
+                />
+                <div className="space-y-1">
+                  <Label
+                    htmlFor="subst-total"
+                    className="text-xs font-semibold text-slate-800 cursor-pointer"
                   >
-                    {importResult.rejeitadas}
-                  </span>
+                    Esta planilha substitui os dados existentes da base?
+                  </Label>
+                  <p className="text-[11px] text-slate-500">
+                    Se ativado, clientes que estavam no status "Na Base" mas NÃO constarem nesta
+                    nova planilha serão marcados automaticamente como "Suspenso".
+                  </p>
                 </div>
               </div>
+              {/* Seletor do Modo de Importação e Explicação */}
+              {headers.length > 0 && (
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2">
+                      <Layers className="h-4 w-4 text-blue-600" />
+                      <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                        Modo de Importação em Uso:
+                      </span>
+                      <Badge
+                        className={
+                          effectiveModo === 'base_mestre'
+                            ? 'bg-blue-600 text-white text-xs'
+                            : effectiveModo === 'faturamento_reconciliacao'
+                              ? 'bg-amber-600 text-white text-xs'
+                              : 'bg-emerald-600 text-white text-xs'
+                        }
+                      >
+                        {effectiveModo === 'base_mestre'
+                          ? 'Base Mestre (Upsert)'
+                          : effectiveModo === 'faturamento_reconciliacao'
+                            ? 'Faturamento / Reconciliação'
+                            : 'Enriquecimento (Margem)'}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[11px] text-slate-500">Alterar modo:</span>
+                      <Select
+                        value={effectiveModo}
+                        onValueChange={(val: any) => {
+                          setModoImportacao(val)
+                          setModoAlteradoManualmente(true)
+                        }}
+                      >
+                        <SelectTrigger className="h-7 text-xs w-56 bg-white border-slate-300">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="base_mestre" className="text-xs">
+                            Base Mestre (Cria e atualiza)
+                          </SelectItem>
+                          <SelectItem value="faturamento_reconciliacao" className="text-xs">
+                            Faturamento / Reconciliação
+                          </SelectItem>
+                          <SelectItem value="enriquecimento_margem" className="text-xs">
+                            Enriquecimento (Margem)
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
 
-              {/* Relatório de Divergências no Modo Faturamento: quem faturou mas não estava na base */}
-              {importResult.modo === 'faturamento_reconciliacao' &&
-                importResult.semCorrespondencia > 0 && (
-                  <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-lg space-y-1.5 text-xs">
-                    <div className="flex items-center space-x-1.5 font-semibold text-amber-900">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-                      <span>
-                        Relatório de Divergências: Faturaram mas não estão cadastrados na Base (
-                        {importResult.semCorrespondencia})
+                  {/* Descrição e Regras do Modo Selecionado */}
+                  <div className="text-xs rounded-lg p-3 border">
+                    {effectiveModo === 'base_mestre' && (
+                      <div className="space-y-1 text-blue-900 bg-blue-50/60 p-2.5 rounded border border-blue-100">
+                        <p className="font-semibold flex items-center gap-1.5">
+                          <Sparkles className="h-3.5 w-3.5 text-blue-600" />
+                          Modo Base Mestre (requer Código + Razão Social)
+                        </p>
+                        <p className="text-[11px] text-blue-800 leading-relaxed">
+                          Realiza upsert por código único (ex: C020106). Cria novos clientes
+                          inativos, atualiza cadastros existentes, recalcula o score ponderado e
+                          alimenta a fila de reativação.
+                        </p>
+                      </div>
+                    )}
+                    {effectiveModo === 'faturamento_reconciliacao' && (
+                      <div className="space-y-1 text-amber-900 bg-amber-50/70 p-2.5 rounded border border-amber-200">
+                        <p className="font-semibold flex items-center gap-1.5">
+                          <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                          Planilha sem código de cliente — Modo Faturamento / Reconciliação
+                        </p>
+                        <p className="text-[11px] text-amber-800 leading-relaxed">
+                          Clientes existentes serão atualizados por{' '}
+                          <strong>Razão Social / Nome normalizado</strong> (+ cidade/UF).{' '}
+                          <strong>Nenhum cliente novo será criado.</strong> Atualiza último pedido,
+                          notas fiscais, faturamento R$, peso e canal. Clientes que faturaram saem
+                          imediatamente da fila de reativação.
+                        </p>
+                      </div>
+                    )}
+                    {effectiveModo === 'enriquecimento_margem' && (
+                      <div className="space-y-1 text-emerald-900 bg-emerald-50/70 p-2.5 rounded border border-emerald-200">
+                        <p className="font-semibold flex items-center gap-1.5">
+                          <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
+                          Modo Enriquecimento (Margem)
+                        </p>
+                        <p className="text-[11px] text-emerald-800 leading-relaxed">
+                          Match por código ou nome normalizado. Atualiza apenas métricas de margem
+                          (%) e valor que alimentam o bônus de score e gatilhos de fechamento.{' '}
+                          <strong>Não cria clientes novos nem altera a fila.</strong>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {/* Alerta de Layout Detectado Automaticamente */}
+              {detectedLayout && (
+                <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-lg flex items-start space-x-3 text-xs text-blue-900">
+                  <Sparkles className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-semibold text-blue-950">
+                        Layout detectado: {detectedLayout.nome}
+                      </span>
+                      <Badge className="bg-blue-600 text-white text-[10px]">Auto-Mapeado</Badge>
+                    </div>
+                    <p className="text-[11px] text-blue-800 leading-relaxed">
+                      {detectedLayout.descricao} Todos os campos abaixo já foram vinculados às
+                      colunas originais e permanecem editáveis manualmente.
+                    </p>
+                  </div>
+                </div>
+              )}
+              {/* Mapeamento de Colunas */}
+              {headers.length > 0 && (
+                <div className="space-y-3 pt-2 border-t border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <h4 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">
+                        Mapeamento de Colunas Detectadas ({headers.length} encontradas)
+                      </h4>
+                      {detectedLayout && (
+                        <span className="text-[11px] font-mono text-emerald-600 font-medium">
+                          ✓ Layout compatível: {detectedLayout.nome}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-slate-400">
+                      Pelo menos um dos dois (Código ou Nome) é obrigatório.
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-white p-3 rounded-lg border border-slate-200">
+                    {/* Código */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-700 flex items-center justify-between">
+                        <span>Código do Cliente</span>
+                        {effectiveModo === 'base_mestre' ? (
+                          <span className="text-[10px] text-red-500 font-bold">Obrigatório</span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-medium">Opcional</span>
+                        )}
+                      </Label>
+                      <Select
+                        value={mapping.codigo || '__none__'}
+                        onValueChange={(val) =>
+                          setMapping({ ...mapping, codigo: val === '__none__' ? '' : val })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                            (Nenhum / Deixar Vazio)
+                          </SelectItem>
+                          {headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Nome */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-700 flex items-center justify-between">
+                        <span>Razão Social / Nome</span>
+                        <span className="text-[10px] text-red-500 font-bold">
+                          {effectiveModo === 'faturamento_reconciliacao'
+                            ? 'Chave de Match'
+                            : 'Obrigatório'}
+                        </span>
+                      </Label>
+                      <Select
+                        value={mapping.nome || '__none__'}
+                        onValueChange={(val) =>
+                          setMapping({ ...mapping, nome: val === '__none__' ? '' : val })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                            (Nenhum / Deixar Vazio)
+                          </SelectItem>
+                          {headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Região */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-700">
+                        Região / Território
+                      </Label>
+                      <Select
+                        value={mapping.regiao || '__none__'}
+                        onValueChange={(val) =>
+                          setMapping({ ...mapping, regiao: val === '__none__' ? '' : val })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                            (Nenhum / Deixar Vazio)
+                          </SelectItem>
+                          {headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Vendedor */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-700">
+                        Vendedor Carteira
+                      </Label>
+                      <Select
+                        value={mapping.vendedor || '__none__'}
+                        onValueChange={(val) =>
+                          setMapping({ ...mapping, vendedor: val === '__none__' ? '' : val })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                            (Nenhum / Deixar Vazio)
+                          </SelectItem>
+                          {headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Telefone */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-700">
+                        Telefone Fixo / PABX
+                      </Label>
+                      <Select
+                        value={mapping.telefone || '__none__'}
+                        onValueChange={(val) =>
+                          setMapping({ ...mapping, telefone: val === '__none__' ? '' : val })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                            (Nenhum / Deixar Vazio)
+                          </SelectItem>
+                          {headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* WhatsApp */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-700">
+                        WhatsApp / Celular
+                      </Label>
+                      <Select
+                        value={mapping.whatsapp || '__none__'}
+                        onValueChange={(val) =>
+                          setMapping({ ...mapping, whatsapp: val === '__none__' ? '' : val })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                            (Nenhum / Deixar Vazio)
+                          </SelectItem>
+                          {headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Data Última Compra */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-700">
+                        Último Faturamento / Data
+                      </Label>
+                      <Select
+                        value={mapping.ultima_compra || '__none__'}
+                        onValueChange={(val) =>
+                          setMapping({ ...mapping, ultima_compra: val === '__none__' ? '' : val })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                            (Nenhum / Deixar Vazio)
+                          </SelectItem>
+                          {headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Valor R$ / Limite */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-700">
+                        Valor R$ / Faturamento / Limite
+                      </Label>
+                      <Select
+                        value={mapping.valor_ultima_compra || '__none__'}
+                        onValueChange={(val) =>
+                          setMapping({
+                            ...mapping,
+                            valor_ultima_compra: val === '__none__' ? '' : val,
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                            (Nenhum / Deixar Vazio)
+                          </SelectItem>
+                          {headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Cidade */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-700">Cidade</Label>
+                      <Select
+                        value={mapping.cidade || '__none__'}
+                        onValueChange={(val) =>
+                          setMapping({ ...mapping, cidade: val === '__none__' ? '' : val })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                            (Nenhum / Deixar Vazio)
+                          </SelectItem>
+                          {headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Estado / UF */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-700">Estado / UF</Label>
+                      <Select
+                        value={mapping.estado_uf || '__none__'}
+                        onValueChange={(val) =>
+                          setMapping({ ...mapping, estado_uf: val === '__none__' ? '' : val })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                            (Nenhum / Deixar Vazio)
+                          </SelectItem>
+                          {headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Dias Sem Faturar */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-700">
+                        Dias Sem Faturar (Recência)
+                      </Label>
+                      <Select
+                        value={mapping.dias_sem_faturar || '__none__'}
+                        onValueChange={(val) =>
+                          setMapping({
+                            ...mapping,
+                            dias_sem_faturar: val === '__none__' ? '' : val,
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                            (Nenhum / Deixar Vazio)
+                          </SelectItem>
+                          {headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Faixa Última Compra */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-700">
+                        Faixa de Inatividade
+                      </Label>
+                      <Select
+                        value={mapping.faixa || '__none__'}
+                        onValueChange={(val) =>
+                          setMapping({ ...mapping, faixa: val === '__none__' ? '' : val })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                            (Nenhum / Deixar Vazio)
+                          </SelectItem>
+                          {headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Pedido */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-700">
+                        Número do Pedido (Reconciliação)
+                      </Label>
+                      <Select
+                        value={mapping.pedido || '__none__'}
+                        onValueChange={(val) =>
+                          setMapping({ ...mapping, pedido: val === '__none__' ? '' : val })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-slate-400 italic">
+                            (Nenhum / Deixar Vazio)
+                          </SelectItem>
+                          {headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* Prévia das primeiras 5 linhas */}
+              {rawRows.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold text-slate-700">
+                    Prévia das Primeiras Linhas Carregadas
+                  </div>
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg max-h-48">
+                    <table className="w-full text-[11px] text-left">
+                      <thead className="bg-slate-50 text-slate-600 font-medium sticky top-0">
+                        <tr>
+                          <th className="py-2 px-2.5 border-b">#</th>
+                          {headers.slice(0, 7).map((h) => (
+                            <th key={h} className="py-2 px-2.5 border-b">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {rawRows.slice(0, 5).map((row, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="py-1.5 px-2.5 text-slate-400">{idx + 1}</td>
+                            {headers.slice(0, 7).map((h) => (
+                              <td
+                                key={h}
+                                className="py-1.5 px-2.5 text-slate-700 truncate max-w-[150px]"
+                              >
+                                {String(row[h] || '')}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {/* Relatório do resultado da importação */}
+              {importResult && (
+                <div className="p-4 bg-emerald-50/90 border border-emerald-200 rounded-xl space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2 font-bold text-sm">
+                    <div className="flex items-center space-x-2">
+                      {(importResult.lotesFalhos?.length || 0) > 0 ? (
+                        <AlertTriangle className="h-5 w-5 text-amber-600" />
+                      ) : (
+                        <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                      )}
+                      <span
+                        className={
+                          (importResult.lotesFalhos?.length || 0) > 0
+                            ? 'text-amber-900'
+                            : 'text-emerald-900'
+                        }
+                      >
+                        {(importResult.lotesFalhos?.length || 0) > 0
+                          ? 'Processamento Parcial (com lotes a reenviar)'
+                          : 'Carga e Processamento Concluídos com Sucesso!'}
                       </span>
                     </div>
-                    <p className="text-[11px] text-amber-800">
-                      Estes registros foram faturados pelo ERP mas não encontraram cliente
-                      correspondente por Razão Social/Nome normalizado. Conforme a regra de
-                      reconciliação, nenhum cliente novo foi criado.
-                    </p>
-                    {importResult.semCorrespondenciaLista &&
-                      importResult.semCorrespondenciaLista.length > 0 && (
-                        <div className="max-h-32 overflow-y-auto space-y-1 bg-white p-2 rounded border border-amber-200 text-[11px]">
-                          {importResult.semCorrespondenciaLista.map((sc, i) => (
-                            <div
-                              key={i}
-                              className="text-slate-700 flex justify-between border-b border-slate-100 pb-0.5"
-                            >
-                              <span>
-                                • Linha {sc.linha}: <strong>{sc.nome}</strong>{' '}
-                                {sc.cidade ? `(${sc.cidade}/${sc.uf})` : ''}
-                              </span>
-                              <span className="text-slate-500 font-mono">
-                                Pedido: {sc.pedido || 's/n'}{' '}
-                                {sc.valor ? `| R$ ${Number(sc.valor).toLocaleString('pt-BR')}` : ''}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+                    <div className="flex items-center gap-2">
+                      {importResult.lotesTotal && (
+                        <Badge
+                          variant="outline"
+                          className="bg-white border-slate-300 text-slate-700 text-xs"
+                        >
+                          Lotes: {importResult.lotesSucesso || 0}/{importResult.lotesTotal} OK
+                        </Badge>
                       )}
+                      <Badge
+                        variant="outline"
+                        className="bg-white border-emerald-300 text-emerald-800 text-xs"
+                      >
+                        Modo:{' '}
+                        {importResult.modo === 'base_mestre'
+                          ? 'Base Mestre'
+                          : importResult.modo === 'faturamento_reconciliacao'
+                            ? 'Faturamento / Reconciliação'
+                            : 'Enriquecimento (Margem)'}
+                      </Badge>
+                    </div>
                   </div>
-                )}
 
-              {/* Erros por linha */}
-              {importResult.erros && importResult.erros.length > 0 && (
-                <div className="space-y-1">
-                  <span className="text-xs font-semibold text-rose-700">
-                    Linhas rejeitadas ({importResult.rejeitadas}):
-                  </span>
-                  <div className="max-h-24 overflow-y-auto space-y-1 text-[11px] bg-rose-50/80 p-2 rounded border border-rose-200">
-                    {importResult.erros.map((err, i) => (
-                      <div key={i} className="text-rose-700">
-                        • Linha {err.linha} (Código {err.codigo || 'vazio'}): {err.erro}
+                  {/* Alerta de Lotes Falhos com Botão de Ação Direta */}
+                  {importResult.lotesFalhos && importResult.lotesFalhos.length > 0 && (
+                    <div className="p-3 bg-amber-100 border border-amber-300 rounded-lg text-xs text-amber-900 space-y-2">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <span className="font-semibold">
+                          Atenção: {importResult.lotesFalhos.length} lote(s) não responderam e
+                          precisam ser reenviados:
+                        </span>
+                        <Button
+                          size="sm"
+                          onClick={handleRetryFailedChunks}
+                          disabled={isProcessing}
+                          className="h-6 text-xs bg-amber-700 hover:bg-amber-800 text-white font-medium"
+                        >
+                          <RefreshCw
+                            className={`h-3 w-3 mr-1 ${isProcessing ? 'animate-spin' : ''}`}
+                          />
+                          Reenviar Apenas Lotes Falhos
+                        </Button>
                       </div>
-                    ))}
+                      <div className="space-y-1 font-mono text-[11px] bg-white/70 p-2 rounded">
+                        {importResult.lotesFalhos.map((f, idx) => (
+                          <div key={idx} className="text-amber-900">
+                            • Lote {f.lote}: {f.erro}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 text-xs">
+                    <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
+                      <span className="text-slate-500 block text-[11px]">Total de Linhas</span>
+                      <span className="font-bold text-slate-800 text-base">
+                        {importResult.total}
+                      </span>
+                    </div>
+                    {importResult.modo === 'base_mestre' ? (
+                      <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
+                        <span className="text-slate-500 block text-[11px]">Novos</span>
+                        <span className="font-bold text-emerald-600 text-base">
+                          {importResult.novas}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="bg-white p-2.5 rounded-lg border border-amber-100">
+                        <span className="text-slate-500 block text-[11px]">Matches por Nome</span>
+                        <span className="font-bold text-amber-700 text-base">
+                          {importResult.matchesNome}
+                        </span>
+                      </div>
+                    )}
+                    <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
+                      <span className="text-slate-500 block text-[11px]">Atualizados</span>
+                      <span className="font-bold text-blue-600 text-base">
+                        {importResult.atualizadas}
+                      </span>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                      <span className="text-slate-500 block text-[11px]">
+                        Inalterados (Pulados)
+                      </span>
+                      <span className="font-bold text-slate-700 text-base">
+                        {importResult.inalteradas}
+                      </span>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
+                      <span className="text-slate-500 block text-[11px]">Reconciliados</span>
+                      <span className="font-bold text-purple-600 text-base">
+                        {importResult.reconciliadosFaturaram}
+                      </span>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
+                      <span className="text-slate-500 block text-[11px]">Sem Match</span>
+                      <span className="font-bold text-slate-600 text-base">
+                        {importResult.semCorrespondencia}
+                      </span>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
+                      <span className="text-slate-500 block text-[11px]">Rejeitadas</span>
+                      <span
+                        className={`font-bold text-base ${importResult.rejeitadas > 0 ? 'text-rose-600' : 'text-slate-400'}`}
+                      >
+                        {importResult.rejeitadas}
+                      </span>
+                    </div>
                   </div>
+
+                  {/* Relatório de Divergências no Modo Faturamento: quem faturou mas não estava na base */}
+                  {importResult.modo === 'faturamento_reconciliacao' &&
+                    importResult.semCorrespondencia > 0 && (
+                      <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-lg space-y-1.5 text-xs">
+                        <div className="flex items-center space-x-1.5 font-semibold text-amber-900">
+                          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                          <span>
+                            Relatório de Divergências: Faturaram mas não estão cadastrados na Base (
+                            {importResult.semCorrespondencia})
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-amber-800">
+                          Estes registros foram faturados pelo ERP mas não encontraram cliente
+                          correspondente por Razão Social/Nome normalizado. Conforme a regra de
+                          reconciliação, nenhum cliente novo foi criado.
+                        </p>
+                        {importResult.semCorrespondenciaLista &&
+                          importResult.semCorrespondenciaLista.length > 0 && (
+                            <div className="max-h-32 overflow-y-auto space-y-1 bg-white p-2 rounded border border-amber-200 text-[11px]">
+                              {importResult.semCorrespondenciaLista.map((sc, i) => (
+                                <div
+                                  key={i}
+                                  className="text-slate-700 flex justify-between border-b border-slate-100 pb-0.5"
+                                >
+                                  <span>
+                                    • Linha {sc.linha}: <strong>{sc.nome}</strong>{' '}
+                                    {sc.cidade ? `(${sc.cidade}/${sc.uf})` : ''}
+                                  </span>
+                                  <span className="text-slate-500 font-mono">
+                                    Pedido: {sc.pedido || 's/n'}{' '}
+                                    {sc.valor
+                                      ? `| R$ ${Number(sc.valor).toLocaleString('pt-BR')}`
+                                      : ''}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                      </div>
+                    )}
+
+                  {/* Erros por linha */}
+                  {importResult.erros && importResult.erros.length > 0 && (
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-rose-700">
+                        Linhas rejeitadas ({importResult.rejeitadas}):
+                      </span>
+                      <div className="max-h-24 overflow-y-auto space-y-1 text-[11px] bg-rose-50/80 p-2 rounded border border-rose-200">
+                        {importResult.erros.map((err, i) => (
+                          <div key={i} className="text-rose-700">
+                            • Linha {err.linha} (Código {err.codigo || 'vazio'}): {err.erro}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}{' '}
+            </CardContent>
+            <CardFooter className="flex justify-end space-x-3 border-t border-slate-100 pt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setFile(null)
+                  setRawRows([])
+                  setHeaders([])
+                  setImportResult(null)
+                }}
+                disabled={!file || isProcessing}
+              >
+                Limpar
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleConfirmImport}
+                disabled={!file || rawRows.length === 0 || isProcessing}
+                className="bg-[#F18800] hover:bg-[#d97b00] text-white font-semibold shadow-sm shadow-[#F18800]/25"
+              >
+                {isProcessing ? (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    Processando e Validando...
+                  </>
+                ) : (
+                  'Confirmar e Executar Importação'
+                )}
+              </Button>
+            </CardFooter>
+          </Card>
+
+          {/* Histórico de Cargas Anteriores */}
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold text-slate-800 flex items-center space-x-2">
+                <FileText className="h-4 w-4 text-slate-600" />
+                <span>Histórico de Planilhas Subidas</span>
+              </CardTitle>
+              <CardDescription className="text-xs text-slate-500">
+                Registro das importações, reconciliações e divergências de pedidos
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingHistory ? (
+                <div className="py-6 text-center text-xs text-slate-400">
+                  Carregando histórico...
+                </div>
+              ) : importacoes.length === 0 ? (
+                <div className="text-center py-6 text-xs text-slate-400">
+                  Nenhuma planilha importada até o momento.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
+                      <tr>
+                        <th className="py-2.5 px-3">Nome do Arquivo</th>
+                        <th className="py-2.5 px-3">Modo</th>
+                        <th className="py-2.5 px-3">Data</th>
+                        <th className="py-2.5 px-3">Total</th>
+                        <th className="py-2.5 px-3">Novos</th>
+                        <th className="py-2.5 px-3">Atualizados</th>
+                        <th className="py-2.5 px-3">Inalterados</th>
+                        <th className="py-2.5 px-3">Matches/Sem Match</th>
+                        <th className="py-2.5 px-3">Reconciliados</th>
+                        <th className="py-2.5 px-3">Rejeitadas</th>
+                        <th className="py-2.5 px-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {importacoes.map((item) => (
+                        <tr key={item.id} className="hover:bg-slate-50/80">
+                          <td
+                            className="py-2.5 px-3 font-medium text-slate-800 max-w-[180px] truncate"
+                            title={item.nome_arquivo}
+                          >
+                            {item.nome_arquivo}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <Badge
+                              variant="outline"
+                              className={
+                                item.modo_importacao === 'faturamento_reconciliacao'
+                                  ? 'border-amber-300 bg-amber-50 text-amber-800 text-[10px]'
+                                  : item.modo_importacao === 'enriquecimento_margem'
+                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800 text-[10px]'
+                                    : 'border-blue-300 bg-blue-50 text-blue-800 text-[10px]'
+                              }
+                            >
+                              {item.modo_importacao === 'faturamento_reconciliacao'
+                                ? 'Faturamento'
+                                : item.modo_importacao === 'enriquecimento_margem'
+                                  ? 'Margem'
+                                  : 'Base Mestre'}
+                            </Badge>
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-500 font-mono">
+                            {new Date(item.created).toLocaleString('pt-BR')}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-700">{item.linhas_total}</td>
+                          <td className="py-2.5 px-3 text-emerald-600 font-semibold">
+                            {item.linhas_importadas}
+                          </td>
+                          <td className="py-2.5 px-3 text-blue-600 font-medium">
+                            {item.linhas_atualizadas}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-500 font-medium">
+                            {item.linhas_inalteradas ?? 0}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-600 text-[11px]">
+                            {item.matches_nome ? `${item.matches_nome} nome` : '—'}
+                            {item.sem_correspondencia
+                              ? ` / ${item.sem_correspondencia} s/ match`
+                              : ''}
+                          </td>
+                          <td className="py-2.5 px-3 text-purple-600 font-medium">
+                            {item.reconciliados_faturaram || 0} faturaram
+                          </td>
+                          <td className="py-2.5 px-3 text-xs">
+                            <span
+                              className={
+                                item.linhas_rejeitadas > 0
+                                  ? 'text-rose-600 font-semibold'
+                                  : 'text-slate-400'
+                              }
+                            >
+                              {item.linhas_rejeitadas || 0}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <Badge
+                              variant="outline"
+                              className={
+                                item.status === 'concluida'
+                                  ? 'border-emerald-500 text-emerald-700 bg-emerald-50'
+                                  : 'border-red-500 text-red-700 bg-red-50'
+                              }
+                            >
+                              {item.status}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
-            </div>
-          )}{' '}
-        </CardContent>
-        <CardFooter className="flex justify-end space-x-3 border-t border-slate-100 pt-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setFile(null)
-              setRawRows([])
-              setHeaders([])
-              setImportResult(null)
-            }}
-            disabled={!file || isProcessing}
-          >
-            Limpar
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleConfirmImport}
-            disabled={!file || rawRows.length === 0 || isProcessing}
-            className="bg-[#F18800] hover:bg-[#d97b00] text-white font-semibold shadow-sm shadow-[#F18800]/25"
-          >
-            {isProcessing ? (
-              <>
-                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                Processando e Validando...
-              </>
-            ) : (
-              'Confirmar e Executar Importação'
-            )}
-          </Button>
-        </CardFooter>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* Histórico de Cargas Anteriores */}
-      <Card className="border-slate-200 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-sm font-semibold text-slate-800 flex items-center space-x-2">
-            <FileText className="h-4 w-4 text-slate-600" />
-            <span>Histórico de Planilhas Subidas</span>
-          </CardTitle>
-          <CardDescription className="text-xs text-slate-500">
-            Registro das importações, reconciliações e divergências de pedidos
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loadingHistory ? (
-            <div className="py-6 text-center text-xs text-slate-400">Carregando histórico...</div>
-          ) : importacoes.length === 0 ? (
-            <div className="text-center py-6 text-xs text-slate-400">
-              Nenhuma planilha importada até o momento.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
-                  <tr>
-                    <th className="py-2.5 px-3">Nome do Arquivo</th>
-                    <th className="py-2.5 px-3">Modo</th>
-                    <th className="py-2.5 px-3">Data</th>
-                    <th className="py-2.5 px-3">Total</th>
-                    <th className="py-2.5 px-3">Novos</th>
-                    <th className="py-2.5 px-3">Atualizados</th>
-                    <th className="py-2.5 px-3">Inalterados</th>
-                    <th className="py-2.5 px-3">Matches/Sem Match</th>
-                    <th className="py-2.5 px-3">Reconciliados</th>
-                    <th className="py-2.5 px-3">Rejeitadas</th>
-                    <th className="py-2.5 px-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {importacoes.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50/80">
-                      <td
-                        className="py-2.5 px-3 font-medium text-slate-800 max-w-[180px] truncate"
-                        title={item.nome_arquivo}
-                      >
-                        {item.nome_arquivo}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <Badge
-                          variant="outline"
-                          className={
-                            item.modo_importacao === 'faturamento_reconciliacao'
-                              ? 'border-amber-300 bg-amber-50 text-amber-800 text-[10px]'
-                              : item.modo_importacao === 'enriquecimento_margem'
-                                ? 'border-emerald-300 bg-emerald-50 text-emerald-800 text-[10px]'
-                                : 'border-blue-300 bg-blue-50 text-blue-800 text-[10px]'
-                          }
-                        >
-                          {item.modo_importacao === 'faturamento_reconciliacao'
-                            ? 'Faturamento'
-                            : item.modo_importacao === 'enriquecimento_margem'
-                              ? 'Margem'
-                              : 'Base Mestre'}
-                        </Badge>
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-500 font-mono">
-                        {new Date(item.created).toLocaleString('pt-BR')}
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-700">{item.linhas_total}</td>
-                      <td className="py-2.5 px-3 text-emerald-600 font-semibold">
-                        {item.linhas_importadas}
-                      </td>
-                      <td className="py-2.5 px-3 text-blue-600 font-medium">
-                        {item.linhas_atualizadas}
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-500 font-medium">
-                        {item.linhas_inalteradas ?? 0}
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-600 text-[11px]">
-                        {item.matches_nome ? `${item.matches_nome} nome` : '—'}
-                        {item.sem_correspondencia ? ` / ${item.sem_correspondencia} s/ match` : ''}
-                      </td>
-                      <td className="py-2.5 px-3 text-purple-600 font-medium">
-                        {item.reconciliados_faturaram || 0} faturaram
-                      </td>
-                      <td className="py-2.5 px-3 text-xs">
-                        <span
-                          className={
-                            item.linhas_rejeitadas > 0
-                              ? 'text-rose-600 font-semibold'
-                              : 'text-slate-400'
-                          }
-                        >
-                          {item.linhas_rejeitadas || 0}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <Badge
-                          variant="outline"
-                          className={
-                            item.status === 'concluida'
-                              ? 'border-emerald-500 text-emerald-700 bg-emerald-50'
-                              : 'border-red-500 text-red-700 bg-red-50'
-                          }
-                        >
-                          {item.status}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        {/* Conteúdo da Aba 2: Respostas do Formulário */}
+        <TabsContent value="respostas_forms" className="space-y-6 m-0 focus-visible:outline-none">
+          <ImportacaoRespostasFormularioTab />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

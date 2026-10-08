@@ -833,6 +833,69 @@ export async function processSpreadsheetRows(data: {
   return res.json()
 }
 
+export interface ItemImportacaoFormulario {
+  linha?: number
+  codigoCliente: string
+  nomeCliente?: string
+  operadorEmail?: string
+  operadorNome?: string
+  dataInicio?: string
+  dataConclusao?: string
+  motivoInterrupcao?: string
+  avaliacaoGeral?: string | number
+  houveErro?: string
+  naturezaFalha?: string
+  setorFalha?: string
+  anexoUrl?: string
+  necessarioVoltar?: string
+  probabilidadeRetomada?: string
+  desfechoCru?: string
+  desfechoNormalizado?: string
+  valorPotencial?: number
+  toneladasPotencial?: number
+  observacaoGeral?: string
+  numeroPedido?: string
+  respostasPayload?: Record<string, unknown>
+}
+
+export interface RespostaImportacaoFormularioResultado {
+  ok: boolean
+  totalLidos: number
+  importadas: number
+  duplicadas: number
+  reativacoesCompletas: number
+  clientesNaoEncontrados: string[]
+  totalNaoEncontrados: number
+  erros: Array<{ linha: number; erro: string }>
+  dryRun?: boolean
+  prontosParaImportar?: number
+}
+
+/**
+ * Envia itens normalizados de respostas de formulário para gravação no servidor (exclusivo admin).
+ */
+export async function importarRespostasFormulario(data: {
+  items: ItemImportacaoFormulario[]
+  dryRun?: boolean
+}): Promise<RespostaImportacaoFormularioResultado> {
+  const res = await fetch(
+    `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/import/respostas-formulario`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: pb.authStore.token,
+      },
+      body: JSON.stringify(data),
+    },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || err.message || 'Falha ao importar respostas do formulário')
+  }
+  return res.json()
+}
+
 // Bases de Referência (armzenamento de planilhas cruas para definição do mapeamento do banco)
 export async function fetchBasesReferencia() {
   return pb.collection('bases_referencia').getFullList<import('@/types').BaseReferencia>({
