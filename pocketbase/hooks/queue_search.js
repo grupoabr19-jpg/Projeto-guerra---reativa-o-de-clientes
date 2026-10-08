@@ -434,18 +434,20 @@ routerAdd(
         let ultimoContatoStr = '—'
         const ultFat = c.getString('ultimo_faturamento_data')
         const ultComp = c.getString('ultima_compra')
+        const formatarDataIsoBrl = (isoStr) => {
+          if (!isoStr) return '—'
+          try {
+            const d = new Date(isoStr)
+            if (isNaN(d.getTime())) return isoStr
+            return d.toISOString().slice(0, 10).split('-').reverse().join('/')
+          } catch (_) {
+            return isoStr
+          }
+        }
         if (ultFat) {
-          try {
-            ultimoContatoStr = new Date(ultFat).toLocaleDateString('pt-BR')
-          } catch (_) {
-            ultimoContatoStr = ultFat
-          }
+          ultimoContatoStr = formatarDataIsoBrl(ultFat)
         } else if (ultComp) {
-          try {
-            ultimoContatoStr = new Date(ultComp).toLocaleDateString('pt-BR')
-          } catch (_) {
-            ultimoContatoStr = ultComp
-          }
+          ultimoContatoStr = formatarDataIsoBrl(ultComp)
         }
 
         const stStr = c.getString('standby_ate')
@@ -1293,9 +1295,26 @@ routerAdd(
         it.set('tipo', 'status')
         it.set('desfecho', 'faturamento_concluido')
         it.set('motivo', 'Conclusão e complementação de faturamento de pedido em aberto')
+        const formatarMoedaLocal = (num) => {
+          const val = Number(num) || 0
+          const fixed = val.toFixed(2)
+          const parts = fixed.split('.')
+          const inteira = parts[0]
+          const decimal = parts[1] || '00'
+          let formatada = ''
+          const len = inteira.length
+          for (let i = 0; i < len; i++) {
+            if (i > 0 && (len - i) % 3 === 0) {
+              formatada += '.'
+            }
+            formatada += inteira.charAt(i)
+          }
+          return formatada + ',' + decimal
+        }
+        const dataFatStr = dataFatDate.toISOString().slice(0, 10).split('-').reverse().join('/')
         it.set(
           'conteudo',
-          `Faturamento concluído por ${userName}.\nData Faturamento: ${dataFatDate.toLocaleDateString('pt-BR')}\nValor Faturado: R$ ${valorFaturadoNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${numeroNfFatura ? `\nNF/Fatura: ${numeroNfFatura}` : ''}${observacoes ? `\nObservações: ${observacoes}` : ''}`,
+          `Faturamento concluído por ${userName}.\nData Faturamento: ${dataFatStr}\nValor Faturado: R$ ${formatarMoedaLocal(valorFaturadoNum)}${numeroNfFatura ? `\nNF/Fatura: ${numeroNfFatura}` : ''}${observacoes ? `\nObservações: ${observacoes}` : ''}`,
         )
         it.set('estado_anterior', cliente.getString('estado'))
         it.set('estado_novo', cliente.getString('estado'))

@@ -60,6 +60,24 @@ routerAdd(
           .trim()
       }
 
+      // Formatação de moeda BRL compatível com Goja (sem toLocaleString/Intl)
+      const formatarMoedaBrlSeguro = (num) => {
+        const val = Number(num) || 0
+        const fixed = val.toFixed(2)
+        const parts = fixed.split('.')
+        const inteira = parts[0]
+        const decimal = parts[1] || '00'
+        let formatada = ''
+        const len = inteira.length
+        for (let i = 0; i < len; i++) {
+          if (i > 0 && (len - i) % 3 === 0) {
+            formatada += '.'
+          }
+          formatada += inteira.charAt(i)
+        }
+        return formatada + ',' + decimal
+      }
+
       // Coletar todos os códigos de clientes referenciados para busca em lote
       const codigosSet = new Set()
       for (let i = 0; i < items.length; i++) {
@@ -341,7 +359,7 @@ routerAdd(
               ? `Probabilidade de Retomada: ${item.probabilidadeRetomada}`
               : '',
             item.valorPotencial > 0
-              ? `Valor Cotação: R$ ${item.valorPotencial.toLocaleString('pt-BR')}`
+              ? 'Valor Cotação: R$ ' + formatarMoedaBrlSeguro(item.valorPotencial)
               : '',
             item.toneladasPotencial > 0 ? `Peso/Toneladas: ${item.toneladasPotencial} t` : '',
             item.anexoUrl ? `Anexo Comprobatório: ${item.anexoUrl}` : '',
