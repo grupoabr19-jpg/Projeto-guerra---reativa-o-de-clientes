@@ -1592,6 +1592,55 @@ export async function fetchClientesAtivosRemovidos(options?: {
  * Consulta agregações e cruzamentos de dados avançados da base de clientes
  * com filtros combinados (AND) calculados diretamente no backend SQLite.
  */
+export async function fetchMetricasRespostasFormulario(options?: {
+  regiao?: string
+  segmento?: string
+  periodo?: string
+  baseCategoria?: string
+}): Promise<import('@/types').MetricasRespostasFormularioResponse> {
+  const params = new URLSearchParams()
+  const regiao = options?.regiao?.trim()
+  if (regiao && regiao.toLowerCase() !== 'todas') {
+    params.set('regiao', regiao)
+  }
+  const segmento = options?.segmento?.trim()
+  if (segmento && segmento.toLowerCase() !== 'todos') {
+    params.set('segmento', segmento)
+  }
+  if (options?.periodo && options.periodo !== 'total') {
+    params.set('periodo', options.periodo)
+  }
+  if (options?.baseCategoria && options.baseCategoria !== 'todas') {
+    params.set('baseCategoria', options.baseCategoria)
+  }
+
+  const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
+  const queryStr = params.toString()
+  const url = `${basePbUrl}/backend/v1/metrics/respostas-formulario${queryStr ? `?${queryStr}` : ''}`
+
+  const token = pb.authStore.token || ''
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = token
+  }
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers,
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(
+      err.error ||
+        err.message ||
+        `Falha ao buscar métricas da ficha de atendimento (${res.status})`,
+    )
+  }
+
+  return res.json()
+}
+
 export async function fetchReportsAnalytics(
   filtros?: import('@/types').FiltrosRelatoriosAvancados,
 ): Promise<import('@/types').ReportsAnalyticsResponse> {

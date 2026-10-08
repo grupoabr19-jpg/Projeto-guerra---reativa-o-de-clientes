@@ -61,6 +61,8 @@ import { TODAS_REGIOES_FILTRO } from '@/types'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { ExpedienteStatusBadge } from '@/components/ExpedienteStatusBadge'
+import { MetricasFichaAtendimentoSection } from '@/components/MetricasFichaAtendimentoSection'
+import { SEGMENTOS_OFICIAIS } from '@/lib/segmentos'
 import { usePresence } from '@/hooks/usePresence'
 import { calcularTaxaConversao } from '@/lib/conversao'
 
@@ -75,6 +77,7 @@ export default function Dashboard() {
   const [selectedRegion, setSelectedRegion] = useState<string>('todas')
   const [selectedCategoria, setSelectedCategoria] = useState<string>('todas')
   const [selectedPeriodo, setSelectedPeriodo] = useState<PeriodoAtendimentoFiltro>('hoje')
+  const [selectedSegmento, setSelectedSegmento] = useState<string>('todos')
   const [metricasAtendimento, setMetricasAtendimento] =
     useState<MetricasAtendimentosDashboard | null>(null)
   const [baseKpisData, setBaseKpisData] = useState<MetricasBaseKpisResponse | null>(null)
@@ -366,6 +369,24 @@ export default function Dashboard() {
                   </SelectItem>
                 ))}
                 <SelectItem value="Sem Região">Sem Região</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Segmento */}
+          <div className="flex items-center space-x-2 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 shadow-sm">
+            <span className="text-xs text-slate-500 font-medium">Segmento:</span>
+            <Select value={selectedSegmento} onValueChange={setSelectedSegmento}>
+              <SelectTrigger className="h-7 text-xs border-0 bg-transparent focus:ring-0 w-44 font-medium text-slate-800">
+                <SelectValue placeholder="Todos os Segmentos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos os Segmentos</SelectItem>
+                {SEGMENTOS_OFICIAIS.map((seg) => (
+                  <SelectItem key={seg} value={seg}>
+                    {seg}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -1439,6 +1460,14 @@ export default function Dashboard() {
           </Card>
         </div>
       </div>
+
+      {/* SEÇÃO VISUAL: MÉTRICAS DA FICHA DE ATENDIMENTO */}
+      <MetricasFichaAtendimentoSection
+        selectedPeriodo={selectedPeriodo}
+        selectedRegion={selectedRegion}
+        selectedSegmento={selectedSegmento}
+        selectedCategoria={selectedCategoria}
+      />
 
       {/* BLOCO DE AUDITORIA: CLIENTES ATIVOS REMOVIDOS DA BASE COM BREAKDOWN POR MOTIVO */}
       <div className="space-y-3">

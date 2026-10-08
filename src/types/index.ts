@@ -853,3 +853,33 @@ export interface KommoStatusResponse {
   ping_error?: string
   checado_em: string
 }
+
+// Métricas Agregadas da Ficha de Atendimento (Respostas de Formulário)
+export interface ContagemItem {
+  label: string
+  count: number
+}
+
+export interface MetricasRespostasFormularioResponse {
+  totalRegistros: number
+  kpis: {
+    somaValorPotencial: number
+    mediaValorPotencial: number
+    countComValor: number
+    somaToneladas: number
+    mediaToneladas: number
+    countComToneladas: number
+  }
+  q3Orcamento: {
+    sim: number
+    nao: number
+    naoRespondido: number
+    taxaSim: number
+    taxaNao: number
+    totalValido: number
+  }
+  q7Concorrencia: ContagemItem[]
+  q8Ocorrencia: ContagemItem[]
+  q10AcaoCorretiva: ContagemItem[]
+  desfechos: ContagemItem[]
+}
