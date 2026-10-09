@@ -76,7 +76,7 @@ export default function Dashboard() {
   const [loadingAtendimentos, setLoadingAtendimentos] = useState(true)
   const [selectedRegion, setSelectedRegion] = useState<string>('todas')
   const [selectedCategoria, setSelectedCategoria] = useState<string>('todas')
-  const [selectedPeriodo, setSelectedPeriodo] = useState<PeriodoAtendimentoFiltro>('hoje')
+  const [selectedPeriodo, setSelectedPeriodo] = useState<PeriodoAtendimentoFiltro>('total')
   const [selectedSegmento, setSelectedSegmento] = useState<string>('todos')
   const [metricasAtendimento, setMetricasAtendimento] =
     useState<MetricasAtendimentosDashboard | null>(null)
