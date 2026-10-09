@@ -321,16 +321,106 @@ routerAdd(
           ? kpiModel.reativados_reais
           : kpiModel.reativadosReais || 0,
       )
-      const valorRecuperadoReal = Number(
+      let valorRecuperadoReal = Number(
         kpiModel.valor_recuperado_real !== undefined
           ? kpiModel.valor_recuperado_real
           : kpiModel.valorRecuperadoReal || 0,
       )
-      const toneladasRecuperadasReal = Number(
+      let toneladasRecuperadasReal = Number(
         kpiModel.toneladas_recuperadas_real !== undefined
           ? kpiModel.toneladas_recuperadas_real
           : kpiModel.toneladasRecuperadasReal || 0,
       )
+
+      // FONTE OFICIAL DAS MÉTRICAS DE REAL EQUIPE: FICHAS DE ATENDIMENTO (respostas_formulario)
+      try {
+        const rfWhereConditions = []
+        for (let ci = 0; ci < conditions.length; ci++) {
+          const cond = conditions[ci]
+          // Prefixar colunas com 'c.' para campos da tabela clientes
+          const prefixedCond = cond
+            .replace(/\bbase_categoria\b/g, 'c.base_categoria')
+            .replace(/\bsem_dono_equipe\b/g, 'c.sem_dono_equipe')
+            .replace(/\bregiao\b/g, 'c.regiao')
+            .replace(/\bdias_sem_faturar\b/g, 'c.dias_sem_faturar')
+            .replace(/\bsegmento\b/g, 'c.segmento')
+            .replace(/\bvendedor\b/g, 'c.vendedor')
+            .replace(/\boperador\b/g, 'c.operador')
+            .replace(/\bscore\b/g, 'c.score')
+            .replace(/\bfat_12m_reais\b/g, 'c.fat_12m_reais')
+            .replace(/\bestado\b/g, 'c.estado')
+            .replace(/\bativo_fora_base\b/g, 'c.ativo_fora_base')
+            .replace(/\bupdated\b/g, 'c.updated')
+          rfWhereConditions.push(prefixedCond)
+        }
+
+        const rfWhereClause = rfWhereConditions.length > 0 ? rfWhereConditions.join(' AND ') : '1=1'
+
+        const fichasQuery = `
+          SELECT
+            rf.cliente as cliente_id,
+            rf.desfecho as desfecho,
+            rf.valor_potencial as valor_potencial,
+            rf.toneladas_potencial as toneladas_potencial
+          FROM respostas_formulario rf
+          INNER JOIN clientes c ON c.id = rf.cliente
+          WHERE ${rfWhereClause}
+          ORDER BY rf.created DESC
+        `
+
+        const fRows = arrayOf(
+          new DynamicModel({
+            cliente_id: '',
+            desfecho: '',
+            valor_potencial: -0,
+            toneladas_potencial: -0,
+          }),
+        )
+
+        const fQueryBuilder = $app.db().newQuery(fichasQuery)
+        if (Object.keys(bindParams).length > 0) {
+          fQueryBuilder.bind(bindParams)
+        }
+        fQueryBuilder.all(fRows)
+
+        const desfechosIsentos = {
+          duplicado: true,
+          sem_contato: true,
+          ativo_fora_base: true,
+          compra_terceiros: true,
+          cliente_final: true,
+          restricao_financeira: true,
+        }
+
+        const clientesProcessados = {}
+        let somaValorFichas = 0
+        let somaTonFichas = 0
+
+        for (let fi = 0; fi < fRows.length; fi++) {
+          const fr = fRows[fi]
+          const cId = fr.cliente_id
+          if (!cId || clientesProcessados[cId]) continue
+          clientesProcessados[cId] = true
+
+          const desfecho = String(fr.desfecho || '').trim()
+          if (desfecho === 'reativado' && !desfechosIsentos[desfecho]) {
+            const vPot = Number(fr.valor_potencial || 0)
+            const tPot = Number(fr.toneladas_potencial || 0)
+            if (vPot > 0) somaValorFichas += vPot
+            if (tPot > 0) somaTonFichas += tPot
+          }
+        }
+
+        if (somaValorFichas > 0 || somaTonFichas > 0) {
+          valorRecuperadoReal = Number(somaValorFichas.toFixed(2))
+          toneladasRecuperadasReal = Number(somaTonFichas.toFixed(4))
+        }
+      } catch (fichasErr) {
+        console.log(
+          '[reports_analytics] Erro ao calcular valor/ton das fichas: ' +
+            (fichasErr && fichasErr.message ? fichasErr.message : String(fichasErr)),
+        )
+      }
 
       const faturamentoCruzamentoCount = Number(
         kpiModel.faturamento_recente_cruzamento !== undefined
