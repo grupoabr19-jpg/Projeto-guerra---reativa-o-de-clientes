@@ -1045,18 +1045,54 @@ export default function AtendimentoPage() {
     setIsFinalizing(true)
     try {
       // 1. Gravar dados das respostas
-      const valorPotencial =
-        parseFloat(
-          String(answers.q15 || 0)
-            .replace(/[^\d.,]/g, '')
-            .replace(',', '.'),
-        ) || 0
-      const toneladasPotencial =
-        parseFloat(
-          String(answers.q16 || 0)
-            .replace(/[^\d.,]/g, '')
-            .replace(',', '.'),
-        ) || 0
+      const rawQ15 = String(answers.q15 || 0)
+      const rawQ16 = String(answers.q16 || 0)
+      const parseNumeroLimpo = (str: string) => {
+        let limpo = str.trim()
+        if (!limpo) return 0
+        if (limpo.includes('.') && limpo.includes(',')) {
+          limpo = limpo.replace(/\./g, '').replace(',', '.')
+        } else if (limpo.includes(',')) {
+          limpo = limpo.replace(',', '.')
+        }
+        limpo = limpo.replace(/[^\d.]/g, '')
+        const n = parseFloat(limpo)
+        return isNaN(n) ? 0 : n
+      }
+
+      const valorPotencial = parseNumeroLimpo(rawQ15)
+      const pesoDigitado = parseNumeroLimpo(rawQ16)
+
+      // Prevenção no frontend: normalização unificada kg -> ton
+      let toneladasPotencial = pesoDigitado
+      let unidadeDetectada = 'ton'
+
+      if (pesoDigitado > 0) {
+        if (valorPotencial > 0) {
+          const ratio = valorPotencial / pesoDigitado
+          if (ratio >= 2 && ratio <= 60) {
+            unidadeDetectada = 'kg'
+            toneladasPotencial = Number((pesoDigitado / 1000).toFixed(6))
+          } else if (ratio < 2 && pesoDigitado >= 50) {
+            unidadeDetectada = 'kg'
+            toneladasPotencial = Number((pesoDigitado / 1000).toFixed(6))
+          } else if (pesoDigitado >= 50 && ratio > 60 && ratio < 500) {
+            unidadeDetectada = 'kg'
+            toneladasPotencial = Number((pesoDigitado / 1000).toFixed(6))
+          } else {
+            unidadeDetectada = 'ton'
+            toneladasPotencial = pesoDigitado
+          }
+        } else {
+          if (pesoDigitado >= 50) {
+            unidadeDetectada = 'kg'
+            toneladasPotencial = Number((pesoDigitado / 1000).toFixed(6))
+          } else {
+            unidadeDetectada = 'ton'
+            toneladasPotencial = pesoDigitado
+          }
+        }
+      }
 
       // Consolidar respostas com "Outros: <texto>"
       const chavesOutros = ['q3', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'q12', 'q13']
@@ -1067,6 +1103,10 @@ export default function AtendimentoPage() {
           respostasConsolidadas[key] = texto ? `Outros: ${texto}` : 'Outros'
         }
       })
+
+      respostasConsolidadas.q16 = rawQ16 !== '0' && rawQ16.trim() !== '' ? rawQ16 : pesoDigitado
+      respostasConsolidadas.q16_unidade_detectada = unidadeDetectada
+      respostasConsolidadas.q16_toneladas_normalizadas = toneladasPotencial
 
       await saveRespostasFormulario({
         cliente: cliente.id,

@@ -106,36 +106,37 @@ onRecordCreateRequest((e) => {
           )
         }
 
-        // Heurística de normalização de unidade (kg vs ton):
-        // Os operadores habitualmente informam o peso em quilos (ex: 525.4 kg, 5552.1 kg).
-        // Se a razão valor / peso estiver no range de R$ 2 a R$ 60 / kg (preço típico do aço),
-        // o operador digitou em kg -> armazenar toneladas = peso / 1000.
-        // Se a razão estiver entre 500 e 150000, já está em toneladas -> manter.
-        let unidadeDetectada = 'ton'
-        let pesoNormalizadoTon = numPeso
+        // Heurística de normalização de unidade (kg vs ton) com helper centralizado:
+        var normRes =
+          typeof normalizarPesoEUnidade === 'function'
+            ? normalizarPesoEUnidade(numValor, numPeso, rawValor, rawPeso)
+            : null
 
-        if (numValor > 0 && numPeso > 0) {
-          const ratio = numValor / numPeso
-          if (ratio >= 2 && ratio <= 60) {
-            unidadeDetectada = 'kg'
-            pesoNormalizadoTon = Number((numPeso / 1000).toFixed(4))
-          } else if (ratio >= 500 && ratio <= 150000) {
-            unidadeDetectada = 'ton'
-            pesoNormalizadoTon = numPeso
-          } else if (ratio < 2 && numPeso > 50) {
-            unidadeDetectada = 'kg'
-            pesoNormalizadoTon = Number((numPeso / 1000).toFixed(4))
+        var unidadeDetectada = normRes ? normRes.unidade_detectada : 'ton'
+        var pesoNormalizadoTon = normRes ? normRes.toneladas : numPeso
+
+        if (!normRes) {
+          if (numValor > 0 && numPeso > 0) {
+            var ratio = numValor / numPeso
+            if (ratio >= 2 && ratio <= 60) {
+              unidadeDetectada = 'kg'
+              pesoNormalizadoTon = Number((numPeso / 1000).toFixed(6))
+            } else if (ratio < 2 && numPeso >= 50) {
+              unidadeDetectada = 'kg'
+              pesoNormalizadoTon = Number((numPeso / 1000).toFixed(6))
+            } else if (numPeso >= 50) {
+              unidadeDetectada = 'kg'
+              pesoNormalizadoTon = Number((numPeso / 1000).toFixed(6))
+            }
           } else if (numPeso >= 50) {
             unidadeDetectada = 'kg'
-            pesoNormalizadoTon = Number((numPeso / 1000).toFixed(4))
+            pesoNormalizadoTon = Number((numPeso / 1000).toFixed(6))
           }
-        } else if (numPeso >= 50) {
-          unidadeDetectada = 'kg'
-          pesoNormalizadoTon = Number((numPeso / 1000).toFixed(4))
         }
 
         record.set('toneladas_potencial', pesoNormalizadoTon)
         const novasResp = Object.assign({}, respostas)
+        novasResp.q16 = rawPeso !== undefined ? rawPeso : numPeso
         novasResp.q16_unidade_detectada = unidadeDetectada
         novasResp.q16_toneladas_normalizadas = pesoNormalizadoTon
         record.set('respostas', novasResp)
@@ -161,6 +162,46 @@ onRecordCreateRequest((e) => {
     )
   }
 
+  e.next()
+}, 'respostas_formulario')
+
+// 1.0b Hook ao atualizar registro na coleção "respostas_formulario"
+onRecordUpdateRequest((e) => {
+  const record = e.record
+  try {
+    const respostas = record.get('respostas') || {}
+    const q3Val =
+      respostas.q3 !== undefined && respostas.q3 !== null ? String(respostas.q3).trim() : ''
+    const fezOrcamento = q3Val.toLowerCase() === 'sim'
+
+    const rawValor =
+      respostas.q15 !== undefined ? respostas.q15 : record.getFloat('valor_potencial')
+    const rawPeso =
+      respostas.q16 !== undefined ? respostas.q16 : record.getFloat('toneladas_potencial')
+    const vCur = record.getFloat('valor_potencial')
+    const pCur = record.getFloat('toneladas_potencial')
+
+    if (fezOrcamento || pCur > 0 || rawPeso) {
+      var normRes =
+        typeof normalizarPesoEUnidade === 'function'
+          ? normalizarPesoEUnidade(vCur, pCur, rawValor, rawPeso)
+          : null
+
+      if (normRes) {
+        record.set('toneladas_potencial', normRes.toneladas)
+        const novasResp = Object.assign({}, respostas)
+        novasResp.q16 = rawPeso !== undefined ? rawPeso : normRes.peso_bruto
+        novasResp.q16_unidade_detectada = normRes.unidade_detectada
+        novasResp.q16_toneladas_normalizadas = normRes.toneladas
+        record.set('respostas', novasResp)
+      }
+    }
+  } catch (err) {
+    console.log(
+      '[standby_integrity] Erro em onRecordUpdateRequest respostas_formulario:',
+      err.message,
+    )
+  }
   e.next()
 }, 'respostas_formulario')
 
@@ -230,15 +271,37 @@ onRecordAfterCreateSuccess((e) => {
         ' (lock e operador zerados)',
     )
   } catch (err) {
+    if (err instanceof BadRequestError || (err && err.name === 'BadRequestError')) {
+      throw err
+    }
     console.log(
-      '[standby_integrity] Erro na transição atômica server-side de respostas_formulario: ' +
-        err.message,
+      '[standby_integrity] Erro em onRecordCreateRequest respostas_formulario:',
+      err.message,
     )
+
+    // Em caso de erro inesperado, NÃO deixar passar valor bruto não normalizado
+    // Aplica o fallback seguro com o raw do JSON respostas.q16
+    try {
+      const respostasFallback = record.get('respostas') || {}
+      const rawQ16 = respostasFallback.q16
+      const rawQ15 = respostasFallback.q15
+      const vCur = record.getFloat('valor_potencial')
+      const pCur = record.getFloat('toneladas_potencial')
+      if (typeof normalizarPesoEUnidade === 'function') {
+        const fallbackNorm = normalizarPesoEUnidade(vCur, pCur, rawQ15, rawQ16)
+        record.set('toneladas_potencial', fallbackNorm.toneladas)
+        const nResp = Object.assign({}, respostasFallback)
+        nResp.q16_unidade_detectada = fallbackNorm.unidade_detectada
+        nResp.q16_toneladas_normalizadas = fallbackNorm.toneladas
+        record.set('respostas', nResp)
+      }
+    } catch (fbErr) {
+      console.log('[standby_integrity] Falha no fallback seguro:', fbErr.message)
+    }
   }
 
   e.next()
 }, 'respostas_formulario')
-
 // 2. Hook ao criar registro na coleção "interacoes"
 onRecordCreateRequest((e) => {
   const authRecord = e.auth

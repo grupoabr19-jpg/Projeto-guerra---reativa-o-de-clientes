@@ -220,6 +220,7 @@ routerAdd(
 
         const fichasQuery = `
           SELECT
+            rf.id as ficha_id,
             rf.cliente as cliente_id,
             rf.desfecho as desfecho,
             rf.valor_potencial as valor_potencial,
@@ -236,6 +237,7 @@ routerAdd(
 
         const fRows = arrayOf(
           new DynamicModel({
+            ficha_id: '',
             cliente_id: '',
             desfecho: '',
             valor_potencial: -0,
@@ -271,7 +273,28 @@ routerAdd(
           const desfecho = String(fr.desfecho || '').trim()
           if (desfecho === 'reativado' && !desfechosIsentos[desfecho]) {
             const vPot = Number(fr.valor_potencial || 0)
-            const tPot = Number(fr.toneladas_potencial || 0)
+            let tPot = Number(fr.toneladas_potencial || 0)
+
+            // Cinto de segurança nos agregadores:
+            // Descartar fichas com valor_potencial > 0, toneladas_potencial > 0 e razão < 100 R$/ton
+            // e registrar console.log de aviso com o id da ficha
+            if (vPot > 0 && tPot > 0 && vPot / tPot < 100) {
+              console.log(
+                '[metrics_base_kpis] Cinto de segurança ativado: ficha corrupta descartada id=' +
+                  fr.ficha_id +
+                  ' (cliente=' +
+                  cId +
+                  ', v=' +
+                  vPot +
+                  ', ton=' +
+                  tPot +
+                  ', razão=' +
+                  (vPot / tPot).toFixed(2) +
+                  ' R$/ton)',
+              )
+              continue
+            }
+
             if (vPot > 0) somaValorFichas += vPot
             if (tPot > 0) somaTonFichas += tPot
           }

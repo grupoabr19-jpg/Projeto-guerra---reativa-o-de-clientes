@@ -304,28 +304,41 @@ routerAdd(
             item.respostasPayload || {},
           )
 
-          // Heurística de normalização de unidade (kg vs ton) para importação
-          let pesoTonNormalizado = item.toneladasPotencial > 0 ? item.toneladasPotencial : 0
-          let unidadeDetectada = 'ton'
+          // Heurística de normalização de unidade (kg vs ton) para importação com helper centralizado
+          var normRes =
+            typeof normalizarPesoEUnidade === 'function'
+              ? normalizarPesoEUnidade(
+                  item.valorPotencial,
+                  item.toneladasPotencial,
+                  item.valorPotencial,
+                  item.toneladasPotencial,
+                )
+              : null
 
-          if (item.valorPotencial > 0 && item.toneladasPotencial > 0) {
-            const ratio = item.valorPotencial / item.toneladasPotencial
-            if (ratio >= 2 && ratio <= 60) {
-              unidadeDetectada = 'kg'
-              pesoTonNormalizado = Number((item.toneladasPotencial / 1000).toFixed(4))
-            } else if (ratio >= 500 && ratio <= 150000) {
-              unidadeDetectada = 'ton'
-              pesoTonNormalizado = item.toneladasPotencial
-            } else if (ratio < 2 && item.toneladasPotencial > 50) {
-              unidadeDetectada = 'kg'
-              pesoTonNormalizado = Number((item.toneladasPotencial / 1000).toFixed(4))
+          var pesoTonNormalizado = normRes
+            ? normRes.toneladas
+            : item.toneladasPotencial > 0
+              ? item.toneladasPotencial
+              : 0
+          var unidadeDetectada = normRes ? normRes.unidade_detectada : 'ton'
+
+          if (!normRes) {
+            if (item.valorPotencial > 0 && item.toneladasPotencial > 0) {
+              var ratio = item.valorPotencial / item.toneladasPotencial
+              if (ratio >= 2 && ratio <= 60) {
+                unidadeDetectada = 'kg'
+                pesoTonNormalizado = Number((item.toneladasPotencial / 1000).toFixed(6))
+              } else if (ratio < 2 && item.toneladasPotencial >= 50) {
+                unidadeDetectada = 'kg'
+                pesoTonNormalizado = Number((item.toneladasPotencial / 1000).toFixed(6))
+              } else if (item.toneladasPotencial >= 50) {
+                unidadeDetectada = 'kg'
+                pesoTonNormalizado = Number((item.toneladasPotencial / 1000).toFixed(6))
+              }
             } else if (item.toneladasPotencial >= 50) {
               unidadeDetectada = 'kg'
-              pesoTonNormalizado = Number((item.toneladasPotencial / 1000).toFixed(4))
+              pesoTonNormalizado = Number((item.toneladasPotencial / 1000).toFixed(6))
             }
-          } else if (item.toneladasPotencial >= 50) {
-            unidadeDetectada = 'kg'
-            pesoTonNormalizado = Number((item.toneladasPotencial / 1000).toFixed(4))
           }
 
           if (item.valorPotencial > 0) {
