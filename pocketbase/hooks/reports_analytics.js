@@ -333,6 +333,7 @@ routerAdd(
       )
 
       // FONTE OFICIAL DAS MÉTRICAS DE REAL EQUIPE: FICHAS DE ATENDIMENTO (respostas_formulario)
+      const fichasPorCliente = {}
       try {
         const rfWhereConditions = []
         for (let ci = 0; ci < conditions.length; ci++) {
@@ -395,7 +396,6 @@ routerAdd(
         }
 
         const clientesProcessados = {}
-        const fichasPorCliente = {}
         let somaValorFichas = 0
         let somaTonFichas = 0
 
