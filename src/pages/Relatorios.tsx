@@ -37,6 +37,7 @@ import {
   Layers2,
   RotateCcw,
   Sparkles,
+  ExternalLink,
 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -82,6 +83,7 @@ import pb from '@/lib/pocketbase/client'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { ExpedienteStatusBadge } from '@/components/ExpedienteStatusBadge'
+import { OperadorFichasModal } from '@/components/OperadorFichasModal'
 
 export default function RelatoriosPage() {
   const { user } = useAuth()
@@ -132,6 +134,16 @@ export default function RelatoriosPage() {
   // Estados para Drill-down do Bloco 2 (Diagnóstico)
   const [motivoDrillDown, setMotivoDrillDown] = useState<DiagnosticoItemMotivo | null>(null)
   const [drillDownSearch, setDrillDownSearch] = useState('')
+
+  // Modal de Detalhamento Ficha a Ficha por Operador
+  const [operadorModalDetalhes, setOperadorModalDetalhes] = useState<{
+    operadorId: string
+    operadorNome: string
+    operadorEmail?: string
+    regiao: string
+    role: string
+  } | null>(null)
+  const [showOperadorModal, setShowOperadorModal] = useState(false)
 
   // Estados da Auditoria de Ativos Removidos
   const [buscaAtivos, setBuscaAtivos] = useState('')
@@ -1377,15 +1389,55 @@ export default function RelatoriosPage() {
                             className="hover:bg-slate-50/80 transition-colors"
                           >
                             <td className="py-2.5 px-4">
-                              <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                                <span>{op.operadorNome}</span>
+                              <div className="flex items-center gap-1.5">
+                                {(() => {
+                                  // Permissões: admin e supervisor veem qualquer operador; líder apenas operadores da própria rota
+                                  const podeClicar =
+                                    user?.role === 'admin' ||
+                                    user?.role === 'supervisor' ||
+                                    (isLider &&
+                                      rotaLider &&
+                                      op.regiao &&
+                                      op.regiao
+                                        .trim()
+                                        .toUpperCase()
+                                        .includes(rotaLider.trim().toUpperCase()))
+
+                                  if (podeClicar) {
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOperadorModalDetalhes(op)
+                                          setShowOperadorModal(true)
+                                        }}
+                                        className="group text-left inline-flex items-center gap-1.5 font-bold text-[#253575] hover:text-[#F18800] transition-colors cursor-pointer"
+                                        title="Clique para ver todas as fichas e respostas detalhadas deste operador"
+                                      >
+                                        <span className="underline decoration-[#253575]/30 group-hover:decoration-[#F18800] underline-offset-2">
+                                          {op.operadorNome}
+                                        </span>
+                                        <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-[#F18800] shrink-0 opacity-70 group-hover:opacity-100 transition-opacity" />
+                                      </button>
+                                    )
+                                  }
+
+                                  return (
+                                    <span className="font-bold text-slate-900">
+                                      {op.operadorNome}
+                                    </span>
+                                  )
+                                })()}
                                 {op.tituloGamificacao && (
-                                  <span className="text-xs" title={op.tituloGamificacao.nome}>
+                                  <span
+                                    className="text-xs shrink-0"
+                                    title={op.tituloGamificacao.nome}
+                                  >
                                     {op.tituloGamificacao.emoji}
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[10px] text-slate-400 capitalize">
+                              <span className="text-[10px] text-slate-400 capitalize block">
                                 {op.role}
                               </span>
                             </td>
@@ -2980,6 +3032,18 @@ export default function RelatoriosPage() {
           </Card>
         )
       })()}
+
+      {/* Modal / Drawer de Detalhamento Ficha a Ficha por Operador */}
+      <OperadorFichasModal
+        isOpen={showOperadorModal}
+        onClose={() => {
+          setShowOperadorModal(false)
+          setOperadorModalDetalhes(null)
+        }}
+        operador={operadorModalDetalhes}
+        periodo={selectedPeriodo}
+        regiao={selectedRegiao}
+      />
     </div>
   )
 }

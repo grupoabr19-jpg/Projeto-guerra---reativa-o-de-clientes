@@ -255,6 +255,71 @@ export async function fetchUltimaRespostaFormulario(clienteId: string) {
   }
 }
 
+/**
+ * Busca todas as fichas de atendimento (respostas_formulario) preenchidas por um operador,
+ * com filtro opcional por período e região, com expand de cliente e operador, ordenadas da mais recente para a mais antiga (-created).
+ */
+export async function fetchFichasAtendimentoPorOperador(options: {
+  operadorId: string
+  periodo?: import('@/types').PeriodoAtendimentoFiltro
+  regiao?: string
+}): Promise<RespostaFormulario[]> {
+  const { operadorId, periodo = 'total', regiao } = options
+
+  const now = new Date()
+  let dateFilter = ''
+  if (periodo === 'hoje') {
+    const inicioHojeBrt = createBrasiliaDate(
+      getBrasiliaParts(now).year,
+      getBrasiliaParts(now).month,
+      getBrasiliaParts(now).day,
+      0,
+      0,
+    )
+    dateFilter = `created >= '${inicioHojeBrt.toISOString().replace('T', ' ').slice(0, 19)}'`
+  } else if (periodo === '7dias') {
+    const seteDiasAtras = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    dateFilter = `created >= '${getBrasiliaDateStr(seteDiasAtras)} 00:00:00'`
+  } else if (periodo === '30dias') {
+    const trintaDiasAtras = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    dateFilter = `created >= '${getBrasiliaDateStr(trintaDiasAtras)} 00:00:00'`
+  }
+
+  const filters: string[] = [`operador = '${operadorId}'`]
+  if (dateFilter) {
+    filters.push(dateFilter)
+  }
+
+  try {
+    const records = await pb.collection('respostas_formulario').getFullList<RespostaFormulario>({
+      filter: filters.join(' && '),
+      sort: '-created',
+      expand: 'cliente,operador',
+    })
+
+    if (!regiao || regiao === 'todas') {
+      return records
+    }
+
+    const regiaoUpper = regiao.trim().toUpperCase()
+    return records.filter((rec) => {
+      const cli = rec.expand?.cliente
+      const cliRegiao = cli?.regiao ? cli.regiao.trim().toUpperCase() : ''
+      if (regiaoUpper === 'SEM REGIÃO' || regiaoUpper === 'SEM REGIAO') {
+        return !cliRegiao
+      }
+      return (
+        cliRegiao === regiaoUpper ||
+        cliRegiao.includes(regiaoUpper) ||
+        regiaoUpper.includes(cliRegiao)
+      )
+    })
+  } catch (err) {
+    console.error('Falha ao buscar fichas de atendimento por operador:', err)
+    return []
+  }
+}
+
 export async function fetchImportacoes() {
   return pb.collection('importacoes').getFullList<Importacao>({
     sort: '-created',
