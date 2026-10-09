@@ -163,6 +163,17 @@ export default function RelatoriosPage() {
 
   // Estado de erro explícito
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null)
+  const [avisosModulos, setAvisosModulos] = useState<{
+    atendimentos: string | null
+    diagnostico: string | null
+    baseKpis: string | null
+    analytics: string | null
+  }>({
+    atendimentos: null,
+    diagnostico: null,
+    baseKpis: null,
+    analytics: null,
+  })
 
   // Carga inicial de metadados (apenas lista de regiões, operadores e importações)
   useEffect(() => {
@@ -227,7 +238,17 @@ export default function RelatoriosPage() {
     setLoadingGeral(true)
     setErroCarregamento(null)
 
-    const errosEncontrados: string[] = []
+    const falhasLocais: {
+      atendimentos: string | null
+      diagnostico: string | null
+      baseKpis: string | null
+      analytics: string | null
+    } = {
+      atendimentos: null,
+      diagnostico: null,
+      baseKpis: null,
+      analytics: null,
+    }
 
     const filtrosObj: FiltrosRelatoriosAvancados = {
       periodo: selectedPeriodo,
@@ -254,9 +275,9 @@ export default function RelatoriosPage() {
       faixaScore: selectedFaixaScore !== 'todas' ? selectedFaixaScore : undefined,
       faixaFaturamento: selectedFaixaFaturamento !== 'todas' ? selectedFaixaFaturamento : undefined,
       desfecho: selectedDesfecho !== 'todos' ? selectedDesfecho : undefined,
-    }).catch((err) => {
+    }).catch((err: any) => {
       console.error('Falha em fetchMetricasAtendimentosDashboard:', err)
-      errosEncontrados.push('Atividades de atendimento')
+      falhasLocais.atendimentos = err?.message || 'Falha de conexão com a coleção de atendimentos'
       return null
     })
 
@@ -270,24 +291,24 @@ export default function RelatoriosPage() {
       faixaScore: selectedFaixaScore !== 'todas' ? selectedFaixaScore : undefined,
       faixaFaturamento: selectedFaixaFaturamento !== 'todas' ? selectedFaixaFaturamento : undefined,
       desfecho: selectedDesfecho !== 'todos' ? selectedDesfecho : undefined,
-    }).catch((err) => {
+    }).catch((err: any) => {
       console.error('Falha em fetchRelatorioDiagnostico:', err)
-      errosEncontrados.push('Diagnóstico comercial')
+      falhasLocais.diagnostico = err?.message || 'Falha de conexão com as respostas de formulário'
       return null
     })
 
     const promessaBaseKpis = fetchMetricasBaseKpis({
       regiao: selectedRegiao,
       baseCategoria: selectedCategoria,
-    }).catch((err) => {
+    }).catch((err: any) => {
       console.error('Falha em fetchMetricasBaseKpis:', err)
-      errosEncontrados.push('KPIs da base')
+      falhasLocais.baseKpis = err?.message || 'Falha ao consultar KPIs agregados da base'
       return null
     })
 
-    const promessaAnalytics = fetchReportsAnalytics(filtrosObj).catch((err) => {
+    const promessaAnalytics = fetchReportsAnalytics(filtrosObj).catch((err: any) => {
       console.error('Falha em fetchReportsAnalytics:', err)
-      errosEncontrados.push('Cruzamentos analíticos')
+      falhasLocais.analytics = err?.message || 'Falha ao processar cruzamentos analíticos'
       return null
     })
 
@@ -315,10 +336,17 @@ export default function RelatoriosPage() {
         }
       }
 
-      if (errosEncontrados.length > 0) {
+      setAvisosModulos(falhasLocais)
+
+      // Regra: O banner vermelho no topo só aparece se NADA carregar (falha fatal total)
+      const todosFalharam = !dadosAtendimento && !dadosDiagnostico && !dadosBase && !dadosAnalytics
+
+      if (todosFalharam) {
         setErroCarregamento(
-          `Não foi possível carregar completamente os seguintes módulos: ${errosEncontrados.join(', ')}. Verifique a conexão com o servidor.`,
+          'Não foi possível estabelecer comunicação com os serviços de relatórios. Verifique a conexão com o servidor.',
         )
+      } else {
+        setErroCarregamento(null)
       }
     } catch (err: any) {
       console.error('Erro ao processar relatórios gerenciais:', err)
@@ -440,8 +468,15 @@ export default function RelatoriosPage() {
     if (!diagnostico) return
     let csv =
       'Categoria_Diagnostico;Motivo;Ocorrencias;Percentual_Total;Hoje;Ultimos_7d;Ultimos_30d\n'
-    diagnostico.rankingMotivos.forEach((m) => {
-      csv += `"${m.categoria}";"${m.titulo}";${m.totalOcorrencias};"${m.percentual}%";${m.porPeriodo.hoje};${m.porPeriodo.ultimos7dias};${m.porPeriodo.ultimos30dias}\n`
+    ;(diagnostico.rankingMotivos ?? []).forEach((m) => {
+      const cat = m.categoria ?? ''
+      const tit = m.titulo ?? ''
+      const tot = m.totalOcorrencias ?? 0
+      const perc = m.percentual ?? 0
+      const h = m.porPeriodo?.hoje ?? 0
+      const u7 = m.porPeriodo?.ultimos7dias ?? 0
+      const u30 = m.porPeriodo?.ultimos30dias ?? 0
+      csv += `"${cat}";"${tit}";${tot};"${perc}%";${h};${u7};${u30}\n`
     })
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
@@ -479,8 +514,16 @@ export default function RelatoriosPage() {
     if (!reportsAnalytics?.cruzamentos.conversaoPorSegmento) return
     let csv =
       'Segmento;Total_Clientes;Reativados;Taxa_Conversao;Valor_Recuperado;Toneladas_Recuperadas;Perdidos;Reagendados\n'
-    reportsAnalytics.cruzamentos.conversaoPorSegmento.forEach((item) => {
-      csv += `"${item.segmento}";${item.totalClientes};${item.reativados};"${item.taxaConversao}%";${item.valorRecuperado};${item.toneladasRecuperadas};${item.perdidos};${item.reagendados}\n`
+    ;(reportsAnalytics.cruzamentos.conversaoPorSegmento ?? []).forEach((item) => {
+      const seg = item.segmento ?? ''
+      const tot = item.totalClientes ?? 0
+      const reat = item.reativados ?? 0
+      const taxa = item.taxaConversao ?? 0
+      const val = item.valorRecuperado ?? 0
+      const tons = item.toneladasRecuperadas ?? 0
+      const perd = item.perdidos ?? 0
+      const reag = item.reagendados ?? 0
+      csv += `"${seg}";${tot};${reat};"${taxa}%";${val};${tons};${perd};${reag}\n`
     })
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
@@ -494,8 +537,14 @@ export default function RelatoriosPage() {
     if (!reportsAnalytics?.cruzamentos.conversaoPorFaixaInatividade) return
     let csv =
       'Faixa_Inatividade;Total_Clientes;Reativados;Taxa_Conversao;Valor_Recuperado;Perdidos\n'
-    reportsAnalytics.cruzamentos.conversaoPorFaixaInatividade.forEach((item) => {
-      csv += `"${item.faixa}";${item.totalClientes};${item.reativados};"${item.taxaConversao}%";${item.valorRecuperado};${item.perdidos}\n`
+    ;(reportsAnalytics.cruzamentos.conversaoPorFaixaInatividade ?? []).forEach((item) => {
+      const faixa = item.faixa ?? ''
+      const tot = item.totalClientes ?? 0
+      const reat = item.reativados ?? 0
+      const taxa = item.taxaConversao ?? 0
+      const val = item.valorRecuperado ?? 0
+      const perd = item.perdidos ?? 0
+      csv += `"${faixa}";${tot};${reat};"${taxa}%";${val};${perd}\n`
     })
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
@@ -508,8 +557,14 @@ export default function RelatoriosPage() {
   const handleExportScoreCSV = () => {
     if (!reportsAnalytics?.cruzamentos.conversaoPorScore) return
     let csv = 'Faixa_Score;Score_Medio;Total_Clientes;Reativados;Taxa_Conversao;Valor_Recuperado\n'
-    reportsAnalytics.cruzamentos.conversaoPorScore.forEach((item) => {
-      csv += `"${item.faixaScore}";${item.scoreMedio};${item.totalClientes};${item.reativados};"${item.taxaConversao}%";${item.valorRecuperado}\n`
+    ;(reportsAnalytics.cruzamentos.conversaoPorScore ?? []).forEach((item) => {
+      const fx = item.faixaScore ?? ''
+      const scMed = item.scoreMedio ?? 0
+      const tot = item.totalClientes ?? 0
+      const reat = item.reativados ?? 0
+      const taxa = item.taxaConversao ?? 0
+      const val = item.valorRecuperado ?? 0
+      csv += `"${fx}";${scMed};${tot};${reat};"${taxa}%";${val}\n`
     })
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
@@ -523,8 +578,14 @@ export default function RelatoriosPage() {
     if (!reportsAnalytics?.cruzamentos.rankingCarteiraMorta) return
     let csv =
       'Vendedor_Origem;Total_Carteira;Inativos_90_Na_Base;Percentual_Morto;Reativados;Em_Trabalho\n'
-    reportsAnalytics.cruzamentos.rankingCarteiraMorta.forEach((item) => {
-      csv += `"${item.vendedor}";${item.totalCarteira};${item.inativos90NaBase};"${item.percentualMorto}%";${item.reativados};${item.emTrabalho}\n`
+    ;(reportsAnalytics.cruzamentos.rankingCarteiraMorta ?? []).forEach((item) => {
+      const vend = item.vendedor ?? ''
+      const totCart = item.totalCarteira ?? 0
+      const inat90 = item.inativos90NaBase ?? 0
+      const perc = item.percentualMorto ?? 0
+      const reat = item.reativados ?? 0
+      const emTrab = item.emTrabalho ?? 0
+      csv += `"${vend}";${totCart};${inat90};"${perc}%";${reat};${emTrab}\n`
     })
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
@@ -1018,6 +1079,32 @@ export default function RelatoriosPage() {
                         ? 'Últimos 30 dias'
                         : 'Histórico Total'}
                 </Badge>
+                {avisosModulos.atendimentos && (
+                  <Badge
+                    variant="outline"
+                    className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] flex items-center gap-1 font-normal"
+                    title={avisosModulos.atendimentos}
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0 text-amber-600" />
+                    <span>Atividades de atendimento indisponíveis no momento</span>
+                    <span className="text-[9px] text-amber-600 max-w-[200px] truncate">
+                      ({avisosModulos.atendimentos})
+                    </span>
+                  </Badge>
+                )}
+                {avisosModulos.baseKpis && (
+                  <Badge
+                    variant="outline"
+                    className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] flex items-center gap-1 font-normal"
+                    title={avisosModulos.baseKpis}
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0 text-amber-600" />
+                    <span>KPIs da base indisponíveis</span>
+                    <span className="text-[9px] text-amber-600 max-w-[200px] truncate">
+                      ({avisosModulos.baseKpis})
+                    </span>
+                  </Badge>
+                )}
               </div>
               <p className="text-xs text-slate-500">
                 Métricas consolidadas de contatos, ligações, conversões, follow-ups e vendas
@@ -1396,6 +1483,19 @@ export default function RelatoriosPage() {
                   Cruzamentos Estratégicos &bull; Inteligência por Área da Empresa
                 </h2>
                 <Badge className="bg-indigo-600 text-white text-[10px]">Análise Multi-Eixo</Badge>
+                {avisosModulos.analytics && (
+                  <Badge
+                    variant="outline"
+                    className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] flex items-center gap-1 font-normal"
+                    title={avisosModulos.analytics}
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0 text-amber-600" />
+                    <span>Cruzamentos analíticos indisponíveis no momento</span>
+                    <span className="text-[9px] text-amber-600 max-w-[200px] truncate">
+                      ({avisosModulos.analytics})
+                    </span>
+                  </Badge>
+                )}
               </div>
               <p className="text-xs text-slate-500">
                 Cruzamentos analíticos combinados: descubra onde a reativação rende mais, tempo
@@ -1499,46 +1599,56 @@ export default function RelatoriosPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {reportsAnalytics.cruzamentos.conversaoPorSegmento.map((item, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
-                            <td className="py-2.5 px-4 font-semibold text-slate-900">
-                              {item.segmento}
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono text-slate-700">
-                              {item.totalClientes}
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono font-bold text-emerald-700">
-                              {item.reativados > 0 ? (
-                                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-xs font-mono">
-                                  {item.reativados}
-                                </Badge>
-                              ) : (
-                                <span className="text-slate-400">0</span>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono font-bold text-purple-700">
-                              {item.taxaConversao}%
-                            </td>
-                            <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-900">
-                              {item.valorRecuperado > 0 ? (
-                                <span className="text-emerald-700">
-                                  {item.valorRecuperado.toLocaleString('pt-BR', {
-                                    style: 'currency',
-                                    currency: 'BRL',
-                                  })}
-                                </span>
-                              ) : (
-                                <span className="text-slate-400">—</span>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono text-amber-700">
-                              {item.reagendados}
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono text-slate-500">
-                              {item.perdidos}
-                            </td>
-                          </tr>
-                        ))}
+                        {(reportsAnalytics.cruzamentos.conversaoPorSegmento ?? []).map(
+                          (item, idx) => {
+                            const totalCli = item.totalClientes ?? 0
+                            const reativ = item.reativados ?? 0
+                            const taxa = item.taxaConversao ?? 0
+                            const valorRec = item.valorRecuperado ?? 0
+                            const reag = item.reagendados ?? 0
+                            const perd = item.perdidos ?? 0
+                            return (
+                              <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
+                                <td className="py-2.5 px-4 font-semibold text-slate-900">
+                                  {item.segmento ?? 'Não informado'}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono text-slate-700">
+                                  {totalCli}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono font-bold text-emerald-700">
+                                  {reativ > 0 ? (
+                                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-xs font-mono">
+                                      {reativ}
+                                    </Badge>
+                                  ) : (
+                                    <span className="text-slate-400">0</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono font-bold text-purple-700">
+                                  {taxa}%
+                                </td>
+                                <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-900">
+                                  {valorRec > 0 ? (
+                                    <span className="text-emerald-700">
+                                      {valorRec.toLocaleString('pt-BR', {
+                                        style: 'currency',
+                                        currency: 'BRL',
+                                      })}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400">—</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono text-amber-700">
+                                  {reag}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono text-slate-500">
+                                  {perd}
+                                </td>
+                              </tr>
+                            )
+                          },
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1589,26 +1699,36 @@ export default function RelatoriosPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {reportsAnalytics.cruzamentos.conversaoPorFaixaInatividade.map((f, i) => (
-                            <tr key={i} className="hover:bg-slate-50/50">
-                              <td className="py-2 px-3 font-medium text-slate-800">{f.faixa}</td>
-                              <td className="py-2 px-2 text-center font-mono">{f.totalClientes}</td>
-                              <td className="py-2 px-2 text-center font-mono font-bold text-emerald-700">
-                                {f.reativados}
-                              </td>
-                              <td className="py-2 px-2 text-center font-mono font-bold text-purple-700">
-                                {f.taxaConversao}%
-                              </td>
-                              <td className="py-2 px-3 text-right font-mono text-slate-700">
-                                {f.valorRecuperado > 0
-                                  ? f.valorRecuperado.toLocaleString('pt-BR', {
-                                      style: 'currency',
-                                      currency: 'BRL',
-                                    })
-                                  : '—'}
-                              </td>
-                            </tr>
-                          ))}
+                          {(reportsAnalytics.cruzamentos.conversaoPorFaixaInatividade ?? []).map(
+                            (f, i) => {
+                              const totalCli = f.totalClientes ?? 0
+                              const reativ = f.reativados ?? 0
+                              const taxa = f.taxaConversao ?? 0
+                              const valorRec = f.valorRecuperado ?? 0
+                              return (
+                                <tr key={i} className="hover:bg-slate-50/50">
+                                  <td className="py-2 px-3 font-medium text-slate-800">
+                                    {f.faixa ?? '—'}
+                                  </td>
+                                  <td className="py-2 px-2 text-center font-mono">{totalCli}</td>
+                                  <td className="py-2 px-2 text-center font-mono font-bold text-emerald-700">
+                                    {reativ}
+                                  </td>
+                                  <td className="py-2 px-2 text-center font-mono font-bold text-purple-700">
+                                    {taxa}%
+                                  </td>
+                                  <td className="py-2 px-3 text-right font-mono text-slate-700">
+                                    {valorRec > 0
+                                      ? valorRec.toLocaleString('pt-BR', {
+                                          style: 'currency',
+                                          currency: 'BRL',
+                                        })
+                                      : '—'}
+                                  </td>
+                                </tr>
+                              )
+                            },
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -1658,25 +1778,29 @@ export default function RelatoriosPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {reportsAnalytics.cruzamentos.conversaoPorScore.map((sc, i) => (
-                            <tr key={i} className="hover:bg-slate-50/50">
-                              <td className="py-2 px-3 font-medium text-slate-800">
-                                {sc.faixaScore}
-                              </td>
-                              <td className="py-2 px-2 text-center font-mono font-bold text-blue-700">
-                                {sc.scoreMedio} pts
-                              </td>
-                              <td className="py-2 px-2 text-center font-mono">
-                                {sc.totalClientes}
-                              </td>
-                              <td className="py-2 px-2 text-center font-mono font-bold text-emerald-700">
-                                {sc.reativados}
-                              </td>
-                              <td className="py-2 px-2 text-center font-mono font-bold text-purple-700">
-                                {sc.taxaConversao}%
-                              </td>
-                            </tr>
-                          ))}
+                          {(reportsAnalytics.cruzamentos.conversaoPorScore ?? []).map((sc, i) => {
+                            const totalCli = sc.totalClientes ?? 0
+                            const reativ = sc.reativados ?? 0
+                            const taxa = sc.taxaConversao ?? 0
+                            const scoreMed = sc.scoreMedio ?? 0
+                            return (
+                              <tr key={i} className="hover:bg-slate-50/50">
+                                <td className="py-2 px-3 font-medium text-slate-800">
+                                  {sc.faixaScore ?? '—'}
+                                </td>
+                                <td className="py-2 px-2 text-center font-mono font-bold text-blue-700">
+                                  {scoreMed} pts
+                                </td>
+                                <td className="py-2 px-2 text-center font-mono">{totalCli}</td>
+                                <td className="py-2 px-2 text-center font-mono font-bold text-emerald-700">
+                                  {reativ}
+                                </td>
+                                <td className="py-2 px-2 text-center font-mono font-bold text-purple-700">
+                                  {taxa}%
+                                </td>
+                              </tr>
+                            )
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -1718,39 +1842,47 @@ export default function RelatoriosPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {reportsAnalytics.cruzamentos.recuperacaoPorRegiao.map((r, i) => (
-                          <tr key={i} className="hover:bg-slate-50/50">
-                            <td className="py-2 px-4 font-semibold text-slate-800">{r.regiao}</td>
-                            <td className="py-2 px-3 text-center font-mono">{r.totalClientes}</td>
-                            <td className="py-2 px-3 text-center font-mono font-bold text-emerald-700">
-                              {r.reativados}
-                            </td>
-                            <td className="py-2 px-3 text-center font-mono font-bold text-purple-700">
-                              {r.taxaConversao}%
-                            </td>
-                            <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700">
-                              {r.valorRecuperado > 0
-                                ? r.valorRecuperado.toLocaleString('pt-BR', {
-                                    style: 'currency',
-                                    currency: 'BRL',
-                                  })
-                                : '—'}
-                            </td>
-                            <td className="py-2 px-3 text-right font-mono text-slate-700">
-                              {r.ticketMedio > 0
-                                ? r.ticketMedio.toLocaleString('pt-BR', {
-                                    style: 'currency',
-                                    currency: 'BRL',
-                                  })
-                                : '—'}
-                            </td>
-                            <td className="py-2 px-3 text-right font-mono text-slate-600">
-                              {r.toneladasRecuperadas > 0
-                                ? `${r.toneladasRecuperadas.toFixed(1)} t`
-                                : '—'}
-                            </td>
-                          </tr>
-                        ))}
+                        {(reportsAnalytics.cruzamentos.recuperacaoPorRegiao ?? []).map((r, i) => {
+                          const totalCli = r.totalClientes ?? 0
+                          const reativ = r.reativados ?? 0
+                          const taxa = r.taxaConversao ?? 0
+                          const valorRec = r.valorRecuperado ?? 0
+                          const ticket = r.ticketMedio ?? 0
+                          const tons = r.toneladasRecuperadas ?? 0
+                          return (
+                            <tr key={i} className="hover:bg-slate-50/50">
+                              <td className="py-2 px-4 font-semibold text-slate-800">
+                                {r.regiao ?? '—'}
+                              </td>
+                              <td className="py-2 px-3 text-center font-mono">{totalCli}</td>
+                              <td className="py-2 px-3 text-center font-mono font-bold text-emerald-700">
+                                {reativ}
+                              </td>
+                              <td className="py-2 px-3 text-center font-mono font-bold text-purple-700">
+                                {taxa}%
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700">
+                                {valorRec > 0
+                                  ? valorRec.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })
+                                  : '—'}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono text-slate-700">
+                                {ticket > 0
+                                  ? ticket.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })
+                                  : '—'}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono text-slate-600">
+                                {tons > 0 ? `${tons.toFixed(1)} t` : '—'}
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1819,39 +1951,48 @@ export default function RelatoriosPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {reportsAnalytics.cruzamentos.rankingCarteiraMorta.map((row, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
-                            <td className="py-2.5 px-4 font-semibold text-slate-900 flex items-center gap-1.5">
-                              <span className="font-mono text-slate-400 text-[10px]">
-                                #{idx + 1}
-                              </span>
-                              <span>{row.vendedor}</span>
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono text-slate-700">
-                              {row.totalCarteira}
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono font-bold text-rose-600">
-                              {row.inativos90NaBase}
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono font-bold">
-                              <span
-                                className={
-                                  row.percentualMorto >= 50
-                                    ? 'text-rose-700 font-black'
-                                    : 'text-slate-700'
-                                }
-                              >
-                                {row.percentualMorto}%
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono text-blue-700">
-                              {row.emTrabalho}
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono font-bold text-emerald-700">
-                              {row.reativados}
-                            </td>
-                          </tr>
-                        ))}
+                        {(reportsAnalytics.cruzamentos.rankingCarteiraMorta ?? []).map(
+                          (row, idx) => {
+                            const totalCart = row.totalCarteira ?? 0
+                            const inat90 = row.inativos90NaBase ?? 0
+                            const percMorto = row.percentualMorto ?? 0
+                            const emTrab = row.emTrabalho ?? 0
+                            const reativ = row.reativados ?? 0
+                            return (
+                              <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
+                                <td className="py-2.5 px-4 font-semibold text-slate-900 flex items-center gap-1.5">
+                                  <span className="font-mono text-slate-400 text-[10px]">
+                                    #{idx + 1}
+                                  </span>
+                                  <span>{row.vendedor ?? '—'}</span>
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono text-slate-700">
+                                  {totalCart}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono font-bold text-rose-600">
+                                  {inat90}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono font-bold">
+                                  <span
+                                    className={
+                                      percMorto >= 50
+                                        ? 'text-rose-700 font-black'
+                                        : 'text-slate-700'
+                                    }
+                                  >
+                                    {percMorto}%
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono text-blue-700">
+                                  {emTrab}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono font-bold text-emerald-700">
+                                  {reativ}
+                                </td>
+                              </tr>
+                            )
+                          },
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -2092,6 +2233,19 @@ export default function RelatoriosPage() {
                 <Badge className="bg-rose-600 text-white text-[10px]">
                   Inteligência das 17 Perguntas
                 </Badge>
+                {avisosModulos.diagnostico && (
+                  <Badge
+                    variant="outline"
+                    className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] flex items-center gap-1 font-normal"
+                    title={avisosModulos.diagnostico}
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0 text-amber-600" />
+                    <span>Diagnóstico comercial indisponível no momento</span>
+                    <span className="text-[9px] text-amber-600 max-w-[200px] truncate">
+                      ({avisosModulos.diagnostico})
+                    </span>
+                  </Badge>
+                )}
               </div>
               <p className="text-xs text-slate-500">
                 Mapeamento das respostas reais de qualificação do formulário (preço, concorrência,

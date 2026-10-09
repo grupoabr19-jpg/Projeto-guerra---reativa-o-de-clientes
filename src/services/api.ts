@@ -1024,24 +1024,55 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
   }
 
   // Buscar em paralelo: usuários, interações do período (com expand cliente), clientes reagendados e clientes marcados como ativo_fora_base
+  // Envolvendo cada subchamada em try/catch individual com log de aviso para não rejeitar a promessa inteira
   const [users, interacoes, reagendados, rankingData, clientesAtivosRemovidos] = await Promise.all([
-    pb.collection('users').getFullList<import('@/types').User>({ sort: 'name' }),
-    pb.collection('interacoes').getFullList<Interacao>({
-      filter: pbInteracoesFilter || undefined,
-      sort: '-created',
-      expand: 'cliente,operador',
+    pb
+      .collection('users')
+      .getFullList<import('@/types').User>({ sort: 'name' })
+      .catch((err) => {
+        console.warn('Falha ao buscar users em fetchMetricasAtendimentosDashboard:', err)
+        return [] as import('@/types').User[]
+      }),
+    pb
+      .collection('interacoes')
+      .getFullList<Interacao>({
+        filter: pbInteracoesFilter || undefined,
+        sort: '-created',
+        expand: 'cliente,operador',
+      })
+      .catch((err) => {
+        console.warn('Falha ao buscar interacoes em fetchMetricasAtendimentosDashboard:', err)
+        return [] as Interacao[]
+      }),
+    pb
+      .collection('clientes')
+      .getFullList<Cliente>({
+        filter: "reagendado_para != '' || estado = 'reagendado'",
+      })
+      .catch((err) => {
+        console.warn(
+          'Falha ao buscar clientes reagendados em fetchMetricasAtendimentosDashboard:',
+          err,
+        )
+        return [] as Cliente[]
+      }),
+    calculateRankingData({ periodo, regiao: regiaoFiltro || undefined }).catch((err) => {
+      console.warn('Falha ao calcular rankingData em fetchMetricasAtendimentosDashboard:', err)
+      return null
     }),
-    pb.collection('clientes').getFullList<Cliente>({
-      filter: "reagendado_para != '' || estado = 'reagendado'",
-    }),
-    calculateRankingData({ periodo, regiao: regiaoFiltro || undefined }).catch(() => null),
     pb
       .collection('clientes')
       .getFullList<Cliente>({
         filter: "ativo_fora_base = true || estado = 'ativo_fora_base'",
         sort: '-updated',
       })
-      .catch(() => [] as Cliente[]),
+      .catch((err) => {
+        console.warn(
+          'Falha ao buscar clientes ativos_fora_base em fetchMetricasAtendimentosDashboard:',
+          err,
+        )
+        return [] as Cliente[]
+      }),
   ])
 
   // Mapa de operadores e usuários
@@ -1420,7 +1451,13 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
       sort: '-created',
       expand: 'cliente,operador',
     })
-    .catch(() => [] as Interacao[])
+    .catch((err) => {
+      console.warn(
+        'Falha ao buscar interacoesAtivoForaBase em fetchMetricasAtendimentosDashboard:',
+        err,
+      )
+      return [] as Interacao[]
+    })
 
   // Mapa clienteId -> última interação de ativo_fora_base
   const mapInteracaoPorCliente = new Map<string, Interacao>()
