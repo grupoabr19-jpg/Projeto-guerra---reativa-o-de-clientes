@@ -29,6 +29,7 @@ import {
   Sparkles,
   PackageCheck,
   ShoppingBag,
+  Info,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -483,9 +484,34 @@ export default function Dashboard() {
           <Card className="border-slate-200 shadow-xs hover:border-[#253575]/40 transition-colors">
             <CardContent className="p-3.5">
               <div className="flex items-center justify-between text-slate-500 mb-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
-                  Total Atendimentos
-                </span>
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                    Total Atendidos
+                  </span>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
+                          aria-label="Informações sobre Total Atendidos"
+                        >
+                          <Info className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                      >
+                        <p className="font-bold text-blue-200 mb-1">Total de Atendimentos:</p>
+                        <p className="text-slate-200 text-[11px] leading-relaxed">
+                          Soma de todas as interações e fichas preenchidas no período (contatos,
+                          reagendamentos, vendas e recusas).
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <div className="p-1 rounded-md bg-[#253575]/10 text-[#253575] shrink-0">
                   <Activity className="h-3.5 w-3.5" />
                 </div>
@@ -503,9 +529,36 @@ export default function Dashboard() {
           <Card className="border-slate-200 shadow-xs hover:border-[#253575]/40 transition-colors">
             <CardContent className="p-3.5">
               <div className="flex items-center justify-between text-slate-500 mb-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
-                  Ligações Feitas
-                </span>
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                    Ligações Feitas
+                  </span>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
+                          aria-label="Informações sobre Ligações Feitas"
+                        >
+                          <Info className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                      >
+                        <p className="font-bold text-blue-200 mb-1">
+                          Ligações / Contatos Efetivos:
+                        </p>
+                        <p className="text-slate-200 text-[11px] leading-relaxed">
+                          Chamadas ativas realizadas pela equipe e formulários concluídos no
+                          período. Serve como base para a taxa de conversão.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <div className="p-1 rounded-md bg-[#253575]/10 text-[#253575] shrink-0">
                   <PhoneCall className="h-3.5 w-3.5" />
                 </div>
@@ -523,9 +576,37 @@ export default function Dashboard() {
           <Card className="border-slate-200 shadow-xs hover:border-emerald-300 transition-colors">
             <CardContent className="p-3.5">
               <div className="flex items-center justify-between text-slate-500 mb-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
-                  Conversões
-                </span>
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                    Conversões
+                  </span>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-emerald-700 shrink-0 p-0.5 focus:outline-hidden"
+                          aria-label="Informações sobre Conversões"
+                        >
+                          <Info className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                      >
+                        <p className="font-bold text-emerald-400 mb-1">
+                          Total de Conversões (Eventos):
+                        </p>
+                        <p className="text-slate-200 text-[11px] leading-relaxed">
+                          Conta cada atendimento/ficha fechado com sucesso (desfecho reativado ou
+                          pedido) no período. Diferente do card &quot;Clientes Reativados&quot;
+                          (21), que consolida clientes ÚNICOS.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <div className="p-1 rounded-md bg-emerald-50 text-emerald-600 shrink-0">
                   <CheckCircle2 className="h-3.5 w-3.5" />
                 </div>
@@ -543,9 +624,36 @@ export default function Dashboard() {
           <Card className="border-slate-200 shadow-xs hover:border-purple-300 transition-colors">
             <CardContent className="p-3.5">
               <div className="flex items-center justify-between text-slate-500 mb-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
-                  Taxa Conversão
-                </span>
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                    Taxa Conversão
+                  </span>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-purple-700 shrink-0 p-0.5 focus:outline-hidden"
+                          aria-label="Informações sobre Taxa de Conversão"
+                        >
+                          <Info className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                      >
+                        <p className="font-bold text-purple-300 mb-1">
+                          Taxa de Conversão da Equipe:
+                        </p>
+                        <p className="text-slate-200 text-[11px] leading-relaxed">
+                          Percentual de atendimentos convertidos em relação ao total de
+                          ligações/chamadas realizadas (Conversões ÷ Ligações).
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <div className="p-1 rounded-md bg-purple-50 text-purple-600 shrink-0">
                   <TrendingUp className="h-3.5 w-3.5" />
                 </div>
@@ -563,9 +671,34 @@ export default function Dashboard() {
           <Card className="border-slate-200 shadow-xs hover:border-amber-300 transition-colors">
             <CardContent className="p-3.5">
               <div className="flex items-center justify-between text-slate-500 mb-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
-                  Reagendamentos
-                </span>
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                    Reagendamentos
+                  </span>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-amber-700 shrink-0 p-0.5 focus:outline-hidden"
+                          aria-label="Informações sobre Reagendamentos"
+                        >
+                          <Info className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                      >
+                        <p className="font-bold text-amber-300 mb-1">Retornos Marcados:</p>
+                        <p className="text-slate-200 text-[11px] leading-relaxed">
+                          Total de contatos em que o cliente solicitou retorno futuro ou agendamento
+                          de proposta registrado pela equipe.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <div className="p-1 rounded-md bg-amber-50 text-amber-600 shrink-0">
                   <PhoneForwarded className="h-3.5 w-3.5" />
                 </div>
@@ -583,9 +716,36 @@ export default function Dashboard() {
           <Card className="border-slate-200 shadow-xs hover:border-rose-300 transition-colors">
             <CardContent className="p-3.5">
               <div className="flex items-center justify-between text-slate-500 mb-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
-                  Follow-ups Hoje
-                </span>
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                    Follow-ups Hoje
+                  </span>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-rose-700 shrink-0 p-0.5 focus:outline-hidden"
+                          aria-label="Informações sobre Follow-ups de Hoje"
+                        >
+                          <Info className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                      >
+                        <p className="font-bold text-rose-300 mb-1">
+                          Follow-ups Agendados para Hoje:
+                        </p>
+                        <p className="text-slate-200 text-[11px] leading-relaxed">
+                          Contatos programados especificamente para a data de hoje (horário de
+                          Brasília) aguardando retorno do operador.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <div className="p-1 rounded-md bg-rose-50 text-rose-600 shrink-0">
                   <Calendar className="h-3.5 w-3.5" />
                 </div>
@@ -603,9 +763,34 @@ export default function Dashboard() {
           <Card className="border-slate-200 shadow-xs hover:border-slate-400 transition-colors">
             <CardContent className="p-3.5">
               <div className="flex items-center justify-between text-slate-500 mb-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
-                  Vendas Perdidas
-                </span>
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                    Vendas Perdidas
+                  </span>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-slate-700 shrink-0 p-0.5 focus:outline-hidden"
+                          aria-label="Informações sobre Vendas Perdidas"
+                        >
+                          <Info className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                      >
+                        <p className="font-bold text-slate-200 mb-1">Vendas Perdidas e Recusas:</p>
+                        <p className="text-slate-200 text-[11px] leading-relaxed">
+                          Atendimentos encerrados sem venda: compra de terceiros, sem interesse em
+                          negociar, restrição financeira ou sem contato.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <div className="p-1 rounded-md bg-slate-100 text-slate-600 shrink-0">
                   <XCircle className="h-3.5 w-3.5" />
                 </div>
@@ -1104,6 +1289,31 @@ export default function Dashboard() {
                     <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
                       Total Inativos Base
                     </span>
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
+                            aria-label="Informações sobre Total Inativos Base"
+                          >
+                            <Info className="h-3 w-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                        >
+                          <p className="font-bold text-blue-200 mb-1">
+                            Carteira Geral de Inativos:
+                          </p>
+                          <p className="text-slate-200 text-[11px] leading-relaxed">
+                            Total de clientes cadastrados sob acompanhamento (exclui apenas
+                            cadastros já removidos como ativos fora da base).
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                   <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
                     Carteira geral sob acompanhamento
@@ -1141,6 +1351,30 @@ export default function Dashboard() {
                     <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
                       Na Fila de Trabalho
                     </span>
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
+                            aria-label="Informações sobre Na Fila de Trabalho"
+                          >
+                            <Info className="h-3 w-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                        >
+                          <p className="font-bold text-blue-200 mb-1">Esteira Disponível:</p>
+                          <p className="text-slate-200 text-[11px] leading-relaxed">
+                            Clientes livres na esteira aguardando contato (estados
+                            &quot;na_base&quot; e &quot;reservado&quot;), respeitando as regras de
+                            carteira e rota de cada operador.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                   <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
                     Esteira disponível para contato
@@ -1183,6 +1417,32 @@ export default function Dashboard() {
                     <Badge className="bg-emerald-700 text-white hover:bg-emerald-700 text-[10px] font-semibold px-1.5 py-0 rounded border-0 shrink-0">
                       Real Equipe
                     </Badge>
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="text-emerald-700 hover:text-emerald-950 shrink-0 p-0.5 focus:outline-hidden"
+                            aria-label="Informações sobre Clientes Reativados Real Equipe"
+                          >
+                            <Info className="h-3 w-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                        >
+                          <p className="font-bold text-emerald-400 mb-1">
+                            Reativações Reais da Equipe (Clientes Únicos):
+                          </p>
+                          <p className="text-slate-200 text-[11px] leading-relaxed">
+                            Conta clientes ÚNICOS com ficha preenchida pela equipe e
+                            pedido/confirmação (desfechos isentos excluídos; dedupe por cliente).
+                            Valores e toneladas vêm das fichas da equipe.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                   <span className="text-[11px] text-emerald-800 line-clamp-1 mt-0.5">
                     Atendidos c/ operador e pedido
@@ -1209,13 +1469,16 @@ export default function Dashboard() {
                         </span>
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent className="bg-slate-900 text-white text-xs p-2 max-w-xs shadow-lg">
-                      <p className="font-bold">Reativações Reais da Equipe:</p>
-                      <p className="font-mono text-emerald-400">
+                    <TooltipContent className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg">
+                      <p className="font-bold text-emerald-300">Reativações Reais da Equipe:</p>
+                      <p className="font-mono text-emerald-400 font-bold text-sm mt-0.5">
                         {formatFullCurrency(valorRecuperado)}
                       </p>
-                      <p className="text-slate-300 text-[11px] mt-0.5">
+                      <p className="text-slate-200 text-[11px] mt-0.5">
                         Volume: {toneladasRecuperadas.toLocaleString('pt-BR')} toneladas
+                      </p>
+                      <p className="text-blue-200 text-[10px] mt-1 pt-1 border-t border-blue-900/60">
+                        Soma das fichas da equipe (dedupe por cliente)
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -1239,6 +1502,29 @@ export default function Dashboard() {
                     <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
                       Taxa de Recuperação
                     </span>
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
+                            aria-label="Informações sobre Taxa de Recuperação"
+                          >
+                            <Info className="h-3 w-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                        >
+                          <p className="font-bold text-blue-200 mb-1">Eficiência da Base:</p>
+                          <p className="text-slate-200 text-[11px] leading-relaxed">
+                            Percentual de clientes reativados pela equipe em relação ao total da
+                            base inativa cadastrada (Reativados Reais ÷ Total Base).
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                   <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
                     Eficiência de reativação real
@@ -1289,6 +1575,31 @@ export default function Dashboard() {
                     <Badge className="bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-100 text-[10px] font-semibold px-1.5 py-0 rounded shrink-0">
                       Pendente
                     </Badge>
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="text-amber-700 hover:text-amber-900 shrink-0 p-0.5 focus:outline-hidden"
+                            aria-label="Informações sobre Pedidos em Aberto"
+                          >
+                            <Info className="h-3 w-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                        >
+                          <p className="font-bold text-amber-300 mb-1">
+                            Pedidos Aguardando Faturamento:
+                          </p>
+                          <p className="text-slate-200 text-[11px] leading-relaxed">
+                            Clientes com pedido de reativação registrado pela equipe cuja nota
+                            fiscal ainda não foi faturada no ERP.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                   <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
                     Aguardando faturamento / emissão NF
@@ -1311,12 +1622,12 @@ export default function Dashboard() {
                         {formatCompactCurrency(valorPedidosEmAberto)}
                       </p>
                     </TooltipTrigger>
-                    <TooltipContent className="bg-slate-900 text-white text-xs p-2 max-w-xs shadow-lg">
-                      <p className="font-bold">Valor em Aberto:</p>
-                      <p className="font-mono text-amber-400">
+                    <TooltipContent className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg">
+                      <p className="font-bold text-amber-300">Valor em Aberto:</p>
+                      <p className="font-mono text-amber-400 font-bold text-sm mt-0.5">
                         {formatFullCurrency(valorPedidosEmAberto)}
                       </p>
-                      <p className="text-slate-300 text-[11px] mt-0.5">
+                      <p className="text-slate-200 text-[11px] mt-0.5">
                         {pedidosEmAbertoCount}{' '}
                         {pedidosEmAbertoCount === 1 ? 'pedido aguardando' : 'pedidos aguardando'}{' '}
                         emissão de NF
@@ -1351,6 +1662,32 @@ export default function Dashboard() {
                     <Badge className="bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-100 text-[10px] font-semibold px-1.5 py-0 rounded shrink-0">
                       Cruzamento
                     </Badge>
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="text-amber-700 hover:text-amber-900 shrink-0 p-0.5 focus:outline-hidden"
+                            aria-label="Informações sobre Faturamento Recente do Cruzamento"
+                          >
+                            <Info className="h-3 w-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                        >
+                          <p className="font-bold text-amber-300 mb-1">
+                            Cruzamento Automático ERP:
+                          </p>
+                          <p className="text-slate-200 text-[11px] leading-relaxed">
+                            Clientes que faturaram no ERP sem ficha de atendimento vinculada à
+                            equipe de reativação. Serve de insumo para reconciliação e limpeza da
+                            base.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                   <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
                     Identificados na base sem operador
@@ -1378,16 +1715,18 @@ export default function Dashboard() {
                         </span>
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent className="bg-slate-900 text-white text-xs p-2 max-w-xs shadow-lg">
-                      <p className="font-bold">Faturamento Recente via Cruzamento:</p>
-                      <p className="font-mono text-amber-400">
+                    <TooltipContent className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg">
+                      <p className="font-bold text-amber-300">
+                        Faturamento Recente via Cruzamento:
+                      </p>
+                      <p className="font-mono text-amber-400 font-bold text-sm mt-0.5">
                         {formatFullCurrency(valorFaturamentoCruzamento)}
                       </p>
-                      <p className="text-slate-300 text-[11px] mt-0.5">
+                      <p className="text-slate-200 text-[11px] mt-0.5">
                         Volume: {toneladasFaturamentoCruzamento.toLocaleString('pt-BR')} toneladas
                       </p>
-                      <p className="text-slate-400 text-[10px] mt-1 border-t border-slate-700 pt-1">
-                        Insumo para exclusão/limpeza de base
+                      <p className="text-blue-200 text-[10px] mt-1 border-t border-blue-900/60 pt-1">
+                        Insumo do ERP para exclusão/limpeza de base
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -1419,6 +1758,29 @@ export default function Dashboard() {
                     <Badge className="bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-100 text-[10px] font-semibold px-1.5 py-0 rounded shrink-0">
                       Limpeza
                     </Badge>
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
+                            aria-label="Informações sobre Ativos Fora da Base"
+                          >
+                            <Info className="h-3 w-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                        >
+                          <p className="font-bold text-blue-200 mb-1">Auditoria de Limpeza:</p>
+                          <p className="text-slate-200 text-[11px] leading-relaxed">
+                            Cadastros inativos removidos da esteira porque já compram por outro
+                            CPF/CNPJ ou são acompanhados ativamente pelo vendedor de rota.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                   <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
                     Clientes ativos removidos da esteira

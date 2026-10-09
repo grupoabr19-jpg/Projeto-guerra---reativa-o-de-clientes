@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Building2,
   TrendingUp,
+  Info,
 } from 'lucide-react'
 import { fetchMetricasRespostasFormulario } from '@/services/api'
 import type { MetricasRespostasFormularioResponse } from '@/types'
@@ -246,6 +247,32 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
                   <Badge className="bg-blue-100 text-[#253575] hover:bg-blue-100 text-[10px] font-semibold px-1.5 py-0 rounded border-0 shrink-0">
                     Q15
                   </Badge>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
+                          aria-label="Informações sobre Soma Valor Potencial"
+                        >
+                          <Info className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                      >
+                        <p className="font-bold text-blue-200 mb-1">
+                          Potencial Declarado (Fichas):
+                        </p>
+                        <p className="text-slate-200 text-[11px] leading-relaxed">
+                          Soma dos valores potenciais estimados pelos operadores na pergunta Q15 da
+                          ficha de atendimento. Trata-se de potencial declarado, não de faturamento
+                          confirmado.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
                 <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
                   Potencial mapeado nas fichas
@@ -265,12 +292,12 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
                       {loading ? '—' : formatCompactCurrencyPtBr(kpis.somaValorPotencial)}
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent className="bg-slate-900 text-white text-xs p-2 max-w-xs shadow-lg">
-                    <p className="font-bold">Valor Potencial Acumulado:</p>
-                    <p className="font-mono text-emerald-400">
+                  <TooltipContent className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg">
+                    <p className="font-bold text-blue-200">Valor Potencial Acumulado:</p>
+                    <p className="font-mono text-emerald-400 font-bold text-sm mt-0.5">
                       {formatFullCurrencyPtBr(kpis.somaValorPotencial)}
                     </p>
-                    <p className="text-slate-300 text-[11px] mt-0.5">
+                    <p className="text-slate-200 text-[11px] mt-0.5">
                       Baseado em {kpis.countComValor} respostas com valor informado
                     </p>
                   </TooltipContent>
@@ -303,6 +330,29 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
                   <Badge className="bg-blue-100 text-[#253575] hover:bg-blue-100 text-[10px] font-semibold px-1.5 py-0 rounded border-0 shrink-0">
                     Q15 Médio
                   </Badge>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
+                          aria-label="Informações sobre Ticket Médio Potencial"
+                        >
+                          <Info className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                      >
+                        <p className="font-bold text-blue-200 mb-1">Média por Oportunidade:</p>
+                        <p className="text-slate-200 text-[11px] leading-relaxed">
+                          Valor médio estimado por atendimento nas fichas da equipe que tiveram
+                          valor preenchido na Q15.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
                 <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
                   Média por oportunidade
@@ -321,9 +371,9 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
                       {loading ? '—' : formatCompactCurrencyPtBr(kpis.mediaValorPotencial)}
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent className="bg-slate-900 text-white text-xs p-2 max-w-xs shadow-lg">
-                    <p className="font-bold">Média do Valor Potencial:</p>
-                    <p className="font-mono text-blue-300">
+                  <TooltipContent className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg">
+                    <p className="font-bold text-blue-200">Média do Valor Potencial:</p>
+                    <p className="font-mono text-blue-300 font-bold text-sm mt-0.5">
                       {formatFullCurrencyPtBr(kpis.mediaValorPotencial)}
                     </p>
                   </TooltipContent>
@@ -355,6 +405,32 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
                   <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100 text-[10px] font-semibold px-1.5 py-0 rounded border-0 shrink-0">
                     Q16
                   </Badge>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-amber-700 shrink-0 p-0.5 focus:outline-hidden"
+                          aria-label="Informações sobre Volume Potencial em Toneladas"
+                        >
+                          <Info className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                      >
+                        <p className="font-bold text-amber-300 mb-1">
+                          Volume Potencial em Toneladas:
+                        </p>
+                        <p className="text-slate-200 text-[11px] leading-relaxed">
+                          Volume declarado em toneladas de aço na pergunta Q16. Inclui a
+                          normalização automática de quilos para toneladas (kg ÷ 1.000). Potencial
+                          mapeado, não venda emitida.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
                 <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
                   Soma em toneladas (Aço)
@@ -407,6 +483,32 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
                   <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 text-[10px] font-semibold px-1.5 py-0 rounded border-0 shrink-0">
                     Q3
                   </Badge>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-emerald-700 shrink-0 p-0.5 focus:outline-hidden"
+                          aria-label="Informações sobre Taxa de Orçamento Q3"
+                        >
+                          <Info className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
+                      >
+                        <p className="font-bold text-emerald-300 mb-1">
+                          Taxa de Orçamento (Q3 Nova):
+                        </p>
+                        <p className="text-slate-200 text-[11px] leading-relaxed">
+                          Percentual de atendimentos com resposta afirmativa na nova pergunta
+                          estratégica Q3 (&quot;Cliente fez cotação/orçamento?&quot;). Usa apenas as
+                          fichas com essa resposta declarada.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
                 <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
                   Fez orçamento no contato?
