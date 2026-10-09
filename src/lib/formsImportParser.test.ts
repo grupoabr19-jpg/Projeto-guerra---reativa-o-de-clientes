@@ -48,8 +48,15 @@ export function runFormsImportParserTests(): { passed: boolean; results: string[
   assert(normalizarValorReais('R$ 10.000,00') === 10000, 'Valor redondo com centavos')
 
   // 3. normalizarPesoToneladas
-  assert(normalizarPesoToneladas('3.378 Kgs') === 3.378, 'Peso em kg convertido ou preservado')
+  assert(
+    normalizarPesoToneladas('3.378 Kgs') === 3.378,
+    'Peso em kg convertido ou preservado (3378 kg / 1000 = 3.378 ton)',
+  )
+  assert(normalizarPesoToneladas('221.049 Kgs') === 221.049, '221.049 Kgs = 221.049 ton')
+  assert(normalizarPesoToneladas('220.644 Kgs') === 220.644, '220.644 Kgs = 220.644 ton')
+  assert(normalizarPesoToneladas('20.993 Kgs') === 20.993, '20.993 Kgs = 20.993 ton')
   assert(normalizarPesoToneladas('1700 kilos') === 1.7, '1700 kilos convertido para 1.7 toneladas')
+  assert(normalizarPesoToneladas('493.25') === 493.25, 'Valor já em toneladas preservado')
   assert(normalizarPesoToneladas('só aguardando liberação') === 0, 'Texto vira 0')
   assert(normalizarPesoToneladas('321,32') === 321.32, 'Peso decimal com vírgula')
 

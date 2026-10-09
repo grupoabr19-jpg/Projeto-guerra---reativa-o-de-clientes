@@ -203,36 +203,45 @@ routerAdd(
       const q10Map = {}
       const desfechoMap = {}
 
+      // Lista de desfechos isentos de agregação financeira e de volume
+      // (duplicado, sem_contato, ativo_fora_base, compra_terceiros, cliente_final, restricao_financeira)
+      const desfechosIsentos = {
+        duplicado: true,
+        sem_contato: true,
+        ativo_fora_base: true,
+        compra_terceiros: true,
+        cliente_final: true,
+        restricao_financeira: true,
+      }
+
+      // Deduplicação por cliente: como a query já vem ORDER BY rf.created DESC,
+      // a primeira ocorrência encontrada para cada cliente é a mais recente
+      const clientesFinanceiroProcessados = {}
+      const clientesTaxaProcessados = {}
+
+      // Helper para limpar texto de pergunta
+      const extrairTexto = (val) => {
+        if (val === undefined || val === null) return ''
+        let s = String(val).trim()
+        if (!s) return ''
+        if (s.indexOf('Outros:') === 0 || s.indexOf('Outros -') === 0) {
+          const det = s.replace(/^Outros[:\s-]+/, '').trim()
+          return det ? 'Outros (' + det + ')' : 'Outros'
+        }
+        return s
+      }
+
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i]
 
-        // Desfecho
+        // Desfecho (contagem de desfechos no gráfico continua contando tudo)
         let desfecho = String(r.desfecho || '').trim()
         if (!desfecho) {
           desfecho = 'nao_informado'
         }
         desfechoMap[desfecho] = (desfechoMap[desfecho] || 0) + 1
 
-        // Valor Potencial e Toneladas
-        const vPot = Number(
-          r.valor_potencial !== undefined && r.valor_potencial !== null
-            ? r.valor_potencial
-            : r.valorPotencial || 0,
-        )
-        if (vPot > 0) {
-          somaValorPotencial += vPot
-          countValorPotencial++
-        }
-
-        const tPot = Number(
-          r.toneladas_potencial !== undefined && r.toneladas_potencial !== null
-            ? r.toneladas_potencial
-            : r.toneladasPotencial || 0,
-        )
-        if (tPot > 0) {
-          somaToneladas += tPot
-          countToneladas++
-        }
+        const clienteId = String(r.cliente || '').trim() || r.id
 
         // Parse do JSON de respostas
         let respostasObj = {}
@@ -247,42 +256,6 @@ routerAdd(
           } else if (typeof rawRespostas === 'object') {
             respostasObj = rawRespostas
           }
-        }
-
-        // Q3 - Fez orçamento?
-        let q3Val = ''
-        if (respostasObj && respostasObj.q3 !== undefined && respostasObj.q3 !== null) {
-          q3Val = String(respostasObj.q3).trim()
-        }
-        if (q3Val === 'Sim' || q3Val === 'sim' || q3Val === 'true' || q3Val === '1') {
-          q3Contagem.Sim++
-        } else if (
-          q3Val === 'Não' ||
-          q3Val === 'Nao' ||
-          q3Val === 'nao' ||
-          q3Val === 'false' ||
-          q3Val === '0'
-        ) {
-          q3Contagem.Nao++
-        } else {
-          // Se não respondeu Q3 diretamente, mas tem valor potencial preenchido, pode ser orçado
-          if (vPot > 0) {
-            q3Contagem.Sim++
-          } else {
-            q3Contagem.NaoRespondido++
-          }
-        }
-
-        // Helper para limpar texto de pergunta
-        const extrairTexto = (val) => {
-          if (val === undefined || val === null) return ''
-          let s = String(val).trim()
-          if (!s) return ''
-          if (s.indexOf('Outros:') === 0 || s.indexOf('Outros -') === 0) {
-            const det = s.replace(/^Outros[:\s-]+/, '').trim()
-            return det ? 'Outros (' + det + ')' : 'Outros'
-          }
-          return s
         }
 
         // Q7 - Concorrência
@@ -301,6 +274,62 @@ routerAdd(
         const q10Val = extrairTexto(respostasObj.q10)
         if (q10Val) {
           q10Map[q10Val] = (q10Map[q10Val] || 0) + 1
+        }
+
+        // --- AGREGAÇÕES FINANCEIRAS (Valor Potencial Q15 e Toneladas Q16) ---
+        // 1. Deduplicação por cliente: considerar apenas uma ficha por cliente (a mais recente)
+        // 2. Exclusão de desfechos isentos: duplicado, sem_contato, ativo_fora_base,
+        //    compra_terceiros, cliente_final, restricao_financeira
+        if (!clientesFinanceiroProcessados[clienteId]) {
+          clientesFinanceiroProcessados[clienteId] = true
+
+          const isIsento = Boolean(desfechosIsentos[desfecho])
+
+          if (!isIsento) {
+            const vPot = Number(
+              r.valor_potencial !== undefined && r.valor_potencial !== null
+                ? r.valor_potencial
+                : r.valorPotencial || 0,
+            )
+            if (vPot > 0) {
+              somaValorPotencial += vPot
+              countValorPotencial++
+            }
+
+            const tPot = Number(
+              r.toneladas_potencial !== undefined && r.toneladas_potencial !== null
+                ? r.toneladas_potencial
+                : r.toneladasPotencial || 0,
+            )
+            if (tPot > 0) {
+              somaToneladas += tPot
+              countToneladas++
+            }
+          }
+        }
+
+        // --- TAXA DE ORÇAMENTO (Q3 NOVA) ---
+        // Deve usar EXCLUSIVAMENTE a Q3 NOVA (respostas.q3 com "Sim" / "Não").
+        // Deduplica também por cliente para não distorcer a taxa caso o mesmo cliente tenha sido respondido duas vezes.
+        // NUNCA misturar com Q3 antiga / q3_arquivo nem assumir Sim só porque vPot > 0.
+        // Registros sem respostas.q3 nova ("Sim"/"Não") entram como "NaoRespondido" (não declarados)
+        // e NÃO entram no denominador da taxa.
+        if (!clientesTaxaProcessados[clienteId]) {
+          clientesTaxaProcessados[clienteId] = true
+
+          let q3Val = ''
+          if (respostasObj && respostasObj.q3 !== undefined && respostasObj.q3 !== null) {
+            q3Val = String(respostasObj.q3).trim()
+          }
+
+          if (q3Val === 'Sim' || q3Val === 'sim') {
+            q3Contagem.Sim++
+          } else if (q3Val === 'Não' || q3Val === 'Nao' || q3Val === 'nao') {
+            q3Contagem.Nao++
+          } else {
+            // Não possui a Q3 nova respondida
+            q3Contagem.NaoRespondido++
+          }
         }
       }
 

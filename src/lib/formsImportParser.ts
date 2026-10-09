@@ -75,8 +75,15 @@ export function normalizarValorReais(valor?: unknown): number {
 }
 
 /**
- * Converte strings com peso em toneladas/quilos (ex: "3.378 Kgs", "1700 kilos", "321,32", "210,90", "só aguardando...")
- * Retorna número decimal em toneladas ou unidades correspondentes.
+ * Converte strings com peso em toneladas/quilos (ex: "221.049 Kgs", "3.378 Kgs", "1700 kilos", "493.25", "321,32", "210,90")
+ * Retorna número decimal em TONELADAS.
+ * Regras:
+ * - Se tem unidade em kg / kilos:
+ *   - Formato brasileiro comum de balança/forms: ponto como separador de milhar (ex: "221.049 Kgs" = 221049 kg, "3.378 Kgs" = 3378 kg).
+ *     Ou vírgula decimal (ex: "494,98 Kgs" = 494.98 kg).
+ *   - Divide kg por 1000 para obter toneladas (ex: 221049 kg -> 221.049 ton, 3378 kg -> 3.378 ton, 1700 kg -> 1.7 ton).
+ * - Se não tem menção a kg/kilos:
+ *   - Já representa toneladas diretamente (ou formato padrão com vírgula ou ponto decimal).
  */
 export function normalizarPesoToneladas(valor?: unknown): number {
   if (valor === undefined || valor === null) return 0
@@ -87,14 +94,42 @@ export function normalizarPesoToneladas(valor?: unknown): number {
     return 0
   }
 
-  let limpo = str.replace(/[kKgGsSilos\s]/gi, '').trim()
+  const lower = str.toLowerCase()
+  const isKg = lower.includes('kg') || lower.includes('kilo')
 
-  // Se tiver algo como "(494,98 KGS)" dentro de um texto
-  const match = str.match(/(\d+(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)/)
-  if (match) {
-    limpo = match[1]
+  // Se for explicitamente kg
+  if (isKg) {
+    // Pega a porção numérica formatada
+    const match = str.match(/(\d+(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?|\d+(?:\.\d+)?)/)
+    if (!match) return 0
+
+    let numStr = match[1]
+    if (numStr.includes('.') && numStr.includes(',')) {
+      // Ex: 1.234,56 kg
+      numStr = numStr.replace(/\./g, '').replace(',', '.')
+    } else if (numStr.includes(',')) {
+      // Ex: 494,98 kg
+      numStr = numStr.replace(',', '.')
+    } else if (numStr.includes('.')) {
+      // No Brasil "221.049 Kgs" ou "3.378 Kgs" usa ponto como milhar em kg
+      const parts = numStr.split('.')
+      if (parts.length === 2 && parts[1].length === 3) {
+        // Ex: 221.049 kg = 221049 kg -> em ton / 1000 vira 221.049 ton!
+        numStr = parts[0] + parts[1]
+      }
+    }
+
+    const kgVal = parseFloat(numStr)
+    if (isNaN(kgVal)) return 0
+
+    // Se kgVal for informado em kg, converte para toneladas dividindo por 1000
+    // (valores expressivos em kg: se > 50 kg divide por 1000; se < 50 kg ex: 3.378 já em formato dividido)
+    const emTon = kgVal > 50 ? kgVal / 1000 : kgVal
+    return Number(emTon.toFixed(3))
   }
 
+  // Se não tem kg, assume que o valor já está em toneladas (ex: 493.25, "1.7", "321,32", "5552.1")
+  let limpo = str.replace(/[^\d.,]/g, '').trim()
   if (limpo.includes('.') && limpo.includes(',')) {
     limpo = limpo.replace(/\./g, '').replace(',', '.')
   } else if (limpo.includes(',')) {
@@ -102,17 +137,7 @@ export function normalizarPesoToneladas(valor?: unknown): number {
   }
 
   const num = parseFloat(limpo)
-  if (isNaN(num)) return 0
-
-  // Se o número for informado em Quilos (ex: > 100 quilos), converte para Toneladas se apropriado
-  // mantendo consistência com o campo toneladas_potencial
-  if (str.toLowerCase().includes('kg') || str.toLowerCase().includes('kilo')) {
-    if (num > 50) {
-      return Number((num / 1000).toFixed(3))
-    }
-  }
-
-  return num
+  return isNaN(num) ? 0 : Number(num.toFixed(3))
 }
 
 /**
