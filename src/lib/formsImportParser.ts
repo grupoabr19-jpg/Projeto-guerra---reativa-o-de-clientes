@@ -111,24 +111,26 @@ export function normalizarPesoToneladas(valor?: unknown): number {
       // Ex: 494,98 kg
       numStr = numStr.replace(',', '.')
     } else if (numStr.includes('.')) {
-      // No Brasil "221.049 Kgs" ou "3.378 Kgs" usa ponto como milhar em kg
+      // Ponto pode ser decimal em kg (ex: "220.482 Kgs" ou "3.378 Kgs" no forms)
+      // No Forms os operadores digitam decimais de kg (ex: 220.482 kg) ou milhares (ex: 1200 kilos)
       const parts = numStr.split('.')
-      if (parts.length === 2 && parts[1].length === 3) {
-        // Ex: 221.049 kg = 221049 kg -> em ton / 1000 vira 221.049 ton!
-        numStr = parts[0] + parts[1]
+      if (parts.length === 2) {
+        // Se a parte inteira for > 1000 e tiver 3 dígitos, pode ser milhar (ex: 1.200 kg)
+        // Mas se for 220.482 Kgs (ex: ~220 kg de aço faturado), é kg com decimal!
+        // Tratar como número decimal direto em kg
+        numStr = parts[0] + '.' + parts[1]
       }
     }
 
     const kgVal = parseFloat(numStr)
     if (isNaN(kgVal)) return 0
 
-    // Se kgVal for informado em kg, converte para toneladas dividindo por 1000
-    // (valores expressivos em kg: se > 50 kg divide por 1000; se < 50 kg ex: 3.378 já em formato dividido)
-    const emTon = kgVal > 50 ? kgVal / 1000 : kgVal
-    return Number(emTon.toFixed(3))
+    // Qualquer valor com indicação de kg é convertido para toneladas dividindo por 1000
+    const emTon = kgVal / 1000
+    return Number(emTon.toFixed(4))
   }
 
-  // Se não tem kg, assume que o valor já está em toneladas (ex: 493.25, "1.7", "321,32", "5552.1")
+  // Se não tem menção a kg, verifica se tem formato decimal com vírgula ou ponto
   let limpo = str.replace(/[^\d.,]/g, '').trim()
   if (limpo.includes('.') && limpo.includes(',')) {
     limpo = limpo.replace(/\./g, '').replace(',', '.')
@@ -137,7 +139,7 @@ export function normalizarPesoToneladas(valor?: unknown): number {
   }
 
   const num = parseFloat(limpo)
-  return isNaN(num) ? 0 : Number(num.toFixed(3))
+  return isNaN(num) ? 0 : Number(num.toFixed(4))
 }
 
 /**

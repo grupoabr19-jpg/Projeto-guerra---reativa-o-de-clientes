@@ -2903,26 +2903,32 @@ export default function AtendimentoPage() {
                     </div>
                   )}
 
-                  {/* Q16 = Numérico (Toneladas) */}
+                  {/* Q16 = Numérico (Toneladas / Quilos) */}
                   {currentStep === 16 && (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <Badge variant="outline" className="text-xs text-blue-600">
-                          Q16 — Campo Numérico: Volume em Toneladas
+                          Q16 — Campo Numérico: Volume Estimado
                         </Badge>
                         <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded font-semibold">
                           Obrigatório para métricas
                         </span>
                       </div>
-                      <h3 className="text-base font-semibold text-slate-800">
-                        Volume físico estimado de entrega (toneladas)
-                      </h3>
+                      <div>
+                        <h3 className="text-base font-semibold text-slate-800">
+                          Volume físico estimado de entrega
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Informe em <strong>QUILOS (kg)</strong> — ex.: 525,40 (o sistema converte
+                          automaticamente para toneladas nas métricas).
+                        </p>
+                      </div>
                       <div className="relative">
                         <Package className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                         <Input
                           type="number"
                           step="0.1"
-                          placeholder="0.0"
+                          placeholder="Informe em QUILOS (kg) — ex.: 525,40"
                           value={answers.q16 !== undefined ? String(answers.q16) : ''}
                           onChange={(e) => {
                             setAnswers({ ...answers, q16: e.target.value })

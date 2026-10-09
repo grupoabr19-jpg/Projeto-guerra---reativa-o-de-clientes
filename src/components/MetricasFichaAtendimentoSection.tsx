@@ -366,8 +366,15 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
             </div>
 
             <div className="mt-4">
-              <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
-                {loading ? '—' : `${formatNumberPtBr(kpis.somaToneladas, 1)} ton`}
+              <div className="flex items-baseline gap-1.5 flex-wrap">
+                <span className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
+                  {loading ? '—' : `${formatNumberPtBr(kpis.somaToneladas, 1)} ton`}
+                </span>
+                {!loading && kpis.somaToneladas > 0 && (
+                  <span className="text-xs text-slate-500 font-mono font-medium">
+                    ({formatNumberPtBr(Math.round(kpis.somaToneladas * 1000), 0)} kg)
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
                 {kpis.countComToneladas} atendimento(s) com peso
@@ -379,6 +386,11 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
             <span>Média por ficha com peso</span>
             <span className="font-mono text-slate-700 font-semibold text-[11px]">
               {formatNumberPtBr(kpis.mediaToneladas, 2)} ton
+              {kpis.mediaToneladas > 0 && (
+                <span className="text-slate-400 font-normal ml-1">
+                  ({formatNumberPtBr(Math.round(kpis.mediaToneladas * 1000), 0)} kg)
+                </span>
+              )}
             </span>
           </div>
         </Card>

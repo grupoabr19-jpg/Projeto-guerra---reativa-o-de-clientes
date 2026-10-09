@@ -105,6 +105,40 @@ onRecordCreateRequest((e) => {
             'O preenchimento do Volume em Toneladas (Q16) é imprescindível para termos um bom retorno das métricas.',
           )
         }
+
+        // Heurística de normalização de unidade (kg vs ton):
+        // Os operadores habitualmente informam o peso em quilos (ex: 525.4 kg, 5552.1 kg).
+        // Se a razão valor / peso estiver no range de R$ 2 a R$ 60 / kg (preço típico do aço),
+        // o operador digitou em kg -> armazenar toneladas = peso / 1000.
+        // Se a razão estiver entre 500 e 150000, já está em toneladas -> manter.
+        let unidadeDetectada = 'ton'
+        let pesoNormalizadoTon = numPeso
+
+        if (numValor > 0 && numPeso > 0) {
+          const ratio = numValor / numPeso
+          if (ratio >= 2 && ratio <= 60) {
+            unidadeDetectada = 'kg'
+            pesoNormalizadoTon = Number((numPeso / 1000).toFixed(4))
+          } else if (ratio >= 500 && ratio <= 150000) {
+            unidadeDetectada = 'ton'
+            pesoNormalizadoTon = numPeso
+          } else if (ratio < 2 && numPeso > 50) {
+            unidadeDetectada = 'kg'
+            pesoNormalizadoTon = Number((numPeso / 1000).toFixed(4))
+          } else if (numPeso >= 50) {
+            unidadeDetectada = 'kg'
+            pesoNormalizadoTon = Number((numPeso / 1000).toFixed(4))
+          }
+        } else if (numPeso >= 50) {
+          unidadeDetectada = 'kg'
+          pesoNormalizadoTon = Number((numPeso / 1000).toFixed(4))
+        }
+
+        record.set('toneladas_potencial', pesoNormalizadoTon)
+        const novasResp = Object.assign({}, respostas)
+        novasResp.q16_unidade_detectada = unidadeDetectada
+        novasResp.q16_toneladas_normalizadas = pesoNormalizadoTon
+        record.set('respostas', novasResp)
       } else if (q3Val.toLowerCase() === 'não' || q3Val.toLowerCase() === 'nao') {
         // Se Q3 = "Não", garante que valor e peso não fiquem gravados (limpa dados órfãos)
         record.set('valor_potencial', null)

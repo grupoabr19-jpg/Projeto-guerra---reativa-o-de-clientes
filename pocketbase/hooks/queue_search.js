@@ -1083,7 +1083,37 @@ routerAdd(
         body.toneladas_potencial !== ''
       ) {
         const num = Number(body.toneladas_potencial)
-        if (!isNaN(num)) toneladasPotencial = num
+        if (!isNaN(num)) {
+          toneladasPotencial = num
+          // Heurística de normalização de unidade (kg vs ton)
+          const valRef =
+            valorPotencial !== undefined && valorPotencial !== null ? valorPotencial : 0
+          let unidadeDetectada = 'ton'
+          let tonNormalizada = num
+          if (valRef > 0 && num > 0) {
+            const ratio = valRef / num
+            if (ratio >= 2 && ratio <= 60) {
+              unidadeDetectada = 'kg'
+              tonNormalizada = Number((num / 1000).toFixed(4))
+            } else if (ratio >= 500 && ratio <= 150000) {
+              unidadeDetectada = 'ton'
+              tonNormalizada = num
+            } else if (ratio < 2 && num > 50) {
+              unidadeDetectada = 'kg'
+              tonNormalizada = Number((num / 1000).toFixed(4))
+            } else if (num >= 50) {
+              unidadeDetectada = 'kg'
+              tonNormalizada = Number((num / 1000).toFixed(4))
+            }
+          } else if (num >= 50) {
+            unidadeDetectada = 'kg'
+            tonNormalizada = Number((num / 1000).toFixed(4))
+          }
+          respostas.q16 = num // mantém raw em q16
+          respostas.q16_unidade_detectada = unidadeDetectada
+          respostas.q16_toneladas_normalizadas = tonNormalizada
+          toneladasPotencial = tonNormalizada
+        }
       }
 
       const adminId = authRecord.id
