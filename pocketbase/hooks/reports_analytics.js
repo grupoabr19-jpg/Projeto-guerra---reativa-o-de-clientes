@@ -257,17 +257,17 @@ routerAdd(
           SUM(CASE WHEN estado = 'contatado' THEN 1 ELSE 0 END) as contatado,
           SUM(CASE WHEN estado = 'reativado' THEN 1 ELSE 0 END) as reativado,
           SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados_reais,
-          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado_real,
-          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas_real,
+          SUM(CASE WHEN ${isReativacaoRealCond} AND COALESCE(valor_ultima_compra, 0) <= 150000 THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado_real,
+          SUM(CASE WHEN ${isReativacaoRealCond} AND COALESCE(valor_ultima_compra, 0) <= 150000 THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas_real,
           SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN 1 ELSE 0 END) as faturamento_recente_cruzamento,
-          SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_faturamento_recente_cruzamento,
-          SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_faturamento_recente_cruzamento,
+          SUM(CASE WHEN ${isFaturamentoCruzamentoCond} AND COALESCE(valor_ultima_compra, 0) <= 150000 THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_faturamento_recente_cruzamento,
+          SUM(CASE WHEN ${isFaturamentoCruzamentoCond} AND COALESCE(valor_ultima_compra, 0) <= 150000 THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_faturamento_recente_cruzamento,
           SUM(CASE WHEN estado = 'compra_terceiros' THEN 1 ELSE 0 END) as compra_terceiros,
           SUM(CASE WHEN estado = 'nao_quer_negociar' THEN 1 ELSE 0 END) as nao_quer_negociar,
           SUM(CASE WHEN estado = 'restricao_financeira' THEN 1 ELSE 0 END) as restricao_financeira,
           SUM(CASE WHEN estado = 'sem_contato' THEN 1 ELSE 0 END) as sem_contato,
-          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado_total,
-          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas_total
+          SUM(CASE WHEN estado = 'reativado' AND COALESCE(valor_ultima_compra, 0) <= 150000 THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado_total,
+          SUM(CASE WHEN estado = 'reativado' AND COALESCE(valor_ultima_compra, 0) <= 150000 THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas_total
         FROM clientes
         WHERE ${whereClause}
       `
@@ -395,6 +395,7 @@ routerAdd(
         }
 
         const clientesProcessados = {}
+        const fichasPorCliente = {}
         let somaValorFichas = 0
         let somaTonFichas = 0
 
@@ -431,6 +432,11 @@ routerAdd(
 
             if (vPot > 0) somaValorFichas += vPot
             if (tPot > 0) somaTonFichas += tPot
+
+            fichasPorCliente[cId] = {
+              valor: vPot > 0 ? vPot : 0,
+              ton: tPot > 0 ? tPot : 0,
+            }
           }
         }
 
@@ -492,6 +498,110 @@ routerAdd(
       const taxaReativacaoInt = Math.round(taxaReativacao)
 
       // =========================================================================
+      // MAPA DE VALORES E TONELADAS POR CLIENTE (FONTE OFICIAL: FICHAS DE ATENDIMENTO)
+      // Com fallback no próprio cliente (valor_ultima_compra saneado) e cinto de segurança
+      // =========================================================================
+      // Construir mapa clienteId -> { valor, ton, segmento, regiao, faixaInat, scoreFaixa }
+      const reativadosReaisQuery = `
+        SELECT
+          id as cliente_id,
+          COALESCE(NULLIF(TRIM(segmento), ''), 'Não Informado') as seg_nome,
+          CASE
+            WHEN regiao IS NULL OR TRIM(regiao) = '' THEN 'Sem Região'
+            WHEN UPPER(TRIM(regiao)) = 'BRAGANÇA PAULISTA' OR UPPER(TRIM(regiao)) = 'BRAGANCA PAULISTA' THEN 'BRAGANÇA'
+            WHEN UPPER(TRIM(regiao)) = 'CAMBUI' OR UPPER(TRIM(regiao)) = 'MICRO-REGIÃO' OR UPPER(TRIM(regiao)) = 'MICRO REGIAO' THEN 'CAMBUÍ'
+            WHEN UPPER(TRIM(regiao)) = 'POCOS DE CALDAS' OR UPPER(TRIM(regiao)) = 'POÇOS CALDAS' OR UPPER(TRIM(regiao)) = 'POCOS CALDAS' THEN 'POÇOS DE CALDAS'
+            WHEN UPPER(TRIM(regiao)) = 'JUNDIAI' THEN 'JUNDIAÍ'
+            WHEN UPPER(TRIM(regiao)) = 'ITAJUBA' THEN 'ITAJUBÁ'
+            ELSE UPPER(TRIM(regiao))
+          END as reg_nome,
+          CASE
+            WHEN dias_sem_faturar < 60 THEN '1. Menos de 60 dias'
+            WHEN dias_sem_faturar >= 60 AND dias_sem_faturar <= 89 THEN '2. 60 a 89 dias (Fila Prioritária)'
+            WHEN dias_sem_faturar >= 90 AND dias_sem_faturar <= 179 THEN '3. 90 a 179 dias (Repescagem)'
+            WHEN dias_sem_faturar >= 180 AND dias_sem_faturar <= 365 THEN '4. 180 a 365 dias'
+            ELSE '5. Mais de 365 dias (Inatividade Severa)'
+          END as faixa_nome,
+          CASE
+            WHEN score < 30 THEN 'Score Baixo (0-29)'
+            WHEN score >= 30 AND score <= 60 THEN 'Score Médio (30-60)'
+            ELSE 'Score Alto (61-100)'
+          END as score_faixa,
+          COALESCE(valor_ultima_compra, 0) as valor_cliente,
+          COALESCE(toneladas_historico, 0) as ton_cliente
+        FROM clientes
+        WHERE ${whereClause} AND ${isReativacaoRealCond}
+      `
+
+      const reatRows = arrayOf(
+        new DynamicModel({
+          cliente_id: '',
+          seg_nome: '',
+          reg_nome: '',
+          faixa_nome: '',
+          score_faixa: '',
+          valor_cliente: -0,
+          ton_cliente: -0,
+        }),
+      )
+
+      const qbReat = $app.db().newQuery(reativadosReaisQuery)
+      if (Object.keys(bindParams).length > 0) qbReat.bind(bindParams)
+      qbReat.all(reatRows)
+
+      // Mapas de agregação por dimensão para reativados reais
+      const reatPorSegmento = {}
+      const reatPorFaixa = {}
+      const reatPorScore = {}
+      const reatPorRegiao = {}
+
+      for (let ri = 0; ri < reatRows.length; ri++) {
+        const row = reatRows[ri]
+        const cId = String(row.cliente_id || '')
+        const seg = String(row.seg_nome || 'Não Informado')
+        const reg = String(row.reg_nome || 'Sem Região')
+        const faixa = String(row.faixa_nome || 'Indefinida')
+        const scoreF = String(row.score_faixa || 'Indefinido')
+
+        let vCliente = Number(row.valor_cliente || 0)
+        let tCliente = Number(row.ton_cliente || 0)
+
+        // Se há ficha válida para este cliente, a ficha tem prioridade oficial
+        if (fichasPorCliente && fichasPorCliente[cId]) {
+          const fichaInfo = fichasPorCliente[cId]
+          vCliente = fichaInfo.valor
+          tCliente = fichaInfo.ton
+        } else {
+          // Cinto de segurança: descartar valores absurdos residuais (> 150.000 sem ficha ou ratio fora do padrão)
+          if (vCliente > 150000) {
+            vCliente = 0
+          }
+          if (vCliente > 0 && tCliente > 0 && vCliente / tCliente < 100) {
+            vCliente = 0
+            tCliente = 0
+          }
+        }
+
+        // Acumular no segmento
+        if (!reatPorSegmento[seg]) reatPorSegmento[seg] = { valor: 0, ton: 0 }
+        reatPorSegmento[seg].valor += vCliente
+        reatPorSegmento[seg].ton += tCliente
+
+        // Acumular na faixa
+        if (!reatPorFaixa[faixa]) reatPorFaixa[faixa] = { valor: 0 }
+        reatPorFaixa[faixa].valor += vCliente
+
+        // Acumular no score
+        if (!reatPorScore[scoreF]) reatPorScore[scoreF] = { valor: 0 }
+        reatPorScore[scoreF].valor += vCliente
+
+        // Acumular na região
+        if (!reatPorRegiao[reg]) reatPorRegiao[reg] = { valor: 0, ton: 0 }
+        reatPorRegiao[reg].valor += vCliente
+        reatPorRegiao[reg].ton += tCliente
+      }
+
+      // =========================================================================
       // 2. CRUZAMENTO 1: CONVERSÃO POR SEGMENTO (COMERCIAL)
       // =========================================================================
       const segmentoQuery = `
@@ -499,8 +609,6 @@ routerAdd(
           COALESCE(NULLIF(TRIM(segmento), ''), 'Não Informado') as segmento_nome,
           COUNT(*) as total_clientes,
           SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados,
-          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
-          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas,
           SUM(CASE WHEN estado = 'compra_terceiros' OR estado = 'nao_quer_negociar' OR estado = 'restricao_financeira' OR estado = 'sem_contato' THEN 1 ELSE 0 END) as perdidos,
           SUM(CASE WHEN estado = 'reagendado' THEN 1 ELSE 0 END) as reagendados
         FROM clientes
@@ -514,8 +622,6 @@ routerAdd(
           segmento_nome: '',
           total_clientes: 0,
           reativados: 0,
-          valor_recuperado: -0,
-          toneladas_recuperadas: -0,
           perdidos: 0,
           reagendados: 0,
         }),
@@ -531,14 +637,9 @@ routerAdd(
         const nome = String(r.segmento_nome || r.segmentoNome || 'Não Informado')
         const total = Number(r.total_clientes || r.totalClientes || 0)
         const reat = Number(r.reativados || 0)
-        const val = Number(
-          r.valor_recuperado !== undefined ? r.valor_recuperado : r.valorRecuperado || 0,
-        )
-        const ton = Number(
-          r.toneladas_recuperadas !== undefined
-            ? r.toneladas_recuperadas
-            : r.toneladasRecuperadas || 0,
-        )
+        const segData = reatPorSegmento[nome] || { valor: 0, ton: 0 }
+        const val = Number((segData.valor || 0).toFixed(2))
+        const ton = Number((segData.ton || 0).toFixed(4))
         const perd = Number(r.perdidos || 0)
         const reag = Number(r.reagendados || 0)
         const taxa = total > 0 ? Math.round((reat / total) * 100) : 0
@@ -568,7 +669,6 @@ routerAdd(
           END as faixa_nome,
           COUNT(*) as total_clientes,
           SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados,
-          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
           SUM(CASE WHEN estado = 'compra_terceiros' OR estado = 'nao_quer_negociar' OR estado = 'restricao_financeira' OR estado = 'sem_contato' THEN 1 ELSE 0 END) as perdidos
         FROM clientes
         WHERE ${whereClause}
@@ -581,7 +681,6 @@ routerAdd(
           faixa_nome: '',
           total_clientes: 0,
           reativados: 0,
-          valor_recuperado: -0,
           perdidos: 0,
         }),
       )
@@ -596,9 +695,8 @@ routerAdd(
         const nome = String(r.faixa_nome || r.faixaNome || 'Indefinida')
         const total = Number(r.total_clientes || r.totalClientes || 0)
         const reat = Number(r.reativados || 0)
-        const val = Number(
-          r.valor_recuperado !== undefined ? r.valor_recuperado : r.valorRecuperado || 0,
-        )
+        const faixaData = reatPorFaixa[nome] || { valor: 0 }
+        const val = Number((faixaData.valor || 0).toFixed(2))
         const perd = Number(r.perdidos || 0)
         const taxa = total > 0 ? Math.round((reat / total) * 100) : 0
         conversaoPorFaixaInatividade.push({
@@ -623,7 +721,6 @@ routerAdd(
           END as score_faixa,
           COUNT(*) as total_clientes,
           SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados,
-          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
           AVG(COALESCE(score, 0)) as score_medio
         FROM clientes
         WHERE ${whereClause}
@@ -636,7 +733,6 @@ routerAdd(
           score_faixa: '',
           total_clientes: 0,
           reativados: 0,
-          valor_recuperado: -0,
           score_medio: -0,
         }),
       )
@@ -651,9 +747,8 @@ routerAdd(
         const nome = String(r.score_faixa || r.scoreFaixa || 'Indefinido')
         const total = Number(r.total_clientes || r.totalClientes || 0)
         const reat = Number(r.reativados || 0)
-        const val = Number(
-          r.valor_recuperado !== undefined ? r.valor_recuperado : r.valorRecuperado || 0,
-        )
+        const scData = reatPorScore[nome] || { valor: 0 }
+        const val = Number((scData.valor || 0).toFixed(2))
         const med = Math.round(
           Number(r.score_medio !== undefined ? r.score_medio : r.scoreMedio || 0),
         )
@@ -683,13 +778,11 @@ routerAdd(
             ELSE UPPER(TRIM(regiao))
           END as regiao_nome,
           COUNT(*) as total_clientes,
-          SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados,
-          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado,
-          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados
         FROM clientes
         WHERE ${whereClause}
         GROUP BY regiao_nome
-        ORDER BY valor_recuperado DESC
+        ORDER BY reativados DESC
       `
 
       const regiaoRows = arrayOf(
@@ -697,8 +790,6 @@ routerAdd(
           regiao_nome: '',
           total_clientes: 0,
           reativados: 0,
-          valor_recuperado: -0,
-          toneladas_recuperadas: -0,
         }),
       )
 
@@ -712,14 +803,9 @@ routerAdd(
         const nome = String(r.regiao_nome || r.regiaoNome || 'Sem Região')
         const total = Number(r.total_clientes || r.totalClientes || 0)
         const reat = Number(r.reativados || 0)
-        const val = Number(
-          r.valor_recuperado !== undefined ? r.valor_recuperado : r.valorRecuperado || 0,
-        )
-        const ton = Number(
-          r.toneladas_recuperadas !== undefined
-            ? r.toneladas_recuperadas
-            : r.toneladasRecuperadas || 0,
-        )
+        const regData = reatPorRegiao[nome] || { valor: 0, ton: 0 }
+        const val = Number((regData.valor || 0).toFixed(2))
+        const ton = Number((regData.ton || 0).toFixed(4))
         const ticketMedio = reat > 0 ? Math.round(val / reat) : 0
         const taxa = total > 0 ? Math.round((reat / total) * 100) : 0
         recuperacaoPorRegiao.push({
@@ -732,6 +818,9 @@ routerAdd(
           ticketMedio: ticketMedio,
         })
       }
+      recuperacaoPorRegiao.sort(function (a, b) {
+        return b.valorRecuperado - a.valorRecuperado
+      })
 
       // =========================================================================
       // 6. CRUZAMENTO 5: TOP VENDEDORES DE ORIGEM COM CARTEIRA MAIS "MORTA"
