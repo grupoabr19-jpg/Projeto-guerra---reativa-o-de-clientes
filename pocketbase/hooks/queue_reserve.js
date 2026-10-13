@@ -663,9 +663,29 @@ routerAdd(
 
       // CINTO DE SEGURANÇA / BLINDAGEM ANTI-REPETIÇÃO:
       // Função para testar se um candidato é válido ou se foi recentemente servido/devolvido por este operador hoje
+      // CIRÚRGICA BLINDAGEM ANTI-REPETIÇÃO E EXCLUSÃO DE DESFECHOS:
+      // Testa se o candidato já foi concluído ou se foi recentemente servido/devolvido por este operador
       const isCandidatoRepetidoRecente = (c) => {
         if (!c) return true
         if (idsExcluidosNestaChamada.includes(c.id)) return true
+
+        const cEstado = c.getString('estado')
+        const cAtivoFora = c.getBool('ativo_fora_base')
+        const cBaseCat = c.getString('base_categoria')
+        if (
+          cAtivoFora ||
+          cBaseCat === 'cliente_final' ||
+          cBaseCat === 'atacado_fora_mapa' ||
+          cEstado === 'ativo_fora_base' ||
+          cEstado === 'sem_contato' ||
+          cEstado === 'venda_perdida' ||
+          cEstado === 'compra_terceiros' ||
+          cEstado === 'nao_quer_negociar' ||
+          cEstado === 'restricao_financeira' ||
+          cEstado === 'duplicado'
+        ) {
+          return true
+        }
 
         const retomadaServida = c.getString('retomada_servida_em')
         const reagOp = c.getString('reagendado_operador')
@@ -679,6 +699,30 @@ routerAdd(
             }
           }
         }
+
+        // Se tem interação recente com desfecho concluído registrada hoje por este operador
+        try {
+          const ultimasInt = $app.findRecordsByFilter(
+            'interacoes',
+            `cliente = '${c.id}' && operador = '${userId}' && desfecho != '' && desfecho != 'transferido'`,
+            '-created',
+            1,
+            0,
+          )
+          if (ultimasInt && ultimasInt.length > 0) {
+            const intData = ultimasInt[0].getString('created')
+            if (intData) {
+              const pData = new Date(intData)
+              if (!isNaN(pData.getTime())) {
+                const diffHInt = (now.getTime() - pData.getTime()) / (1000 * 60 * 60)
+                if (diffHInt >= 0 && diffHInt < 12) {
+                  return true
+                }
+              }
+            }
+          }
+        } catch (_) {}
+
         return false
       }
 
@@ -687,7 +731,7 @@ routerAdd(
       // =========================================================================
       // A: REAGENDADOS VENCIDOS (Follow-ups do operador ou da região)
       // =========================================================================
-      let reagFilter = `estado = 'reagendado' && reagendado_para <= '${endOfToday}' && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'`
+      let reagFilter = `estado = 'reagendado' && reagendado_para != '' && reagendado_para <= '${endOfToday}' && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'`
       if (regiaoFilter) {
         reagFilter += ` && ${regiaoFilter}`
       }
@@ -708,10 +752,14 @@ routerAdd(
         )
         if (reagendados && reagendados.length > 0) {
           // Prioridade máxima: follow-ups atribuídos diretamente a este operador (não repetidos)
-          const myReags = reagendados.filter(
-            (r) => r.getString('reagendado_operador') === userId && !isCandidatoRepetidoRecente(r),
-          )
+          // Se for transferência recente (prioridade_transferencia=true), atende imediatamente
+          const myReags = reagendados.filter((r) => {
+            if (r.getString('reagendado_operador') !== userId) return false
+            if (r.getBool('prioridade_transferencia') === true) return true
+            return !isCandidatoRepetidoRecente(r)
+          })
           if (myReags.length > 0) {
+            // Prioridade para transferidos com flag prioridade_transferencia
             const transferido = myReags.find((r) => r.getBool('prioridade_transferencia') === true)
             cand = transferido || myReags[0]
           } else if (isAtacado && (userRole === 'operador' || userRole === 'lider')) {

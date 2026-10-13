@@ -262,6 +262,10 @@ onRecordAfterCreateSuccess((e) => {
     cliente.set('estado', desfecho)
     cliente.set('lock_timestamp', '1970-01-01 00:00:00.000Z')
     cliente.set('operador', '')
+    if (desfecho !== 'reagendado') {
+      cliente.set('reagendado_para', null)
+      cliente.set('reagendado_operador', '')
+    }
     $app.save(cliente)
     console.log(
       '[standby_integrity] Transição atômica server-side aplicada: ' +
@@ -465,6 +469,12 @@ onRecordUpdateRequest((e) => {
       // Só mantém operador vinculado se for pedido em aberto pendente de faturamento
       if (!temPedidoEmAberto) {
         record.set('operador', '')
+      }
+
+      // Se o desfecho não for 'reagendado', limpa reagendado_para e reagendado_operador
+      if (novoEstadoTrans !== 'reagendado') {
+        record.set('reagendado_para', null)
+        record.set('reagendado_operador', '')
       }
     }
   } catch (err) {

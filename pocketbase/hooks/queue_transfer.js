@@ -246,6 +246,7 @@ routerAdd(
       cliente.set('reagendado_operador', destinoOperadorId)
       cliente.set('reagendado_para', hojeIso)
       cliente.set('prioridade_transferencia', true)
+      cliente.set('retomada_servida_em', null)
 
       if (body.rascunho_respostas) {
         cliente.set('rascunho_respostas', body.rascunho_respostas)

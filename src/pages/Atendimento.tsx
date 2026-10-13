@@ -1288,6 +1288,7 @@ export default function AtendimentoPage() {
       })
       // Limpeza completa do estado local do cliente antes de navegar
       setCliente(null)
+      setAnswers({})
       setShowQuestionarioModal(false)
       navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila')
     } catch (err: unknown) {
