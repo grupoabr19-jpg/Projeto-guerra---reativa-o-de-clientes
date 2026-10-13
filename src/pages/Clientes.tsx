@@ -504,7 +504,7 @@ export default function ClientesPage() {
                           variant="outline"
                           className="text-[10px] uppercase font-mono block w-fit"
                         >
-                          {item.estado.replace('_', ' ')}
+                          {(item.estado || 'na_base').replace('_', ' ')}
                         </Badge>
                         {item.pedido_em_aberto && (
                           <Badge className="bg-amber-500 text-white border-amber-600 text-[9px] block w-fit font-bold font-mono animate-pulse">
@@ -666,7 +666,7 @@ export default function ClientesPage() {
                     {selectedClient.codigo}
                   </Badge>{' '}
                   <Badge className="text-xs uppercase">
-                    {selectedClient.estado.replace('_', ' ')}
+                    {(selectedClient.estado || 'na_base').replace('_', ' ')}
                   </Badge>
                   {selectedClient.estado === 'reativado' &&
                     selectedClient.standby_ate &&

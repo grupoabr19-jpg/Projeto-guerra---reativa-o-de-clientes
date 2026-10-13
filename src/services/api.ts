@@ -68,9 +68,7 @@ export async function fetchClientes(params?: {
     const reg = params.regiao.trim()
     const up = reg.toUpperCase()
     if (up === 'SEM REGIÃO' || up === 'SEM REGIAO') {
-      filterParts.push(
-        "(regiao = '' || regiao = null || regiao = 'Sem Região' || regiao = 'SEM REGIAO')",
-      )
+      filterParts.push("(regiao = '' || regiao = 'Sem Região' || regiao = 'SEM REGIAO')")
     } else if (up === 'BRAGANÇA' || up === 'BRAGANCA') {
       filterParts.push(
         "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA')",
@@ -120,9 +118,7 @@ export async function fetchClientes(params?: {
     } else if (params.categoria === 'sem_dono_equipe') {
       filterParts.push('sem_dono_equipe = true')
     } else if (params.categoria === 'normal') {
-      filterParts.push(
-        "(base_categoria = 'normal' || base_categoria = '' || base_categoria = null)",
-      )
+      filterParts.push("(base_categoria = 'normal' || base_categoria = '')")
     }
   }
 
@@ -154,7 +150,7 @@ export async function fetchClientes(params?: {
   return pb.collection('clientes').getList<Cliente>(page, perPage, {
     filter: finalFilter,
     sort,
-    expand: params?.expand || 'operador',
+    expand: params?.expand,
   })
 }
 
