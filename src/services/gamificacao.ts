@@ -9,6 +9,7 @@ import type {
   ConcursoSazonal,
   PesosGamificacao,
   RankingUserRow,
+  RespostaFormulario,
 } from '@/types'
 import { fetchConfiguracoes } from './api'
 import { parabenizarConquistaRanking } from './chat'
@@ -188,6 +189,15 @@ export async function calculateRankingData(options?: {
     return true
   }
 
+  // Buscar fichas de atendimento para cálculo oficial e consolidado de toneladas por operador
+  // (mesma regra e cinto de segurança do Dashboard e Relatórios: coleção respostas_formulario)
+  const respostasFormulario = await pb
+    .collection('respostas_formulario')
+    .getFullList<RespostaFormulario>({
+      sort: '-created',
+    })
+    .catch(() => [] as RespostaFormulario[])
+
   // Agrupar métricas por operador (somente operadores e líderes elegíveis)
   const metricsByUser: Record<
     string,
@@ -250,16 +260,50 @@ export async function calculateRankingData(options?: {
     }
   }
 
-  // Processar toneladas de clientes reativados/atendidos no período
-  for (const c of clientesReativados) {
-    if (!c.operador || !metricsByUser[c.operador]) continue
-    if (!isWithinPeriod(c.updated || c.created)) continue
+  // Processar toneladas com a MESMA regra e fonte consolidada do Dashboard e Relatórios:
+  // 1. Fonte oficial: coleção respostas_formulario (campo toneladas_potencial) por operador
+  // 2. Deduplicação por cliente (como vem ORDER BY -created, a 1ª ocorrência por cliente é a mais recente)
+  // 3. Exclusão de desfechos isentos (duplicado, sem_contato, ativo_fora_base, compra_terceiros, cliente_final, restricao_financeira)
+  // 4. Cinto de segurança de preço implícito: descartar ficha cujo valor_potencial/toneladas implique < R$0,10/kg (< 100 R$/ton)
+  const desfechosIsentosToneladas: Record<string, boolean> = {
+    duplicado: true,
+    sem_contato: true,
+    ativo_fora_base: true,
+    compra_terceiros: true,
+    cliente_final: true,
+    restricao_financeira: true,
+  }
 
-    const ton = c.toneladas_historico || c.peso_nf_tonelagem || 0
-    if (ton > 0) {
-      const m = metricsByUser[c.operador]
-      m.toneladas += ton
-      m.pontosCalculados += Math.round(ton * pesos.pontos_por_tonelada)
+  const clientesFichaProcessados: Record<string, boolean> = {}
+
+  for (const rf of respostasFormulario) {
+    const operadorId = rf.operador
+    if (!operadorId || !metricsByUser[operadorId]) continue
+    if (!isWithinPeriod(rf.created)) continue
+
+    const clienteId = rf.cliente || rf.id
+    if (clientesFichaProcessados[clienteId]) continue
+    clientesFichaProcessados[clienteId] = true
+
+    const desfecho = String(rf.desfecho || '').trim()
+    if (desfechosIsentosToneladas[desfecho]) continue
+
+    const vPot = Number(rf.valor_potencial || 0)
+    const tPot = Number(rf.toneladas_potencial || 0)
+
+    if (tPot > 0) {
+      // Cinto de segurança de preço implícito (mesma regra do Dashboard/Relatórios):
+      // Descarta fichas com valor_potencial > 0, toneladas_potencial > 0 e razão < 100 R$/ton (< R$ 0,10/kg)
+      if (vPot > 0 && vPot / tPot < 100) {
+        console.warn(
+          `[gamificacao/calculateRankingData] Cinto de segurança ativado: ficha corrupta descartada id=${rf.id} (cliente=${clienteId}, v=${vPot}, ton=${tPot}, razão=${(vPot / tPot).toFixed(2)} R$/ton)`,
+        )
+        continue
+      }
+
+      const m = metricsByUser[operadorId]
+      m.toneladas += tPot
+      m.pontosCalculados += Math.round(tPot * pesos.pontos_por_tonelada)
     }
   }
 
