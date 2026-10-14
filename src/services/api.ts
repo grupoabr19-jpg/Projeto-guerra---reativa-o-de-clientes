@@ -673,6 +673,137 @@ export async function deleteUser(userId: string) {
   return pb.collection('users').delete(userId)
 }
 
+export interface CarteiraPreviewResult {
+  ok: boolean
+  origem_id?: string
+  origem_nome: string
+  destino_id: string
+  destino_nome: string
+  regiao_filtro: string
+  total: number
+  por_tipo: {
+    por_vendedor: number
+    reservados_ou_atendimento: number
+    reagendados: number
+    reativados: number
+  }
+  amostra: Array<{
+    id: string
+    codigo: string
+    nome: string
+    regiao: string
+    estado: string
+    vendedor_atual: string
+    vendedor_novo: string
+    motivo: string
+  }>
+}
+
+export interface CarteiraTransferResult {
+  ok: boolean
+  message: string
+  origem_nome: string
+  destino_nome: string
+  total_transferidos: number
+  por_tipo: {
+    vendedor_reescrito: number
+    vinculo_operador: number
+    reagendados: number
+    reativacoes: number
+    locks_liberados: number
+  }
+  origem_desativada: boolean
+}
+
+/**
+ * Consulta prévia de transferência de carteira (quantos clientes serão impactados).
+ * Exclusivo admin.
+ */
+export async function previewTransferCarteira(params: {
+  origem_id?: string
+  origem_nome?: string
+  destino_id: string
+  regiao?: string
+}): Promise<CarteiraPreviewResult> {
+  const res = await fetch(
+    `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/admin/carteira-preview`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: pb.authStore.token,
+      },
+      body: JSON.stringify(params),
+    },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Falha ao consultar prévia da carteira')
+  }
+  return res.json()
+}
+
+/**
+ * Executa a transferência de carteira completa preservando prefixos do vendedor
+ * e transferindo vínculos vivos (exclusivo admin).
+ */
+export async function executeTransferCarteira(params: {
+  origem_id?: string
+  origem_nome?: string
+  destino_id: string
+  regiao?: string
+  desativar_origem?: boolean
+}): Promise<CarteiraTransferResult> {
+  const res = await fetch(
+    `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/admin/transfer-carteira`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: pb.authStore.token,
+      },
+      body: JSON.stringify(params),
+    },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Falha ao executar transferência de carteira')
+  }
+  return res.json()
+}
+
+/**
+ * Ativa ou desativa um usuário no sistema (exclusivo admin).
+ * Recomendado em substituição à exclusão de conta.
+ */
+export async function toggleUserStatus(
+  userId: string,
+  ativo: boolean,
+): Promise<{
+  ok: boolean
+  message: string
+  userId: string
+  ativo: boolean
+  clientes_liberados: number
+}> {
+  const res = await fetch(
+    `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/admin/toggle-user-status`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: pb.authStore.token,
+      },
+      body: JSON.stringify({ userId, ativo }),
+    },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Falha ao alterar status do colaborador')
+  }
+  return res.json()
+}
+
 /**
  * Redefine a senha de um usuário via endpoint backend protegido (exclusivo admin).
  */

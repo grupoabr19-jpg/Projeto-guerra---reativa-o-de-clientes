@@ -5,6 +5,7 @@ export interface User {
   email: string
   name: string
   role: UserRole
+  ativo?: boolean
   regioes?: string[]
   telefone?: string
   avatar?: string

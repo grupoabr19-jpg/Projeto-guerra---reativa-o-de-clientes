@@ -86,8 +86,21 @@ import {
   Link2,
   Unlink,
   Search,
+  ArrowRightLeft,
+  UserX,
+  UserCheck,
+  UserMinus,
+  Sparkles,
 } from 'lucide-react'
-import { fetchKommoUsers, linkKommoUser } from '@/services/api'
+import {
+  fetchKommoUsers,
+  linkKommoUser,
+  previewTransferCarteira,
+  executeTransferCarteira,
+  toggleUserStatus,
+  type CarteiraPreviewResult,
+  type CarteiraTransferResult,
+} from '@/services/api'
 import type { KommoUserItem } from '@/types'
 import {
   AlertDialog,
@@ -108,7 +121,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { deleteUser, resetUserPassword } from '@/services/api'
+import { resetUserPassword } from '@/services/api'
 import { BasesReferenciaTab } from '@/components/BasesReferenciaTab'
 import { derivePresenceStatus } from '@/hooks/usePresence'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -228,10 +241,23 @@ export default function ConfiguracoesPage() {
   const [editUserRegioes, setEditUserRegioes] = useState<string[]>([])
   const [savingUserRegioes, setSavingUserRegioes] = useState(false)
 
-  // Exclusão de Usuário (Admin)
-  const [userToDelete, setUserToDelete] = useState<User | null>(null)
-  const [deletingUser, setDeletingUser] = useState(false)
-  const [deleteErrorMessage, setDeleteErrorMessage] = useState<string | null>(null)
+  // Desativação / Ativação de Usuário (Admin - substitui exclusão)
+  const [userToToggleStatus, setUserToToggleStatus] = useState<User | null>(null)
+  const [togglingUserStatus, setTogglingUserStatus] = useState(false)
+  const [toggleStatusError, setToggleStatusError] = useState<string | null>(null)
+
+  // Transferência de Carteira (Admin)
+  const [transferOrigemId, setTransferOrigemId] = useState<string>('')
+  const [transferDestinoId, setTransferDestinoId] = useState<string>('')
+  const [transferRegiao, setTransferRegiao] = useState<string>('todas')
+  const [transferDesativarOrigem, setTransferDesativarOrigem] = useState<boolean>(true)
+  const [transferPreview, setTransferPreview] = useState<CarteiraPreviewResult | null>(null)
+  const [loadingTransferPreview, setLoadingTransferPreview] = useState(false)
+  const [executingTransfer, setExecutingTransfer] = useState(false)
+  const [showTransferConfirmModal, setShowTransferConfirmModal] = useState(false)
+  const [transferSuccessResult, setTransferSuccessResult] = useState<CarteiraTransferResult | null>(
+    null,
+  )
 
   // Redefinição de Senha de Usuário (Admin)
   const [userToResetPassword, setUserToResetPassword] = useState<User | null>(null)
@@ -908,28 +934,104 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  const handleOpenDeleteUser = (u: User) => {
-    setDeleteErrorMessage(null)
-    setUserToDelete(u)
+  const handleOpenToggleStatus = (u: User) => {
+    setToggleStatusError(null)
+    setUserToToggleStatus(u)
   }
 
-  const handleConfirmDeleteUser = async () => {
-    if (!userToDelete) return
-    setDeletingUser(true)
-    setDeleteErrorMessage(null)
+  const handleConfirmToggleStatus = async () => {
+    if (!userToToggleStatus) return
+    setTogglingUserStatus(true)
+    setToggleStatusError(null)
     try {
-      await deleteUser(userToDelete.id)
-      setUserToDelete(null)
+      const novoStatus = userToToggleStatus.ativo === false ? true : false
+      const res = await toggleUserStatus(userToToggleStatus.id, novoStatus)
+      toast({
+        title: novoStatus ? 'Colaborador ativado' : 'Colaborador desativado',
+        description: res.message,
+      })
+      setUserToToggleStatus(null)
       await loadUsers()
     } catch (err: unknown) {
-      console.error('Erro ao excluir usuário:', err)
+      console.error('Erro ao alterar status do colaborador:', err)
       const msg =
         err instanceof Error
           ? err.message
-          : 'Falha ao excluir usuário. Verifique se possui permissão de administrador.'
-      setDeleteErrorMessage(msg)
+          : 'Falha ao alterar status do colaborador. Verifique sua conexão e tente novamente.'
+      setToggleStatusError(msg)
     } finally {
-      setDeletingUser(false)
+      setTogglingUserStatus(false)
+    }
+  }
+
+  const handleCarregarPreviewTransfer = async () => {
+    if (!transferOrigemId || !transferDestinoId) {
+      toast({
+        variant: 'destructive',
+        title: 'Selecione os operadores',
+        description: 'Selecione tanto o colaborador de origem quanto o de destino.',
+      })
+      return
+    }
+
+    if (transferOrigemId === transferDestinoId) {
+      toast({
+        variant: 'destructive',
+        title: 'Operadores iguais',
+        description: 'O colaborador de origem não pode ser o mesmo do destino.',
+      })
+      return
+    }
+
+    setLoadingTransferPreview(true)
+    setTransferPreview(null)
+    setTransferSuccessResult(null)
+    try {
+      const res = await previewTransferCarteira({
+        origem_id: transferOrigemId,
+        destino_id: transferDestinoId,
+        regiao: transferRegiao,
+      })
+      setTransferPreview(res)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao gerar prévia da transferência.'
+      toast({
+        variant: 'destructive',
+        title: 'Erro na prévia',
+        description: msg,
+      })
+    } finally {
+      setLoadingTransferPreview(false)
+    }
+  }
+
+  const handleExecutarTransferencia = async () => {
+    if (!transferOrigemId || !transferDestinoId) return
+    setExecutingTransfer(true)
+    try {
+      const res = await executeTransferCarteira({
+        origem_id: transferOrigemId,
+        destino_id: transferDestinoId,
+        regiao: transferRegiao,
+        desativar_origem: transferDesativarOrigem,
+      })
+      setTransferSuccessResult(res)
+      setShowTransferConfirmModal(false)
+      toast({
+        title: 'Carteira transferida com sucesso!',
+        description: `${res.total_transferidos} clientes transferidos para ${res.destino_nome}.`,
+      })
+      await loadUsers()
+    } catch (err: unknown) {
+      console.error('Erro ao transferir carteira:', err)
+      const msg = err instanceof Error ? err.message : 'Falha ao executar transferência.'
+      toast({
+        variant: 'destructive',
+        title: 'Erro na transferência',
+        description: msg,
+      })
+    } finally {
+      setExecutingTransfer(false)
     }
   }
 

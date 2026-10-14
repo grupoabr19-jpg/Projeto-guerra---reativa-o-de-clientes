@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-13T18:51:56.470Z",
+  "generatedAt": "2026-10-14T12:56:21.107Z",
   "collections": [
     {
       "name": "users",
@@ -72,6 +72,12 @@
         {
           "name": "kommo_user_nome",
           "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ativo",
+          "type": "bool",
           "required": false,
           "system": false
         }
