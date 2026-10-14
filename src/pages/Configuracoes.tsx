@@ -90,6 +90,7 @@ import {
   UserCheck,
   UserMinus,
   Sparkles,
+  Power,
 } from 'lucide-react'
 import {
   fetchKommoUsers,
@@ -3054,8 +3055,8 @@ export default function ConfiguracoesPage() {
                               {user?.role === 'admin' &&
                                 (u.id === user.id ? (
                                   <span
-                                    className="text-[10px] text-slate-400 italic px-2 py-1"
-                                    title="Você não pode excluir a sua própria conta ativa"
+                                    className="text-[10px] text-slate-400 italic px-2 py-1 select-none"
+                                    title="Você não pode alterar o status da sua própria conta ativa"
                                   >
                                     (Sua conta)
                                   </span>
@@ -3063,12 +3064,20 @@ export default function ConfiguracoesPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => handleOpenDeleteUser(u)}
-                                    className="h-7 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 font-medium"
-                                    title={`Excluir conta de ${u.name}`}
+                                    onClick={() => handleOpenToggleStatus(u)}
+                                    className={`h-7 text-xs font-medium ${
+                                      u.ativo === false
+                                        ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'
+                                        : 'text-amber-600 hover:text-amber-700 hover:bg-amber-50'
+                                    }`}
+                                    title={
+                                      u.ativo === false
+                                        ? `Reativar conta de ${u.name}`
+                                        : `Desativar conta de ${u.name}`
+                                    }
                                   >
-                                    <Trash2 className="h-3.5 w-3.5 mr-1" />
-                                    Excluir
+                                    <Power className="h-3.5 w-3.5 mr-1" />
+                                    {u.ativo === false ? 'Ativar' : 'Desativar'}
                                   </Button>
                                 ))}
                             </div>
@@ -3650,69 +3659,108 @@ export default function ConfiguracoesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE USUÁRIO (ALERTDIALOG) */}
+      {/* MODAL DE CONFIRMAÇÃO DE DESATIVAÇÃO / REATIVAÇÃO DE USUÁRIO (ALERTDIALOG) */}
       <AlertDialog
-        open={Boolean(userToDelete)}
+        open={Boolean(userToToggleStatus)}
         onOpenChange={(open) => {
-          if (!open && !deletingUser) {
-            setUserToDelete(null)
-            setDeleteErrorMessage(null)
+          if (!open && !togglingUserStatus) {
+            setUserToToggleStatus(null)
+            setToggleStatusError(null)
           }
         }}
       >
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Trash2 className="h-4 w-4 text-rose-600" />
-              <span>Excluir Usuário do Sistema</span>
+              <Power
+                className={`h-4 w-4 ${
+                  userToToggleStatus?.ativo === false ? 'text-emerald-600' : 'text-amber-600'
+                }`}
+              />
+              <span>
+                {userToToggleStatus?.ativo === false
+                  ? 'Reativar Conta de Colaborador'
+                  : 'Desativar Conta de Colaborador'}
+              </span>
             </AlertDialogTitle>
             <AlertDialogDescription className="text-xs text-slate-600 space-y-3 pt-1">
-              <p>Tem certeza que deseja excluir esta conta de usuário permanentemente?</p>
+              <p>
+                {userToToggleStatus?.ativo === false
+                  ? 'Confirma a reativação do acesso deste colaborador ao sistema?'
+                  : 'Tem certeza que deseja desativar o acesso deste colaborador?'}
+              </p>
 
-              {userToDelete && (
+              {userToToggleStatus && (
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1">
-                  <div className="font-semibold text-slate-900">{userToDelete.name}</div>
-                  <div className="text-slate-600 font-mono text-[11px]">{userToDelete.email}</div>
+                  <div className="font-semibold text-slate-900">{userToToggleStatus.name}</div>
+                  <div className="text-slate-600 font-mono text-[11px]">
+                    {userToToggleStatus.email || '—'}
+                  </div>
                   <div className="pt-1">
                     <Badge variant="outline" className="text-[10px] uppercase font-mono">
-                      Perfil: {userToDelete.role}
+                      Perfil: {userToToggleStatus.role}
                     </Badge>
                   </div>
                 </div>
               )}
 
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-[11px] leading-relaxed">
-                <strong>Atenção (Ação irreversível):</strong>
-                <ul className="list-disc list-inside mt-1 space-y-0.5">
-                  <li>O acesso deste usuário será revogado de imediato.</li>
-                  <li>
-                    Contatos reservados ou em atendimento por ele serão liberados de volta para a
-                    fila da região.
-                  </li>
-                  <li>O histórico de contatos anteriores será preservado para auditoria.</li>
-                </ul>
-              </div>
+              {userToToggleStatus?.ativo === false ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900 text-[11px] leading-relaxed">
+                  <strong>Consequências da Reativação:</strong>
+                  <ul className="list-disc list-inside mt-1 space-y-0.5">
+                    <li>
+                      O colaborador volta a ter acesso ao sistema e pode fazer login normalmente.
+                    </li>
+                    <li>
+                      Se for operador comercial, reaparece na distribuição e pode receber contatos
+                      na fila.
+                    </li>
+                  </ul>
+                </div>
+              ) : (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-[11px] leading-relaxed">
+                  <strong>Consequências da Desativação:</strong>
+                  <ul className="list-disc list-inside mt-1 space-y-0.5">
+                    <li>O acesso deste usuário será revogado de imediato.</li>
+                    <li>
+                      Contatos reservados ou em atendimento por ele serão liberados de volta para a
+                      fila da região.
+                    </li>
+                    <li>O histórico de contatos anteriores será 100% preservado para auditoria.</li>
+                  </ul>
+                </div>
+              )}
 
-              {deleteErrorMessage && (
+              {toggleStatusError && (
                 <div className="p-2.5 bg-rose-50 border border-rose-300 rounded text-rose-800 text-xs font-medium">
-                  {deleteErrorMessage}
+                  {toggleStatusError}
                 </div>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="pt-2">
-            <AlertDialogCancel disabled={deletingUser} className="text-xs h-8">
+            <AlertDialogCancel disabled={togglingUserStatus} className="text-xs h-8">
               Cancelar
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault()
-                handleConfirmDeleteUser()
+                handleConfirmToggleStatus()
               }}
-              disabled={deletingUser}
-              className="bg-rose-600 hover:bg-rose-700 text-white text-xs h-8 font-semibold"
+              disabled={togglingUserStatus}
+              className={`text-white text-xs h-8 font-semibold ${
+                userToToggleStatus?.ativo === false
+                  ? 'bg-emerald-600 hover:bg-emerald-700'
+                  : 'bg-amber-600 hover:bg-amber-700'
+              }`}
             >
-              {deletingUser ? 'Excluindo...' : 'Confirmar Exclusão'}
+              {togglingUserStatus
+                ? userToToggleStatus?.ativo === false
+                  ? 'Reativando...'
+                  : 'Desativando...'
+                : userToToggleStatus?.ativo === false
+                  ? 'Confirmar Reativação'
+                  : 'Confirmar Desativação'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
