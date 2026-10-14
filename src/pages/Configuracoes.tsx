@@ -16,7 +16,6 @@ import {
   Award,
   Target,
   Radio,
-  Sparkles,
 } from 'lucide-react'
 import { emitirAtualizacaoVersaoAdmin } from '@/services/version'
 import { useVersion } from '@/contexts/VersionContext'
