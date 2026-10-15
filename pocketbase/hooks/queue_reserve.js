@@ -154,6 +154,49 @@ routerAdd(
       return false
     }
 
+    function isClienteAtacado(clienteRec) {
+      if (!clienteRec) return false
+
+      // 1. Região cadastrada explícita
+      const regiao = normalizarTextoNFD(clienteRec.getString('regiao'))
+      if (regiao === 'ATACADO' || regiao.includes('ATACADO')) {
+        return true
+      }
+
+      // 2. Vendedor ou tipo de vendedor com prefixo ou menção de atacado
+      const vendRaw = normalizarTextoNFD(clienteRec.getString('vendedor'))
+      const tipoVend = normalizarTextoNFD(clienteRec.getString('tipo_vendedor'))
+      const canalRaw = normalizarTextoNFD(clienteRec.getString('canal'))
+      if (
+        vendRaw.startsWith('ATR -') ||
+        vendRaw.startsWith('ATR-') ||
+        vendRaw.startsWith('ATACADO -') ||
+        vendRaw.startsWith('ATACADO-') ||
+        vendRaw.includes('ATACADO') ||
+        tipoVend === 'ATACADO' ||
+        tipoVend.includes('ATACADO') ||
+        canalRaw === 'ATACADO' ||
+        canalRaw.includes('ATACADO')
+      ) {
+        return true
+      }
+
+      // 3. DDD pertencente ao mapa de atacado (11 a 19) com canal/perfil atacado
+      const ddd = extrairDddCliente(clienteRec)
+      const dddsAtacado = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
+      if (
+        dddsAtacado.includes(ddd) &&
+        (canalRaw === 'ATACADO' ||
+          tipoVend === 'ATACADO' ||
+          vendRaw.startsWith('ATR') ||
+          vendRaw.includes('ATACADO'))
+      ) {
+        return true
+      }
+
+      return false
+    }
+
     function buildVendedorSqlTerms(userName) {
       const variantes = obterVariantesVendedor(userName)
       const tokens = []
@@ -881,7 +924,7 @@ routerAdd(
 
         // Helper de filtro nominal
         const montarFilterNominal = (comSegmento) => {
-          let f = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
+          let f = `estado = 'na_base' && regiao != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
           if (comSegmento && filtroSegmento && filtroSegmento !== 'todos') {
             f += ` && segmento = '${filtroSegmento}'`
           }
@@ -900,9 +943,11 @@ routerAdd(
           console.log('[queue_reserve] Erro busca nominal: ' + fnErr.message)
         }
 
-        // Refinamento em memória: matching tolerante estrito
+        // Refinamento em memória: matching tolerante estrito e trava de atacado
         const poolNominalValida = poolNominal.filter((c) => {
           if (isCandidatoRepetidoRecente(c)) return false
+          // Trava em memória: operador sem região ATACADO NUNCA recebe cliente de atacado
+          if (isClienteAtacado(c)) return false
           return matchesCarteiraVendedorTolerante(c, userName)
         })
 
@@ -985,7 +1030,7 @@ routerAdd(
           else if (ordenacaoEscolhida === 'novos') sortExpr = 'dias_sem_faturar'
 
           const nowIsoQueue = now.toISOString()
-          let fCidadeBase = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
+          let fCidadeBase = `estado = 'na_base' && regiao != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
           if (filtroSegmento && filtroSegmento !== 'todos') {
             fCidadeBase += ` && segmento = '${filtroSegmento}'`
           }
@@ -1007,6 +1052,9 @@ routerAdd(
           for (let pI = 0; pI < poolSecundario.length; pI++) {
             const cliCand = poolSecundario[pI]
             if (isCandidatoRepetidoRecente(cliCand)) continue
+
+            // Trava em memória: operador sem região ATACADO NUNCA recebe cliente de atacado
+            if (isClienteAtacado(cliCand)) continue
 
             const vCandRaw = cliCand.getString('vendedor') || ''
             const statusV = checarStatusVendedorCadastro(vCandRaw)
@@ -1129,6 +1177,21 @@ routerAdd(
       // =========================================================================
       // RESERVA ATÔMICA E AUDITORIA DETALHADA
       // =========================================================================
+      // TRAVA DE SEGURANÇA MÁXIMA EM MEMÓRIA:
+      // Nenhum cliente de atacado pode ser servido a operador sem região ATACADO!
+      if (!isAtacado && isClienteAtacado(cand)) {
+        console.error(
+          `[queue_reserve] BLOQUEIO CRÍTICO: tentativa de servir cliente de ATACADO (${cand.id} - ${cand.getString('codigo')}) para operador sem região ATACADO (${userName} - ${userId}). Reserva cancelada.`,
+        )
+        return e.json(200, {
+          cliente: null,
+          carteira_esgotada: true,
+          segmento_zerado: false,
+          total_carteira_sem_filtro: 0,
+          message: 'Fila de atendimento vazia para o seu perfil no momento.',
+        })
+      }
+
       const agoraReservaIso = new Date().toISOString()
       cand.set('estado', 'reservado')
       cand.set('operador', userId)

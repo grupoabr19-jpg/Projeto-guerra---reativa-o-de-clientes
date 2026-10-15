@@ -1,6 +1,6 @@
 {
-  "version": "0.0.149",
-  "buildTime": "2026-10-08T10:00:00.000Z",
-  "buildId": "v0.0.149",
-  "mensagem": "v0.0.149: Novo motor de fila em cascata (Filtro 1: Carteira Nominal, Filtro 2: Vendedor Inativo parado, Filtro 3: Secundário por Cidade/Região polo e divisas)."
+  "version": "0.0.152",
+  "buildTime": "2026-10-15T18:40:00.000Z",
+  "buildId": "v0.0.152",
+  "mensagem": "v0.0.152: Blindagem definitiva da fila do Atacado: exclusão de clientes ATACADO de filtros de varejo, trava em memória contra contaminação de operadores de varejo e saneamento de clientes da fila."
 }
