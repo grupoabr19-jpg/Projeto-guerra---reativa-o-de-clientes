@@ -151,71 +151,91 @@ routerAdd(
         return e.json(404, { error: 'Operador de destino não encontrado' })
       }
 
-      const destinoRole = destinoUser.getString('role')
-      if (destinoRole !== 'operador' && destinoRole !== 'lider' && destinoRole !== 'supervisor') {
+      // Validar se colaborador de destino está ativo (se o campo existir no usuário)
+      const destinoAtivo = destinoUser.getBool('ativo')
+      if (destinoAtivo === false) {
         return e.json(400, {
-          error: 'O destinatário deve ser um operador, líder ou supervisor de rota.',
+          error: 'O colaborador de destino está desativado. Selecione um colaborador ativo.',
         })
-      }
-
-      // Extrair regiões de um record de usuário
-      const extrairRegioesUsuario = (rec) => {
-        let arr = []
-        try {
-          const slice = rec.getStringSlice('regioes')
-          if (slice && slice.length > 0) {
-            arr = slice
-          } else {
-            const raw = rec.getString('regioes')
-            if (raw && raw.trim().startsWith('[')) {
-              arr = JSON.parse(raw)
-            } else {
-              const rawGet = rec.get('regioes')
-              if (Array.isArray(rawGet)) arr = rawGet
-            }
-          }
-        } catch (_) {
-          const rawGet = rec.get('regioes')
-          if (Array.isArray(rawGet)) arr = rawGet
-        }
-        if (Array.isArray(arr)) {
-          return arr.map((r) => normalizarRegiaoCanonica(r)).filter(Boolean)
-        }
-        return []
-      }
-
-      const destinoRegioesNorm = extrairRegioesUsuario(destinoUser)
-      const origemRegioesNorm = extrairRegioesUsuario(authRecord)
-      const clienteRegiaoNorm = normalizarRegiaoCanonica(cliente.getString('regiao'))
-
-      if ((userRole === 'operador' || userRole === 'lider') && origemRegioesNorm.length === 0) {
-        return e.json(400, {
-          error:
-            'Sua conta não possui região/rota atribuída. Contate o administrador antes de repassar clientes.',
-        })
-      }
-
-      // Validação de região entre cliente/atendente e destinatário
-      if (userRole !== 'admin') {
-        const atendeCliente = clienteRegiaoNorm && destinoRegioesNorm.includes(clienteRegiaoNorm)
-        const compartilhaOrigem = origemRegioesNorm.some((r) => destinoRegioesNorm.includes(r))
-
-        if (!atendeCliente && !compartilhaOrigem) {
-          return e.json(400, {
-            error:
-              'O operador de destino não pertence à mesma região/rota do cliente ou do seu usuário.',
-          })
-        }
       }
 
       const destinoNome =
         destinoUser.getString('name') || destinoUser.getString('email') || 'Colega'
 
-      const currentOp = cliente.getString('operador')
-      if (userRole !== 'admin' && currentOp && currentOp !== userId) {
-        return e.json(403, {
-          error: 'Você não tem permissão para transferir um cliente reservado por outro operador',
-        })
+      // Helper para obter variantes do nome de origem e substituir preservando prefixos (VCORP -, ESPECIALISTA -, etc.)
+      function obterVariantesNomeOrigem(nomeCompleto) {
+        const norm = normalizarTextoNFD(nomeCompleto)
+        const partes = norm.split(/[\s,()/-]+/).filter((p) => p.length >= 2)
+        const variantes = new Set()
+
+        if (norm) {
+          variantes.add(norm)
+        }
+
+        if (partes.length > 0 && partes[0].length >= 3) {
+          variantes.add(partes[0])
+        }
+
+        if (partes.length >= 2) {
+          variantes.add(partes[0] + ' ' + partes[1])
+        }
+
+        const stopWords = ['DE', 'DA', 'DO', 'DOS', 'DAS', 'E']
+        const partesSignificativas = partes.filter((p) => !stopWords.includes(p) && p.length >= 3)
+        for (let i = 0; i < partesSignificativas.length; i++) {
+          variantes.add(partesSignificativas[i])
+        }
+
+        return Array.from(variantes).sort((a, b) => b.length - a.length)
+      }
+
+      function substituirNomeNoVendedor(vendedorOriginal, nomeOrigem, nomeDestino) {
+        if (!vendedorOriginal) return normalizarTextoNFD(nomeDestino)
+
+        const prefixoMatch = vendedorOriginal.match(/^([A-Za-z0-9_/]+(?:\s*-\s*|\s*:\s*|\s+))(.+)$/)
+        let prefixo = ''
+        let restoNome = vendedorOriginal.trim()
+
+        if (prefixoMatch) {
+          prefixo = prefixoMatch[1]
+          restoNome = prefixoMatch[2].trim()
+        }
+
+        const variantes = obterVariantesNomeOrigem(nomeOrigem)
+        const restoNorm = normalizarTextoNFD(restoNome)
+
+        let casou = false
+        for (let i = 0; i < variantes.length; i++) {
+          const v = variantes[i]
+          if (v.length < 3) continue
+          if (restoNorm.includes(v)) {
+            casou = true
+            break
+          }
+        }
+
+        if (casou) {
+          return (prefixo + normalizarTextoNFD(nomeDestino)).trim()
+        }
+
+        const vendNorm = normalizarTextoNFD(vendedorOriginal)
+        for (let j = 0; j < variantes.length; j++) {
+          const v = variantes[j]
+          if (v.length >= 3 && vendNorm.includes(v)) {
+            if (prefixo) {
+              return (prefixo + normalizarTextoNFD(nomeDestino)).trim()
+            }
+            return normalizarTextoNFD(nomeDestino)
+          }
+        }
+
+        // Se havia prefixo mas o nome do vendedor original não continha o nome da conta que transferiu,
+        // substitui o resto mantendo o prefixo
+        if (prefixo) {
+          return (prefixo + normalizarTextoNFD(nomeDestino)).trim()
+        }
+
+        return normalizarTextoNFD(nomeDestino)
       }
 
       // Blindagem de standby na transferência: 60 dias
@@ -239,6 +259,10 @@ routerAdd(
       const now = new Date()
       const hojeIso = now.toISOString()
 
+      // Atualizar campo vendedor preservando prefixo (VCORP -, ESPECIALISTA -, EXT -, etc.)
+      const vendedorOriginal = cliente.getString('vendedor') || ''
+      const vendedorNovo = substituirNomeNoVendedor(vendedorOriginal, userName, destinoNome)
+
       // Liberar lock atual e atribuir reagendamento prioritário
       cliente.set('estado', 'reagendado')
       cliente.set('operador', '')
@@ -247,6 +271,9 @@ routerAdd(
       cliente.set('reagendado_para', hojeIso)
       cliente.set('prioridade_transferencia', true)
       cliente.set('retomada_servida_em', null)
+      if (vendedorNovo) {
+        cliente.set('vendedor', vendedorNovo)
+      }
 
       if (body.rascunho_respostas) {
         cliente.set('rascunho_respostas', body.rascunho_respostas)
@@ -287,7 +314,10 @@ routerAdd(
           origem_usuario_nome: userName,
           destino_operador_id: destinoOperadorId,
           destino_operador_nome: destinoNome,
+          vendedor_anterior: vendedorOriginal,
+          vendedor_novo: vendedorNovo,
           motivo: motivo,
+          timestamp: hojeIso,
           regiao_cliente: cliente.getString('regiao'),
         })
         $app.save(ev)

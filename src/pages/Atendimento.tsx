@@ -760,65 +760,45 @@ export default function AtendimentoPage() {
     }
   }
 
-  // Carregar colegas da MESMA região/rota para o dropdown de transferência
+  // Carregar todos os colaboradores ativos para o dropdown de transferência/atribuição
   const handleOpenTransferModal = async () => {
     if (!cliente) return
     try {
       const allUsers = await fetchUsers()
 
-      // Regiões do operador logado
-      const regioesLogadoNorm = (user?.regioes || []).map(normalizarNomeRegiao).filter(Boolean)
-      const regiaoClienteNorm = normalizarNomeRegiao(cliente.regiao)
-
-      // Regiões de referência da rota: se o operador logado tiver regiões, usamos as dele (e também a do cliente se bater)
-      const regioesRotaRef = new Set<string>()
-      if (regioesLogadoNorm.length > 0) {
-        regioesLogadoNorm.forEach((r) => regioesRotaRef.add(r))
-      }
-      if (regiaoClienteNorm && regiaoClienteNorm !== 'SEM REGIAO') {
-        regioesRotaRef.add(regiaoClienteNorm)
-      }
-
-      // Filtrar APENAS colegas de rota:
-      // 1. Papel operador, líder ou supervisor (exclui admins sem região ou admins globais)
-      // 2. Não ser o próprio usuário
-      // 3. Ter pelo menos uma região na rota de referência
+      // Liberado para todos: carregar todos os colaboradores ativos (operador, líder, supervisor, admin),
+      // exceto o próprio usuário logado
       const colegas = allUsers.filter((u) => {
         if (u.id === user?.id) return false
-        // Excluir admins do dropdown de destino (regra: colegas de rota de vendas)
-        if (u.role !== 'operador' && u.role !== 'lider' && u.role !== 'supervisor') {
-          return false
-        }
-        const regioesUserNorm = (u.regioes || []).map(normalizarNomeRegiao).filter(Boolean)
-        if (regioesUserNorm.length === 0) return false
-
-        // Deve pertencer à mesma rota/região
-        return regioesUserNorm.some((r) => regioesRotaRef.has(r))
+        // Se houver campo ativo e estiver false, excluir desativados
+        if (u.ativo === false) return false
+        return true
       })
+
+      // Ordenar por nome alfabeticamente
+      colegas.sort((a, b) => (a.name || a.email || '').localeCompare(b.name || b.email || ''))
 
       setOperadoresRegiao(colegas)
       setSelectedDestinoOp(colegas.length > 0 ? colegas[0].id : '')
-      setMotivoTransferencia(
-        `Cliente da carteira de ${cliente.regiao || 'rota'} — repasse para colega de rota`,
-      )
+      setMotivoTransferencia(`Cliente ${cliente.codigo || ''} — repasse para atendimento`)
       setShowTransferModal(true)
     } catch (err) {
-      console.error('Erro ao buscar operadores da região:', err)
+      console.error('Erro ao buscar colaboradores para atribuição:', err)
       toast({
         variant: 'destructive',
         title: 'Erro',
-        description: 'Não foi possível carregar a lista de operadores da região.',
+        description: 'Não foi possível carregar a lista de colaboradores.',
       })
     }
   }
 
-  // Confirmar a transferência / atribuição de cliente para colega da mesma região
+  // Confirmar a transferência / atribuição de cliente para qualquer colaborador selecionado
   const handleConfirmTransfer = async () => {
     if (!cliente || !selectedDestinoOp) {
       toast({
         variant: 'destructive',
-        title: 'Operador obrigatório',
-        description: 'Selecione o operador de destino.',
+        title: 'Colaborador obrigatório',
+        description: 'Selecione o colaborador de destino.',
       })
       return
     }
@@ -826,12 +806,12 @@ export default function AtendimentoPage() {
     setTransferindo(true)
     try {
       const destinoUser = operadoresRegiao.find((u) => u.id === selectedDestinoOp)
-      const destinoNome = destinoUser?.name || destinoUser?.email || 'Colega'
+      const destinoNome = destinoUser?.name || destinoUser?.email || 'Colaborador'
 
       await transferClienteOperador({
         cliente_id: cliente.id,
         destino_operador_id: selectedDestinoOp,
-        motivo: motivoTransferencia || 'Transferência entre vendedores da mesma região',
+        motivo: motivoTransferencia || 'Reatribuição de atendimento entre colaboradores',
         rascunho_respostas: answers,
       })
 
@@ -1896,7 +1876,7 @@ export default function AtendimentoPage() {
                   variant="outline"
                   onClick={handleOpenTransferModal}
                   className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 font-semibold text-xs h-9 px-3.5 shadow-xs"
-                  title="Atribuir este cliente a um colega da mesma região"
+                  title="Atribuir este cliente a outro colaborador"
                 >
                   <Users className="h-4 w-4 mr-1.5 text-indigo-600" />
                   Atribuir cliente para...
@@ -3220,23 +3200,24 @@ export default function AtendimentoPage() {
             </div>
           </div>
 
-          {/* Modal de Atribuição / Transferência de Cliente entre Operadores da Mesma Região */}
+          {/* Modal de Atribuição / Transferência de Cliente para Qualquer Colaborador */}
           {showTransferModal && cliente && (
             <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
               <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                <div className="p-4 bg-indigo-900 text-white flex items-center justify-between">
+                <div className="p-4 bg-[#253575] text-white flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <Users className="h-5 w-5 text-indigo-300" />
                     <div>
-                      <h3 className="font-bold text-sm">Atribuir Cliente para Colega</h3>
-                      <p className="text-[11px] text-indigo-200">
-                        Região: <strong className="text-white">{cliente.regiao}</strong>
+                      <h3 className="font-bold text-sm">Atribuir Cliente para Colaborador</h3>
+                      <p className="text-[11px] text-slate-200">
+                        Região atual do cliente:{' '}
+                        <strong className="text-white">{cliente.regiao || 'Sem região'}</strong>
                       </p>
                     </div>
                   </div>
                   <button
                     onClick={() => setShowTransferModal(false)}
-                    className="text-indigo-200 hover:text-white text-xs px-2 py-1 rounded bg-indigo-800"
+                    className="text-indigo-200 hover:text-white text-xs px-2 py-1 rounded bg-[#142758]"
                   >
                     ✕
                   </button>
@@ -3248,67 +3229,65 @@ export default function AtendimentoPage() {
                       {cliente.codigo} • {cliente.nome}
                     </p>
                     <p className="text-[11px] text-slate-500">
-                      O cliente será transferido e agendado com <strong>PRIORIDADE MÁXIMA</strong>{' '}
-                      para o colega selecionado, sendo o primeiro cadastro a cair na fila dele.
+                      O cliente será reatribuído com <strong>PRIORIDADE MÁXIMA</strong> para o
+                      colaborador selecionado, sendo o primeiro cadastro a cair na esteira dele.
                     </p>
                   </div>
 
-                  {(!user?.regioes || user.regioes.length === 0) && user?.role !== 'admin' ? (
-                    <div className="p-4 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800 space-y-1">
-                      <p className="font-bold">Sua conta não possui região/rota atribuída</p>
-                      <p>
-                        Para atribuir clientes a colegas de rota, é necessário ter ao menos uma
-                        região vinculada ao seu usuário. Solicite ao administrador do sistema a
-                        atribuição da sua região em{' '}
-                        <strong>Configurações &gt; Gestão de Acessos</strong>.
-                      </p>
-                    </div>
-                  ) : operadoresRegiao.length === 0 ? (
+                  {operadoresRegiao.length === 0 ? (
                     <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
-                      <p className="font-bold">Nenhum colega da mesma rota encontrado</p>
+                      <p className="font-bold">Nenhum colaborador ativo encontrado</p>
                       <p>
-                        Não há outros operadores, líderes ou supervisores cadastrados para a região{' '}
-                        <strong>{cliente.regiao || user?.regioes?.join(', ') || 'da rota'}</strong>.
-                        A reatribuição só é permitida entre colegas da mesma região.
+                        Não há outros colaboradores ativos disponíveis no sistema para receber este
+                        cliente.
                       </p>
                     </div>
                   ) : (
                     <>
                       <div className="space-y-1.5">
                         <Label className="text-xs font-bold text-slate-800">
-                          Atribuir cliente para colega da mesma região/rota:
+                          Selecione o colaborador de destino:
                         </Label>
                         <Select
                           value={selectedDestinoOp}
                           onValueChange={(val) => setSelectedDestinoOp(val)}
                         >
                           <SelectTrigger className="h-9 text-xs bg-white border-slate-300">
-                            <SelectValue placeholder="Selecione o colega da região..." />
+                            <SelectValue placeholder="Selecione o colaborador..." />
                           </SelectTrigger>
                           <SelectContent>
-                            {operadoresRegiao.map((op) => (
-                              <SelectItem key={op.id} value={op.id} className="text-xs">
-                                {op.name || op.email} (
-                                {op.role === 'lider'
-                                  ? 'Líder'
-                                  : op.role === 'supervisor'
-                                    ? 'Supervisor'
-                                    : 'Operador'}{' '}
-                                — {op.regioes?.join(', ')})
-                              </SelectItem>
-                            ))}
+                            {operadoresRegiao.map((op) => {
+                              const cargo =
+                                op.role === 'admin'
+                                  ? 'Administrador'
+                                  : op.role === 'lider'
+                                    ? 'Líder'
+                                    : op.role === 'supervisor'
+                                      ? 'Supervisor'
+                                      : 'Operador'
+                              const regioesStr =
+                                op.regioes && op.regioes.length > 0
+                                  ? ` — ${op.regioes.join(', ')}`
+                                  : ''
+                              return (
+                                <SelectItem key={op.id} value={op.id} className="text-xs">
+                                  {op.name || op.email} ({cargo}
+                                  {regioesStr})
+                                </SelectItem>
+                              )
+                            })}
                           </SelectContent>
                         </Select>
                       </div>
 
                       <div className="space-y-1.5">
                         <Label className="text-xs font-semibold text-slate-700">
-                          Motivo do repasse / Observação interna:
+                          Motivo da atribuição / Observação interna:
                         </Label>
                         <Textarea
                           value={motivoTransferencia}
                           onChange={(e) => setMotivoTransferencia(e.target.value)}
-                          placeholder="Ex: Cliente da carteira de especialista / colega responsável pela praça..."
+                          placeholder="Ex: Mudança de carteira / repasse para atendimento..."
                           rows={3}
                           className="text-xs"
                         />
@@ -3331,13 +3310,8 @@ export default function AtendimentoPage() {
                     type="button"
                     size="sm"
                     onClick={handleConfirmTransfer}
-                    disabled={
-                      transferindo ||
-                      operadoresRegiao.length === 0 ||
-                      !selectedDestinoOp ||
-                      ((!user?.regioes || user.regioes.length === 0) && user?.role !== 'admin')
-                    }
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold"
+                    disabled={transferindo || operadoresRegiao.length === 0 || !selectedDestinoOp}
+                    className="bg-[#253575] hover:bg-[#1d2b5e] text-white text-xs font-semibold"
                   >
                     {transferindo ? 'Atribuindo...' : 'Confirmar Atribuição'}
                   </Button>
