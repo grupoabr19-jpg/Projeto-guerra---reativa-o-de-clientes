@@ -56,7 +56,8 @@ routerAdd(
         return e.json(403, { error: 'Apenas administradores podem atualizar versão do sistema' })
       }
 
-      const body = $apis.requestInfo(e).data || {}
+      const info = e.requestInfo()
+      const body = (info && info.body) || {}
       const novaVersao = String(body.version || '1.0.0').trim()
       const novoBuildId = String(body.build_id || `build-${Date.now()}`).trim()
       const mensagem = String(body.mensagem || 'Nova versão do sistema liberada!').trim()
