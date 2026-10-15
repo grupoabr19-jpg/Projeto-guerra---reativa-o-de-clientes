@@ -1,6 +1,6 @@
 {
-  "version": "0.0.148",
-  "buildTime": "2026-10-07T13:00:00.000Z",
-  "buildId": "v0.0.148",
-  "mensagem": "v0.0.148: Liberação total da atribuição de clientes entre todos os colaboradores com atualização de vendedor e auditoria estendida."
+  "version": "0.0.149",
+  "buildTime": "2026-10-08T10:00:00.000Z",
+  "buildId": "v0.0.149",
+  "mensagem": "v0.0.149: Novo motor de fila em cascata (Filtro 1: Carteira Nominal, Filtro 2: Vendedor Inativo parado, Filtro 3: Secundário por Cidade/Região polo e divisas)."
 }

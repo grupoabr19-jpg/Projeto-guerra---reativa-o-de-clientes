@@ -180,6 +180,31 @@ routerAdd(
       return s.slice(0, 2)
     }
 
+    function extrairCidadeCliente(clienteRec) {
+      const cidDireta = clienteRec.getString('cidade')
+      if (cidDireta && cidDireta.trim()) {
+        return normalizarTextoNFD(cidDireta)
+      }
+      const endRaw = clienteRec.getString('endereco') || ''
+      if (endRaw) {
+        const partesHifen = endRaw.split('-')
+        if (partesHifen.length >= 2) {
+          const antesUf = partesHifen[partesHifen.length - 2].trim()
+          const partesVirgula = antesUf.split(',')
+          const possivelCidade = partesVirgula[partesVirgula.length - 1].trim()
+          if (possivelCidade) {
+            return normalizarTextoNFD(possivelCidade)
+          }
+        }
+        const partesVirgula = endRaw.split(',')
+        if (partesVirgula.length > 1) {
+          return normalizarTextoNFD(partesVirgula[partesVirgula.length - 1])
+        }
+        return normalizarTextoNFD(endRaw)
+      }
+      return ''
+    }
+
     function expurgarLocksExpiradosAtomicamente(appInstance) {
       const now = new Date()
       const cutoffLock = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
@@ -384,11 +409,90 @@ routerAdd(
             return atacadoDddsPermitidos.includes(ddd)
           })
         } else if (userRole === 'operador' || userRole === 'lider') {
-          // VAREJO: carteira do vendedor tolerante OU líder suporte sem dono
+          // VAREJO NOVO MODELO:
+          // 1) Primário: carteira nominal do próprio operador
+          // 2) Secundário: clientes cujo vendedor não tem cadastro no sistema E a cidade bate com a rota do operador
+          // Clientes de vendedor inativo/afastado (ex: Kaylane) ficam parados, NÃO são acessíveis
+          let cidadesDaRotaDoOperador = []
+          try {
+            const rotasDoOp = userRegioes.filter(
+              (r) => r.toUpperCase() !== 'ATACADO' && r.toUpperCase() !== 'REPESCAGEM',
+            )
+            if (rotasDoOp.length > 0) {
+              const rConds = rotasDoOp.map((r) => `rota = '${r}'`)
+              const crRecs = $app.findRecordsByFilter(
+                'cidades_rotas',
+                `(${rConds.join(' || ')}) && ativo = true`,
+                'cidade',
+                300,
+                0,
+              )
+              for (let cI = 0; cI < crRecs.length; cI++) {
+                const cNorm = crRecs[cI].getString('cidade_normalizada')
+                if (cNorm) cidadesDaRotaDoOperador.push(cNorm)
+              }
+            }
+          } catch (_) {}
+
+          // Colaboradores cadastrados
+          let usersSistema = []
+          try {
+            usersSistema = $app.findRecordsByFilter('users', "role != 'cliente'", 'name', 500, 0)
+          } catch (_) {}
+
+          const nomesColaboradores = usersSistema.map((u) => ({
+            nome: u.getString('name') || '',
+            ativo: u.getBool('ativo') !== false,
+            variantes: obterVariantesVendedor(u.getString('name') || ''),
+          }))
+
+          const checarColaborador = (vendedorStr) => {
+            if (!vendedorStr || !vendedorStr.trim()) return { tem: false, ativo: false }
+            const vL = normalizarTextoNFD(limparPrefixoVendedor(vendedorStr))
+            if (vL.includes('KAYLANE')) return { tem: true, ativo: false }
+            for (let i = 0; i < nomesColaboradores.length; i++) {
+              const u = nomesColaboradores[i]
+              const uN = normalizarTextoNFD(u.nome)
+              if (vL === uN || vL.includes(uN) || uN.includes(vL)) {
+                return { tem: true, ativo: u.ativo }
+              }
+              for (let vI = 0; vI < u.variantes.length; vI++) {
+                const varItem = u.variantes[vI]
+                if (varItem.length >= 3 && (vL.includes(varItem) || varItem.includes(vL))) {
+                  return { tem: true, ativo: u.ativo }
+                }
+              }
+            }
+            return { tem: false, ativo: false }
+          }
+
           resultados = pool.filter((c) => {
-            const matchProprio = matchesCarteiraVendedorTolerante(c, userName)
-            if (matchProprio) return true
-            if (isLider && c.getBool('sem_dono_equipe') === true) return true
+            // 1. Primário nominal do próprio operador
+            if (matchesCarteiraVendedorTolerante(c, userName)) return true
+
+            // 2. Checa se o vendedor pertence a outro ou está inativo
+            const vRaw = c.getString('vendedor') || ''
+            const statusV = checarColaborador(vRaw)
+            // Se tem cadastro (ativo ou inativo), não pode ser atendido por este operador via secundário
+            if (statusV.tem) return false
+
+            // 3. Secundário: cidade da rota
+            if (cidadesDaRotaDoOperador.length > 0) {
+              const cidCli = extrairCidadeCliente(c)
+              const endCli = normalizarTextoNFD(c.getString('endereco'))
+              if (cidCli) {
+                for (let cI = 0; cI < cidadesDaRotaDoOperador.length; cI++) {
+                  const cn = cidadesDaRotaDoOperador[cI]
+                  if (cidCli === cn || cidCli.includes(cn) || cn.includes(cidCli)) return true
+                }
+              }
+              if (endCli) {
+                for (let cI = 0; cI < cidadesDaRotaDoOperador.length; cI++) {
+                  const cn = cidadesDaRotaDoOperador[cI]
+                  if (cn.length >= 4 && endCli.includes(cn)) return true
+                }
+              }
+            }
             return false
           })
         } else {
@@ -813,14 +917,65 @@ routerAdd(
             })
           }
         } else if (!isRepescagem) {
-          // Varejo: valida vendedor com matching tolerante
+          // Varejo: valida vendedor com matching tolerante OU cidade na rota
           const matchVendedor = matchesCarteiraVendedorTolerante(cliente, userName)
-          const matchLiderSuporte = isLider && cliente.getBool('sem_dono_equipe') === true
 
-          if (!matchVendedor && !matchLiderSuporte) {
+          let matchCidadeRota = false
+          if (!matchVendedor) {
+            const vRaw = cliente.getString('vendedor') || ''
+            const vLimpo = normalizarTextoNFD(limparPrefixoVendedor(vRaw))
+            // Se for inativo conhecido (Kaylane) ou outro colaborador, BLOQUEIA
+            let eDeOutroOuInativo = vLimpo.includes('KAYLANE')
+            if (!eDeOutroOuInativo && vLimpo.length >= 3) {
+              try {
+                const uFind = $app.findRecordsByFilter('users', "role != 'cliente'", 'name', 500, 0)
+                for (let uI = 0; uI < uFind.length; uI++) {
+                  const uN = normalizarTextoNFD(uFind[uI].getString('name') || '')
+                  if (uN && (vLimpo.includes(uN) || uN.includes(vLimpo))) {
+                    eDeOutroOuInativo = true
+                    break
+                  }
+                }
+              } catch (_) {}
+            }
+
+            if (!eDeOutroOuInativo) {
+              // Checa cidade na rota
+              const rotasDoOp = userRegioes.filter(
+                (r) => r.toUpperCase() !== 'ATACADO' && r.toUpperCase() !== 'REPESCAGEM',
+              )
+              if (rotasDoOp.length > 0) {
+                try {
+                  const rConds = rotasDoOp.map((r) => `rota = '${r}'`)
+                  const crRecs = $app.findRecordsByFilter(
+                    'cidades_rotas',
+                    `(${rConds.join(' || ')}) && ativo = true`,
+                    'cidade',
+                    300,
+                    0,
+                  )
+                  const cidCli = extrairCidadeCliente(cliente)
+                  const endCli = normalizarTextoNFD(cliente.getString('endereco'))
+                  for (let cI = 0; cI < crRecs.length; cI++) {
+                    const cn = crRecs[cI].getString('cidade_normalizada')
+                    if (cidCli && (cidCli === cn || cidCli.includes(cn) || cn.includes(cidCli))) {
+                      matchCidadeRota = true
+                      break
+                    }
+                    if (endCli && cn.length >= 4 && endCli.includes(cn)) {
+                      matchCidadeRota = true
+                      break
+                    }
+                  }
+                } catch (_) {}
+              }
+            }
+          }
+
+          if (!matchVendedor && !matchCidadeRota) {
             return e.json(403, {
               error:
-                'Este cliente pertence à carteira de outro vendedor e não está sob sua responsabilidade.',
+                'Este cliente pertence à carteira de outro vendedor ou está fora da sua rota regional.',
             })
           }
         }
