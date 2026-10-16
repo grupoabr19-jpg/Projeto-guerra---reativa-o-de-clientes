@@ -1091,6 +1091,13 @@ routerAdd(
         if (reagendados && reagendados.length > 0) {
           const myReags = reagendados.filter((r) => {
             if (r.getString('reagendado_operador') !== userId) return false
+            // Blindagem Atacado: operador sem região ATACADO nunca recebe cliente de atacado
+            if (!isAtacado && isClienteAtacado(r)) {
+              console.log(
+                `[queue_reserve] Reagendado ignorado (perfil atacado não elegível para operador ${userName}): ${r.id} (${r.getString('codigo')})`,
+              )
+              return false
+            }
             if (r.getBool('prioridade_transferencia') === true) return true
             return !isCandidatoRepetidoRecente(r)
           })
@@ -1146,7 +1153,7 @@ routerAdd(
 
       if (!cand && isRepescagem) {
         const nowIsoQueue = now.toISOString()
-        let repescagemFilter = `estado = 'na_base' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (faixa = '90_plus' || dias_sem_faturar >= 90) && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
+        let repescagemFilter = `estado = 'na_base' && regiao != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (faixa = '90_plus' || dias_sem_faturar >= 90) && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
         if (filtroSegmento && filtroSegmento !== 'todos') {
           repescagemFilter += ` && segmento = '${filtroSegmento}'`
         }
@@ -1162,6 +1169,13 @@ routerAdd(
           const poolNaoRepetido = poolRepescagem.filter((c) => !isCandidatoRepetidoRecente(c))
           for (let m = 0; m < poolNaoRepetido.length; m++) {
             const item = poolNaoRepetido[m]
+            // Blindagem Atacado: operador sem região ATACADO nunca recebe cliente de atacado na repescagem
+            if (!isAtacado && isClienteAtacado(item)) {
+              console.log(
+                `[queue_reserve] Repescagem: candidato atacado ignorado para operador ${userName}: ${item.id} (${item.getString('codigo')})`,
+              )
+              continue
+            }
             if (!jaContatadoPeloVendedorOriginal(item)) {
               cand = item
               filtroOrigemAtendido = 'repescagem'
