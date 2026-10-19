@@ -1001,13 +1001,13 @@ export function MeuPainelPage() {
                         ) : null}
                       </div>
                     </div>
-                    <Link to="/atendimento">
+                    <Link to={`/atendimento?clienteId=${c.id}`}>
                       <Button
                         size="sm"
                         className="bg-[#253575] hover:bg-[#1d2b5e] text-white text-xs h-8"
                       >
                         <Headphones className="h-3.5 w-3.5 mr-1.5" />
-                        Atender Próximo
+                        Atender Cliente
                       </Button>
                     </Link>{' '}
                   </div>
