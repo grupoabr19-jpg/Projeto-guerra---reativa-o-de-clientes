@@ -10,6 +10,11 @@ routerAdd(
   'POST',
   '/backend/v1/queue/search-carteira',
   (e) => {
+    var isClienteAtacado = globalThis.isClienteAtacado
+    if (typeof isClienteAtacado !== 'function') {
+      throw new Error('[atacado_guard] módulo não carregado')
+    }
+
     function normalizarTextoNFD(str) {
       return String(str || '')
         .normalize('NFD')
@@ -132,49 +137,6 @@ routerAdd(
       return Array.from(variantes)
     }
 
-    function isClienteAtacado(clienteRec) {
-      if (!clienteRec) return false
-
-      // 1. Região cadastrada explícita
-      const regiao = normalizarTextoNFD(clienteRec.getString('regiao'))
-      if (regiao === 'ATACADO' || regiao.includes('ATACADO')) {
-        return true
-      }
-
-      // 2. Vendedor ou tipo de vendedor com prefixo ou menção de atacado
-      const vendRaw = normalizarTextoNFD(clienteRec.getString('vendedor'))
-      const tipoVend = normalizarTextoNFD(clienteRec.getString('tipo_vendedor'))
-      const canalRaw = normalizarTextoNFD(clienteRec.getString('canal'))
-      if (
-        vendRaw.startsWith('ATR -') ||
-        vendRaw.startsWith('ATR-') ||
-        vendRaw.startsWith('ATACADO -') ||
-        vendRaw.startsWith('ATACADO-') ||
-        vendRaw.includes('ATACADO') ||
-        tipoVend === 'ATACADO' ||
-        tipoVend.includes('ATACADO') ||
-        canalRaw === 'ATACADO' ||
-        canalRaw.includes('ATACADO')
-      ) {
-        return true
-      }
-
-      // 3. DDD pertencente ao mapa de atacado (11 a 19) com canal/perfil atacado
-      const ddd = extrairDddCliente(clienteRec)
-      const dddsAtacado = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
-      if (
-        dddsAtacado.includes(ddd) &&
-        (canalRaw === 'ATACADO' ||
-          tipoVend === 'ATACADO' ||
-          vendRaw.startsWith('ATR') ||
-          vendRaw.includes('ATACADO'))
-      ) {
-        return true
-      }
-
-      return false
-    }
-
     function matchesCarteiraVendedorTolerante(clienteRec, userName) {
       if (!userName) return true
       const vRaw = clienteRec.getString('vendedor') || ''
@@ -203,49 +165,6 @@ routerAdd(
         ) {
           return true
         }
-      }
-
-      return false
-    }
-
-    function isClienteAtacado(clienteRec) {
-      if (!clienteRec) return false
-
-      // 1. Região cadastrada explícita
-      const regiao = normalizarTextoNFD(clienteRec.getString('regiao'))
-      if (regiao === 'ATACADO' || regiao.includes('ATACADO')) {
-        return true
-      }
-
-      // 2. Vendedor ou tipo de vendedor com prefixo ou menção de atacado
-      const vendRaw = normalizarTextoNFD(clienteRec.getString('vendedor'))
-      const tipoVend = normalizarTextoNFD(clienteRec.getString('tipo_vendedor'))
-      const canalRaw = normalizarTextoNFD(clienteRec.getString('canal'))
-      if (
-        vendRaw.startsWith('ATR -') ||
-        vendRaw.startsWith('ATR-') ||
-        vendRaw.startsWith('ATACADO -') ||
-        vendRaw.startsWith('ATACADO-') ||
-        vendRaw.includes('ATACADO') ||
-        tipoVend === 'ATACADO' ||
-        tipoVend.includes('ATACADO') ||
-        canalRaw === 'ATACADO' ||
-        canalRaw.includes('ATACADO')
-      ) {
-        return true
-      }
-
-      // 3. DDD pertencente ao mapa de atacado (11 a 19) com canal/perfil atacado
-      const ddd = extrairDddCliente(clienteRec)
-      const dddsAtacado = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
-      if (
-        dddsAtacado.includes(ddd) &&
-        (canalRaw === 'ATACADO' ||
-          tipoVend === 'ATACADO' ||
-          vendRaw.startsWith('ATR') ||
-          vendRaw.includes('ATACADO'))
-      ) {
-        return true
       }
 
       return false
@@ -867,6 +786,11 @@ routerAdd(
   'POST',
   '/backend/v1/queue/reserve-specific',
   (e) => {
+    var isClienteAtacado = globalThis.isClienteAtacado
+    if (typeof isClienteAtacado !== 'function') {
+      throw new Error('[atacado_guard] módulo não carregado')
+    }
+
     function normalizarTextoNFD(str) {
       return String(str || '')
         .normalize('NFD')
