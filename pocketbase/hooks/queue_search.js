@@ -1,6 +1,462 @@
 // pocketbase/hooks/queue_search.js
 // Busca na carteira, abertura de cliente específico e destrave/edição administrativa
-// Handlers executados em escopo isolado no Goja runtime do PocketBase
+// Handlers executados em escopo isolado no Goja runtime do PocketBase.
+// TODAS as funções auxiliares são declaradas no topo do arquivo (escopo global do módulo).
+
+function normalizarTextoNFD(str) {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .trim()
+}
+
+function buildRegiaoSqlFilter(regiaoStr) {
+  const norm = normalizarTextoNFD(regiaoStr)
+  if (norm === 'BRAGANCA' || norm === 'BRAGANCA PAULISTA' || norm.includes('BRAGANCA')) {
+    return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA' || regiao ~ 'BRAGANCA' || regiao ~ 'BRAGANÇA')"
+  }
+  if (
+    norm === 'CAMBUI' ||
+    norm === 'MICRO-REGIAO' ||
+    norm === 'MICRO REGIAO' ||
+    norm === 'MICROREGIAO' ||
+    norm.includes('CAMBUI')
+  ) {
+    return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao = 'MICRO REGIAO' || regiao ~ 'CAMBUI' || regiao ~ 'CAMBUÍ')"
+  }
+  if (
+    norm === 'POCOS DE CALDAS' ||
+    norm === 'POCOS CALDAS' ||
+    norm === 'POCOS' ||
+    norm.includes('POCOS') ||
+    norm.includes('CALDAS')
+  ) {
+    return "(regiao = 'POÇOS DE CALDAS' || regiao = 'POCOS DE CALDAS' || regiao = 'POÇOS CALDAS' || regiao = 'POCOS CALDAS' || regiao ~ 'POCOS' || regiao ~ 'POÇOS')"
+  }
+  if (norm === 'JUNDIAI' || norm.includes('JUNDIAI')) {
+    return "(regiao = 'JUNDIAÍ' || regiao = 'JUNDIAI' || regiao ~ 'JUNDIAI' || regiao ~ 'JUNDIAÍ')"
+  }
+  if (norm === 'ITAJUBA' || norm.includes('ITAJUBA')) {
+    return "(regiao = 'ITAJUBÁ' || regiao = 'ITAJUBA' || regiao ~ 'ITAJUBA' || regiao ~ 'ITAJUBÁ')"
+  }
+  if (norm === 'VARGINHA' || norm.includes('VARGINHA')) {
+    return "(regiao = 'VARGINHA' || regiao ~ 'VARGINHA')"
+  }
+  if (norm === 'POUSO ALEGRE' || norm.includes('POUSO')) {
+    return "(regiao = 'POUSO ALEGRE' || regiao ~ 'POUSO ALEGRE')"
+  }
+  if (norm === 'EXTREMA' || norm.includes('EXTREMA')) {
+    return "(regiao = 'EXTREMA' || regiao ~ 'EXTREMA')"
+  }
+  if (norm === 'ATACADO') {
+    return "regiao = 'ATACADO'"
+  }
+  if (norm === 'REPESCAGEM') {
+    return "regiao = 'REPESCAGEM'"
+  }
+  return `(regiao = '${norm}' || regiao ~ '${norm}')`
+}
+
+function limparPrefixoVendedor(vendedorStr) {
+  let v = normalizarTextoNFD(vendedorStr)
+  const prefixos = [
+    'VARE - ',
+    'VCORP - ',
+    'VAREXT - ',
+    'ATR - ',
+    'VARC - ',
+    'ADMV - ',
+    'ATF - ',
+    'ESPECIALISTE - ',
+    'ESPECIALISTA - ',
+    'EXT - ',
+    'INT - ',
+    'REP - ',
+  ]
+  for (let i = 0; i < prefixos.length; i++) {
+    const p = normalizarTextoNFD(prefixos[i])
+    if (v.startsWith(p)) {
+      v = v.slice(p.length).trim()
+      break
+    }
+  }
+  return v
+}
+
+function obterVariantesVendedor(nomeOuToken) {
+  const norm = normalizarTextoNFD(nomeOuToken)
+  const variantes = new Set()
+  if (!norm) return []
+
+  variantes.add(norm)
+
+  if (norm.includes('ALESSANDRO') || norm.includes('JAPA')) {
+    variantes.add('ALESSANDRO')
+    variantes.add('JAPA')
+  }
+  if (norm.includes('JESSICA') || norm.includes('JESSIKA')) {
+    variantes.add('JESSICA')
+    variantes.add('JESSIKA')
+  }
+  if (norm.includes('JOSE FELIPE') || norm.includes('FELIPE') || norm.includes('JOSE')) {
+    variantes.add('JOSE FELIPE')
+    variantes.add('FELIPE')
+    variantes.add('JOSE')
+  }
+  if (norm.includes('ARIANE') || norm.includes('CONSTRUCAO CIVIL') || norm.includes('CONSTRUCAO')) {
+    variantes.add('ARIANE')
+    variantes.add('CONSTRUCAO CIVIL')
+    variantes.add('CONSTRUCAO')
+  }
+  if (norm.includes('JOSIANE') || norm.includes('FRAZAO')) {
+    variantes.add('JOSIANE')
+    variantes.add('JOSIANE FRAZAO')
+    variantes.add('FRAZAO')
+  }
+  if (norm.includes('CAMILA') || norm.includes('GUIMENTI')) {
+    variantes.add('CAMILA')
+    variantes.add('CAMILA GUIMENTI')
+    variantes.add('GUIMENTI')
+  }
+
+  const partes = norm.split(/[\s,()/-]+/).filter((p) => p.length >= 3)
+  for (let i = 0; i < partes.length; i++) {
+    variantes.add(partes[i])
+    if (partes[i] === 'JAPA') variantes.add('ALESSANDRO')
+    if (partes[i] === 'ALESSANDRO') variantes.add('JAPA')
+    if (partes[i] === 'JESSIKA') variantes.add('JESSICA')
+    if (partes[i] === 'JESSICA') variantes.add('JESSIKA')
+    if (partes[i] === 'FELIPE') {
+      variantes.add('JOSE FELIPE')
+      variantes.add('JOSE')
+    }
+  }
+
+  return Array.from(variantes)
+}
+
+function matchesCarteiraVendedorTolerante(clienteRec, userName) {
+  if (!userName) return true
+  const vRaw = clienteRec.getString('vendedor') || ''
+  const tipoVendRaw = clienteRec.getString('tipo_vendedor') || ''
+  if (!vRaw && !tipoVendRaw) return false
+
+  const vLimpo = limparPrefixoVendedor(vRaw)
+  const tipoLimpo = normalizarTextoNFD(tipoVendRaw)
+  const vTextoCompleto = `${vLimpo} ${tipoLimpo}`
+
+  const userNorm = normalizarTextoNFD(userName)
+  const userVariantes = obterVariantesVendedor(userNorm)
+
+  if (vLimpo === userNorm || vLimpo.includes(userNorm) || userNorm.includes(vLimpo)) {
+    return true
+  }
+
+  for (let i = 0; i < userVariantes.length; i++) {
+    const varItem = userVariantes[i]
+    if (varItem.length < 3) continue
+
+    if (
+      vLimpo.includes(varItem) ||
+      tipoLimpo.includes(varItem) ||
+      vTextoCompleto.includes(varItem)
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function extrairDddCliente(clienteRec) {
+  if (!clienteRec) return ''
+  const dddGravado = clienteRec.getString('ddd_telefone')
+  if (dddGravado && dddGravado.length >= 2) return dddGravado.slice(0, 2)
+  const telRaw = (
+    clienteRec.getString('telefone') ||
+    clienteRec.getString('whatsapp') ||
+    ''
+  ).replace(/\D/g, '')
+  if (!telRaw) return ''
+  let s = telRaw
+  if (s.startsWith('0')) s = s.slice(1)
+  if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
+  return s.slice(0, 2)
+}
+
+/**
+ * Blindagem de ATACADO unificada e estrita (fonte única):
+ */
+function isClienteAtacado(clienteRec) {
+  if (!clienteRec) return false
+  const regiao = normalizarTextoNFD(clienteRec.getString('regiao'))
+  if (regiao === 'ATACADO' || regiao.includes('ATACADO')) {
+    return true
+  }
+  const vendRaw = normalizarTextoNFD(clienteRec.getString('vendedor'))
+  const tipoVend = normalizarTextoNFD(clienteRec.getString('tipo_vendedor'))
+  const canalRaw = normalizarTextoNFD(clienteRec.getString('canal'))
+  if (
+    vendRaw.startsWith('ATR -') ||
+    vendRaw.startsWith('ATR-') ||
+    vendRaw.startsWith('ATACADO -') ||
+    vendRaw.startsWith('ATACADO-') ||
+    vendRaw.includes('ATACADO') ||
+    tipoVend === 'ATACADO' ||
+    tipoVend.includes('ATACADO') ||
+    canalRaw === 'ATACADO' ||
+    canalRaw.includes('ATACADO')
+  ) {
+    return true
+  }
+  const ddd = extrairDddCliente(clienteRec)
+  const dddsAtacado = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
+  if (
+    dddsAtacado.includes(ddd) &&
+    (canalRaw === 'ATACADO' ||
+      tipoVend === 'ATACADO' ||
+      vendRaw.startsWith('ATR') ||
+      vendRaw.includes('ATACADO'))
+  ) {
+    return true
+  }
+  return false
+}
+
+function extrairCidadeCliente(clienteRec) {
+  if (!clienteRec) return ''
+  const cidDireta = clienteRec.getString('cidade')
+  if (cidDireta && cidDireta.trim()) {
+    return normalizarTextoNFD(cidDireta)
+  }
+  const endRaw = clienteRec.getString('endereco') || ''
+  if (endRaw) {
+    const partesHifen = endRaw.split('-')
+    if (partesHifen.length >= 2) {
+      const antesUf = partesHifen[partesHifen.length - 2].trim()
+      const partesVirgula = antesUf.split(',')
+      const possivelCidade = partesVirgula[partesVirgula.length - 1].trim()
+      if (possivelCidade) {
+        return normalizarTextoNFD(possivelCidade)
+      }
+    }
+    const partesVirgula = endRaw.split(',')
+    if (partesVirgula.length > 1) {
+      return normalizarTextoNFD(partesVirgula[partesVirgula.length - 1])
+    }
+    return normalizarTextoNFD(endRaw)
+  }
+  return ''
+}
+
+function expurgarLocksExpiradosAtomicamente(appInstance) {
+  const now = new Date()
+  const cutoffLock = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
+  const nowIso = now.toISOString()
+
+  let liberados = 0
+  try {
+    const resBase = appInstance
+      .db()
+      .newQuery(
+        `UPDATE clientes
+         SET estado = 'na_base', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
+         WHERE (estado = 'reservado' OR estado = 'em_atendimento')
+           AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
+           AND (standby_ate IS NULL OR standby_ate = '' OR datetime(standby_ate) <= datetime({:now}))`,
+      )
+      .bind({ cutoff: cutoffLock, now: nowIso })
+      .execute()
+
+    if (resBase && typeof resBase.rowsAffected === 'function') {
+      liberados += resBase.rowsAffected()
+    }
+
+    const resStandby = appInstance
+      .db()
+      .newQuery(
+        `UPDATE clientes
+         SET estado = 'reativado', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
+         WHERE (estado = 'reservado' OR estado = 'em_atendimento')
+           AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
+           AND standby_ate IS NOT NULL AND standby_ate != '' AND datetime(standby_ate) > datetime({:now})`,
+      )
+      .bind({ cutoff: cutoffLock, now: nowIso })
+      .execute()
+
+    if (resStandby && typeof resStandby.rowsAffected === 'function') {
+      liberados += resStandby.rowsAffected()
+    }
+  } catch (err) {
+    console.log('[expurgo_locks] Erro ao executar expurgo de locks: ' + err.message)
+  }
+  return liberados
+}
+
+function extrairRegioesDeUsuario(uRec) {
+  let rList = []
+  try {
+    const slice = uRec.getStringSlice('regioes')
+    if (slice && slice.length > 0) rList = slice
+    else {
+      const raw = uRec.getString('regioes')
+      if (raw && raw.trim().startsWith('[')) rList = JSON.parse(raw)
+      else {
+        const rawGet = uRec.get('regioes')
+        if (Array.isArray(rawGet)) rList = rawGet
+      }
+    }
+  } catch (_) {}
+  if (!Array.isArray(rList)) rList = []
+  return rList.map((r) => normalizarTextoNFD(r)).filter(Boolean)
+}
+
+function classificarTipoCadeiraCliente(vendedorStr, tipoVendStr) {
+  const vNorm = normalizarTextoNFD(vendedorStr)
+  const tNorm = normalizarTextoNFD(tipoVendStr)
+  if (
+    vNorm.startsWith('VCORP') ||
+    vNorm.includes('VCORP') ||
+    tNorm === 'CORPORATIVO' ||
+    tNorm.includes('CORPORATIVO')
+  ) {
+    return 'corporativo'
+  }
+  return 'especialista_externo'
+}
+
+function normalizarPesoEUnidadeLocal(valorInput, pesoInput, rawValorStr, rawPesoStr) {
+  const vNum = Number(valorInput) || 0
+  let rawPStr = String(
+    rawPesoStr !== undefined && rawPesoStr !== null ? rawPesoStr : pesoInput || '',
+  ).trim()
+  let rawVStr = String(
+    rawValorStr !== undefined && rawValorStr !== null ? rawValorStr : valorInput || '',
+  ).trim()
+
+  const matchKg = rawPStr.match(/(\d+([.,]\d+)?)\s*(?:kg|quilos?|kilos?)/i)
+  const matchTon = rawPStr.match(/(\d+([.,]\d+)?)\s*(?:t|ton|tons|toneladas?)/i)
+
+  const numLimpoP = Number(rawPStr.replace(/[^\d.,]/g, '').replace(',', '.'))
+  const pNum = !isNaN(numLimpoP) && numLimpoP > 0 ? numLimpoP : Number(pesoInput) || 0
+
+  if (matchKg) {
+    const vKg = Number(matchKg[1].replace(',', '.'))
+    return {
+      peso_bruto: vKg,
+      toneladas: Number((vKg / 1000).toFixed(6)),
+      unidade_detectada: 'kg',
+      preco_por_kg: vNum > 0 && vKg > 0 ? Number((vNum / vKg).toFixed(4)) : 0,
+      preco_por_ton: vNum > 0 && vKg > 0 ? Number(((vNum / vKg) * 1000).toFixed(2)) : 0,
+    }
+  }
+
+  if (matchTon) {
+    const vTon = Number(matchTon[1].replace(',', '.'))
+    return {
+      peso_bruto: vTon,
+      toneladas: vTon,
+      unidade_detectada: 'ton',
+      preco_por_kg: vNum > 0 && vTon > 0 ? Number((vNum / (vTon * 1000)).toFixed(4)) : 0,
+      preco_por_ton: vNum > 0 && vTon > 0 ? Number((vNum / vTon).toFixed(2)) : 0,
+    }
+  }
+
+  if (pNum > 0) {
+    if (vNum > 0) {
+      const ratio = vNum / pNum
+      if (ratio >= 2 && ratio <= 60) {
+        return {
+          peso_bruto: pNum,
+          toneladas: Number((pNum / 1000).toFixed(6)),
+          unidade_detectada: 'kg',
+          preco_por_kg: Number(ratio.toFixed(4)),
+          preco_por_ton: Number((ratio * 1000).toFixed(2)),
+        }
+      }
+      if (ratio < 2 && pNum >= 50) {
+        return {
+          peso_bruto: pNum,
+          toneladas: Number((pNum / 1000).toFixed(6)),
+          unidade_detectada: 'kg',
+          preco_por_kg: Number(ratio.toFixed(4)),
+          preco_por_ton: Number((ratio * 1000).toFixed(2)),
+        }
+      }
+    }
+    if (pNum >= 50) {
+      return {
+        peso_bruto: pNum,
+        toneladas: Number((pNum / 1000).toFixed(6)),
+        unidade_detectada: 'kg',
+        preco_por_kg: vNum > 0 ? Number((vNum / pNum).toFixed(4)) : 0,
+        preco_por_ton: vNum > 0 ? Number(((vNum / pNum) * 1000).toFixed(2)) : 0,
+      }
+    }
+    return {
+      peso_bruto: pNum,
+      toneladas: pNum,
+      unidade_detectada: 'ton',
+      preco_por_kg: vNum > 0 ? Number((vNum / (pNum * 1000)).toFixed(4)) : 0,
+      preco_por_ton: vNum > 0 ? Number((vNum / pNum).toFixed(2)) : 0,
+    }
+  }
+
+  return {
+    peso_bruto: 0,
+    toneladas: 0,
+    unidade_detectada: 'ton',
+    preco_por_kg: 0,
+    preco_por_ton: 0,
+  }
+}
+
+function jaContatadoPeloVendedorOriginal(appInstance, clienteRec) {
+  try {
+    const cId = clienteRec.id
+    const vendedorOriginal = (clienteRec.getString('vendedor') || '').trim().toUpperCase()
+    let interacoes = []
+    try {
+      interacoes = appInstance.findRecordsByFilter(
+        'interacoes',
+        `cliente = '${cId}'`,
+        '-created',
+        10,
+        0,
+      )
+    } catch (_) {
+      return false
+    }
+    if (!interacoes || interacoes.length === 0) return false
+
+    for (let i = 0; i < interacoes.length; i++) {
+      const it = interacoes[i]
+      const opId = it.getString('operador')
+      if (!opId) continue
+      try {
+        const opUser = appInstance.findRecordById('users', opId)
+        if (opUser) {
+          const opNome = (opUser.getString('name') || '').trim().toUpperCase()
+          const opEmail = (opUser.getString('email') || '').trim().toUpperCase()
+          if (vendedorOriginal) {
+            if (
+              opNome === vendedorOriginal ||
+              opNome.includes(vendedorOriginal) ||
+              vendedorOriginal.includes(opNome) ||
+              opEmail.includes(vendedorOriginal)
+            ) {
+              return true
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return false
+  } catch (_) {
+    return false
+  }
+}
 
 /**
  * 1. POST /backend/v1/queue/search-carteira
@@ -10,285 +466,6 @@ routerAdd(
   'POST',
   '/backend/v1/queue/search-carteira',
   (e) => {
-    function normalizarTextoNFD(str) {
-      return String(str || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .trim()
-    }
-
-    function buildRegiaoSqlFilter(regiaoStr) {
-      const norm = normalizarTextoNFD(regiaoStr)
-      if (norm === 'BRAGANCA' || norm === 'BRAGANCA PAULISTA' || norm.includes('BRAGANCA')) {
-        return "(regiao = 'BRAGANÇA' || regiao = 'BRAGANCA' || regiao = 'BRAGANÇA PAULISTA' || regiao = 'BRAGANCA PAULISTA' || regiao ~ 'BRAGANCA' || regiao ~ 'BRAGANÇA')"
-      }
-      if (
-        norm === 'CAMBUI' ||
-        norm === 'MICRO-REGIAO' ||
-        norm === 'MICRO REGIAO' ||
-        norm === 'MICROREGIAO' ||
-        norm.includes('CAMBUI')
-      ) {
-        return "(regiao = 'CAMBUÍ' || regiao = 'CAMBUI' || regiao = 'MICRO-REGIÃO' || regiao = 'MICRO REGIAO' || regiao ~ 'CAMBUI' || regiao ~ 'CAMBUÍ')"
-      }
-      if (
-        norm === 'POCOS DE CALDAS' ||
-        norm === 'POCOS CALDAS' ||
-        norm === 'POCOS' ||
-        norm.includes('POCOS') ||
-        norm.includes('CALDAS')
-      ) {
-        return "(regiao = 'POÇOS DE CALDAS' || regiao = 'POCOS DE CALDAS' || regiao = 'POÇOS CALDAS' || regiao = 'POCOS CALDAS' || regiao ~ 'POCOS' || regiao ~ 'POÇOS')"
-      }
-      if (norm === 'JUNDIAI' || norm.includes('JUNDIAI')) {
-        return "(regiao = 'JUNDIAÍ' || regiao = 'JUNDIAI' || regiao ~ 'JUNDIAI' || regiao ~ 'JUNDIAÍ')"
-      }
-      if (norm === 'ITAJUBA' || norm.includes('ITAJUBA')) {
-        return "(regiao = 'ITAJUBÁ' || regiao = 'ITAJUBA' || regiao ~ 'ITAJUBA' || regiao ~ 'ITAJUBÁ')"
-      }
-      if (norm === 'VARGINHA' || norm.includes('VARGINHA')) {
-        return "(regiao = 'VARGINHA' || regiao ~ 'VARGINHA')"
-      }
-      if (norm === 'POUSO ALEGRE' || norm.includes('POUSO')) {
-        return "(regiao = 'POUSO ALEGRE' || regiao ~ 'POUSO ALEGRE')"
-      }
-      if (norm === 'EXTREMA' || norm.includes('EXTREMA')) {
-        return "(regiao = 'EXTREMA' || regiao ~ 'EXTREMA')"
-      }
-      if (norm === 'ATACADO') {
-        return "regiao = 'ATACADO'"
-      }
-      if (norm === 'REPESCAGEM') {
-        return "regiao = 'REPESCAGEM'"
-      }
-      return `(regiao = '${norm}' || regiao ~ '${norm}')`
-    }
-
-    function limparPrefixoVendedor(vendedorStr) {
-      let v = normalizarTextoNFD(vendedorStr)
-      const prefixos = [
-        'VARE - ',
-        'VCORP - ',
-        'VAREXT - ',
-        'ATR - ',
-        'VARC - ',
-        'ADMV - ',
-        'ATF - ',
-      ]
-      for (let i = 0; i < prefixos.length; i++) {
-        const p = normalizarTextoNFD(prefixos[i])
-        if (v.startsWith(p)) {
-          v = v.slice(p.length).trim()
-          break
-        }
-      }
-      return v
-    }
-
-    function obterVariantesVendedor(nomeOuToken) {
-      const norm = normalizarTextoNFD(nomeOuToken)
-      const variantes = new Set()
-      if (!norm) return []
-
-      variantes.add(norm)
-
-      if (norm.includes('ALESSANDRO') || norm.includes('JAPA')) {
-        variantes.add('ALESSANDRO')
-        variantes.add('JAPA')
-      }
-      if (norm.includes('JESSICA') || norm.includes('JESSIKA')) {
-        variantes.add('JESSICA')
-        variantes.add('JESSIKA')
-      }
-      if (norm.includes('JOSE FELIPE') || norm.includes('FELIPE') || norm.includes('JOSE')) {
-        variantes.add('JOSE FELIPE')
-        variantes.add('FELIPE')
-        variantes.add('JOSE')
-      }
-      if (
-        norm.includes('ARIANE') ||
-        norm.includes('CONSTRUCAO CIVIL') ||
-        norm.includes('CONSTRUCAO')
-      ) {
-        variantes.add('ARIANE')
-        variantes.add('CONSTRUCAO CIVIL')
-        variantes.add('CONSTRUCAO')
-      }
-
-      const partes = norm.split(/[\s,()/-]+/).filter((p) => p.length >= 3)
-      for (let i = 0; i < partes.length; i++) {
-        variantes.add(partes[i])
-        if (partes[i] === 'JAPA') variantes.add('ALESSANDRO')
-        if (partes[i] === 'ALESSANDRO') variantes.add('JAPA')
-        if (partes[i] === 'JESSIKA') variantes.add('JESSICA')
-        if (partes[i] === 'JESSICA') variantes.add('JESSIKA')
-        if (partes[i] === 'FELIPE') {
-          variantes.add('JOSE FELIPE')
-          variantes.add('JOSE')
-        }
-      }
-
-      return Array.from(variantes)
-    }
-
-    function matchesCarteiraVendedorTolerante(clienteRec, userName) {
-      if (!userName) return true
-      const vRaw = clienteRec.getString('vendedor') || ''
-      const tipoVendRaw = clienteRec.getString('tipo_vendedor') || ''
-      if (!vRaw && !tipoVendRaw) return false
-
-      const vLimpo = limparPrefixoVendedor(vRaw)
-      const tipoLimpo = normalizarTextoNFD(tipoVendRaw)
-      const vTextoCompleto = `${vLimpo} ${tipoLimpo}`
-
-      const userNorm = normalizarTextoNFD(userName)
-      const userVariantes = obterVariantesVendedor(userNorm)
-
-      if (vLimpo === userNorm || vLimpo.includes(userNorm) || userNorm.includes(vLimpo)) {
-        return true
-      }
-
-      for (let i = 0; i < userVariantes.length; i++) {
-        const varItem = userVariantes[i]
-        if (varItem.length < 3) continue
-
-        if (
-          vLimpo.includes(varItem) ||
-          tipoLimpo.includes(varItem) ||
-          vTextoCompleto.includes(varItem)
-        ) {
-          return true
-        }
-      }
-
-      return false
-    }
-
-    function extrairDddCliente(clienteRec) {
-      if (!clienteRec) return ''
-      const dddGravado = clienteRec.getString('ddd_telefone')
-      if (dddGravado && dddGravado.length >= 2) return dddGravado.slice(0, 2)
-      const telRaw = (
-        clienteRec.getString('telefone') ||
-        clienteRec.getString('whatsapp') ||
-        ''
-      ).replace(/\D/g, '')
-      if (!telRaw) return ''
-      let s = telRaw
-      if (s.startsWith('0')) s = s.slice(1)
-      if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
-      return s.slice(0, 2)
-    }
-
-    /**
-     * Blindagem de ATACADO unificada e estrita (fonte única):
-     */
-    function isClienteAtacado(clienteRec) {
-      if (!clienteRec) return false
-      const regiao = normalizarTextoNFD(clienteRec.getString('regiao'))
-      if (regiao === 'ATACADO' || regiao.includes('ATACADO')) {
-        return true
-      }
-      const vendRaw = normalizarTextoNFD(clienteRec.getString('vendedor'))
-      const tipoVend = normalizarTextoNFD(clienteRec.getString('tipo_vendedor'))
-      const canalRaw = normalizarTextoNFD(clienteRec.getString('canal'))
-      if (
-        vendRaw.startsWith('ATR -') ||
-        vendRaw.startsWith('ATR-') ||
-        vendRaw.startsWith('ATACADO -') ||
-        vendRaw.startsWith('ATACADO-') ||
-        vendRaw.includes('ATACADO') ||
-        tipoVend === 'ATACADO' ||
-        tipoVend.includes('ATACADO') ||
-        canalRaw === 'ATACADO' ||
-        canalRaw.includes('ATACADO')
-      ) {
-        return true
-      }
-      const ddd = extrairDddCliente(clienteRec)
-      const dddsAtacado = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
-      if (
-        dddsAtacado.includes(ddd) &&
-        (canalRaw === 'ATACADO' ||
-          tipoVend === 'ATACADO' ||
-          vendRaw.startsWith('ATR') ||
-          vendRaw.includes('ATACADO'))
-      ) {
-        return true
-      }
-      return false
-    }
-
-    function extrairCidadeCliente(clienteRec) {
-      const cidDireta = clienteRec.getString('cidade')
-      if (cidDireta && cidDireta.trim()) {
-        return normalizarTextoNFD(cidDireta)
-      }
-      const endRaw = clienteRec.getString('endereco') || ''
-      if (endRaw) {
-        const partesHifen = endRaw.split('-')
-        if (partesHifen.length >= 2) {
-          const antesUf = partesHifen[partesHifen.length - 2].trim()
-          const partesVirgula = antesUf.split(',')
-          const possivelCidade = partesVirgula[partesVirgula.length - 1].trim()
-          if (possivelCidade) {
-            return normalizarTextoNFD(possivelCidade)
-          }
-        }
-        const partesVirgula = endRaw.split(',')
-        if (partesVirgula.length > 1) {
-          return normalizarTextoNFD(partesVirgula[partesVirgula.length - 1])
-        }
-        return normalizarTextoNFD(endRaw)
-      }
-      return ''
-    }
-
-    function expurgarLocksExpiradosAtomicamente(appInstance) {
-      const now = new Date()
-      const cutoffLock = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
-      const nowIso = now.toISOString()
-
-      let liberados = 0
-      try {
-        const resBase = appInstance
-          .db()
-          .newQuery(
-            `UPDATE clientes
-             SET estado = 'na_base', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
-             WHERE (estado = 'reservado' OR estado = 'em_atendimento')
-               AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
-               AND (standby_ate IS NULL OR standby_ate = '' OR datetime(standby_ate) <= datetime({:now}))`,
-          )
-          .bind({ cutoff: cutoffLock, now: nowIso })
-          .execute()
-
-        if (resBase && typeof resBase.rowsAffected === 'function') {
-          liberados += resBase.rowsAffected()
-        }
-
-        const resStandby = appInstance
-          .db()
-          .newQuery(
-            `UPDATE clientes
-             SET estado = 'reativado', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
-             WHERE (estado = 'reservado' OR estado = 'em_atendimento')
-               AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
-               AND standby_ate IS NOT NULL AND standby_ate != '' AND datetime(standby_ate) > datetime({:now})`,
-          )
-          .bind({ cutoff: cutoffLock, now: nowIso })
-          .execute()
-
-        if (resStandby && typeof resStandby.rowsAffected === 'function') {
-          liberados += resStandby.rowsAffected()
-        }
-      } catch (err) {
-        console.log('[expurgo_locks] Erro ao executar expurgo de locks: ' + err.message)
-      }
-      return liberados
-    }
-
     try {
       const authRecord = e.auth
       if (!authRecord || !authRecord.id) {
@@ -361,51 +538,7 @@ routerAdd(
       }
 
       // Helper de checagem Repescagem (não contatado pelo vendedor original)
-      const jaContatadoPeloVendedorOriginal = (clienteRec) => {
-        try {
-          const cId = clienteRec.id
-          const vendedorOriginal = (clienteRec.getString('vendedor') || '').trim().toUpperCase()
-          let interacoes = []
-          try {
-            interacoes = $app.findRecordsByFilter(
-              'interacoes',
-              `cliente = '${cId}'`,
-              '-created',
-              10,
-              0,
-            )
-          } catch (_) {
-            return false
-          }
-          if (!interacoes || interacoes.length === 0) return false
-
-          for (let i = 0; i < interacoes.length; i++) {
-            const it = interacoes[i]
-            const opId = it.getString('operador')
-            if (!opId) continue
-            try {
-              const opUser = $app.findRecordById('users', opId)
-              if (opUser) {
-                const opNome = (opUser.getString('name') || '').trim().toUpperCase()
-                const opEmail = (opUser.getString('email') || '').trim().toUpperCase()
-                if (vendedorOriginal) {
-                  if (
-                    opNome === vendedorOriginal ||
-                    opNome.includes(vendedorOriginal) ||
-                    vendedorOriginal.includes(opNome) ||
-                    opEmail.includes(vendedorOriginal)
-                  ) {
-                    return true
-                  }
-                }
-              }
-            } catch (_) {}
-          }
-          return false
-        } catch (_) {
-          return false
-        }
-      }
+      const checarJaContatado = (clienteRec) => jaContatadoPeloVendedorOriginal($app, clienteRec)
 
       // Sanitiza termo de busca para SQLite filter
       const cleanTerm = termoBusca.replace(/['"\\]/g, '')
@@ -419,7 +552,8 @@ routerAdd(
 
       // Restrições de perfil/região
       if (isRepescagem) {
-        filterExpr += " && (faixa = '90_plus' || dias_sem_faturar >= 90)"
+        filterExpr +=
+          " && regiao != 'ATACADO' && tipo_vendedor != 'ATACADO' && vendedor !~ 'ATR' && vendedor !~ 'ATACADO' && canal != 'ATACADO' && (faixa = '90_plus' || dias_sem_faturar >= 90)"
       } else if (userRole === 'operador' || userRole === 'lider') {
         if (userRegioes.length > 0) {
           const parts = userRegioes.map((r) => buildRegiaoSqlFilter(r))
@@ -442,7 +576,10 @@ routerAdd(
       let resultados = []
       if (pool && pool.length > 0) {
         if (isRepescagem) {
-          resultados = pool.filter((c) => !jaContatadoPeloVendedorOriginal(c))
+          resultados = pool.filter((c) => {
+            if (isClienteAtacado(c)) return false
+            return !checarJaContatado(c)
+          })
         } else if (isAtacado && (userRole === 'operador' || userRole === 'lider')) {
           resultados = pool.filter((c) => {
             const ddd = extrairDddCliente(c)
@@ -455,24 +592,6 @@ routerAdd(
           try {
             usersSistema = $app.findRecordsByFilter('users', "role != 'cliente'", 'name', 500, 0)
           } catch (_) {}
-
-          function extrairRegioesDeUsuario(uRec) {
-            let rList = []
-            try {
-              const slice = uRec.getStringSlice('regioes')
-              if (slice && slice.length > 0) rList = slice
-              else {
-                const raw = uRec.getString('regioes')
-                if (raw && raw.trim().startsWith('[')) rList = JSON.parse(raw)
-                else {
-                  const rawGet = uRec.get('regioes')
-                  if (Array.isArray(rawGet)) rList = rawGet
-                }
-              }
-            } catch (_) {}
-            if (!Array.isArray(rList)) rList = []
-            return rList.map((r) => normalizarTextoNFD(r)).filter(Boolean)
-          }
 
           const listaAtivos = []
           const listaInativos = []
@@ -530,20 +649,6 @@ routerAdd(
             const cRec = cidadesRotasRecs[crIdx]
             const cn = cRec.getString('cidade_normalizada')
             if (cn) mapaCidadeParaRota[cn] = normalizarTextoNFD(cRec.getString('rota'))
-          }
-
-          const classificarTipoCadeiraCliente = (vendedorStr, tipoVendStr) => {
-            const vNorm = normalizarTextoNFD(vendedorStr)
-            const tNorm = normalizarTextoNFD(tipoVendStr)
-            if (
-              vNorm.startsWith('VCORP') ||
-              vNorm.includes('VCORP') ||
-              tNorm === 'CORPORATIVO' ||
-              tNorm.includes('CORPORATIVO')
-            ) {
-              return 'corporativo'
-            }
-            return 'especialista_externo'
           }
 
           const resolverRotaDoCliente = (clienteRec) => {
@@ -821,213 +926,6 @@ routerAdd(
   'POST',
   '/backend/v1/queue/reserve-specific',
   (e) => {
-    function normalizarTextoNFD(str) {
-      return String(str || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .trim()
-    }
-
-    function limparPrefixoVendedor(vendedorStr) {
-      let v = normalizarTextoNFD(vendedorStr)
-      const prefixos = [
-        'VARE - ',
-        'VCORP - ',
-        'VAREXT - ',
-        'ATR - ',
-        'VARC - ',
-        'ADMV - ',
-        'ATF - ',
-      ]
-      for (let i = 0; i < prefixos.length; i++) {
-        const p = normalizarTextoNFD(prefixos[i])
-        if (v.startsWith(p)) {
-          v = v.slice(p.length).trim()
-          break
-        }
-      }
-      return v
-    }
-
-    function obterVariantesVendedor(nomeOuToken) {
-      const norm = normalizarTextoNFD(nomeOuToken)
-      const variantes = new Set()
-      if (!norm) return []
-
-      variantes.add(norm)
-
-      if (norm.includes('ALESSANDRO') || norm.includes('JAPA')) {
-        variantes.add('ALESSANDRO')
-        variantes.add('JAPA')
-      }
-      if (norm.includes('JESSICA') || norm.includes('JESSIKA')) {
-        variantes.add('JESSICA')
-        variantes.add('JESSIKA')
-      }
-      if (norm.includes('JOSE FELIPE') || norm.includes('FELIPE') || norm.includes('JOSE')) {
-        variantes.add('JOSE FELIPE')
-        variantes.add('FELIPE')
-        variantes.add('JOSE')
-      }
-      if (
-        norm.includes('ARIANE') ||
-        norm.includes('CONSTRUCAO CIVIL') ||
-        norm.includes('CONSTRUCAO')
-      ) {
-        variantes.add('ARIANE')
-        variantes.add('CONSTRUCAO CIVIL')
-        variantes.add('CONSTRUCAO')
-      }
-
-      const partes = norm.split(/[\s,()/-]+/).filter((p) => p.length >= 3)
-      for (let i = 0; i < partes.length; i++) {
-        variantes.add(partes[i])
-        if (partes[i] === 'JAPA') variantes.add('ALESSANDRO')
-        if (partes[i] === 'ALESSANDRO') variantes.add('JAPA')
-        if (partes[i] === 'JESSIKA') variantes.add('JESSICA')
-        if (partes[i] === 'JESSICA') variantes.add('JESSIKA')
-        if (partes[i] === 'FELIPE') {
-          variantes.add('JOSE FELIPE')
-          variantes.add('JOSE')
-        }
-      }
-
-      return Array.from(variantes)
-    }
-
-    function matchesCarteiraVendedorTolerante(clienteRec, userName) {
-      if (!userName) return true
-      const vRaw = clienteRec.getString('vendedor') || ''
-      const tipoVendRaw = clienteRec.getString('tipo_vendedor') || ''
-      if (!vRaw && !tipoVendRaw) return false
-
-      const vLimpo = limparPrefixoVendedor(vRaw)
-      const tipoLimpo = normalizarTextoNFD(tipoVendRaw)
-      const vTextoCompleto = `${vLimpo} ${tipoLimpo}`
-
-      const userNorm = normalizarTextoNFD(userName)
-      const userVariantes = obterVariantesVendedor(userNorm)
-
-      if (vLimpo === userNorm || vLimpo.includes(userNorm) || userNorm.includes(vLimpo)) {
-        return true
-      }
-
-      for (let i = 0; i < userVariantes.length; i++) {
-        const varItem = userVariantes[i]
-        if (varItem.length < 3) continue
-
-        if (
-          vLimpo.includes(varItem) ||
-          tipoLimpo.includes(varItem) ||
-          vTextoCompleto.includes(varItem)
-        ) {
-          return true
-        }
-      }
-
-      return false
-    }
-
-    function extrairDddCliente(clienteRec) {
-      if (!clienteRec) return ''
-      const dddGravado = clienteRec.getString('ddd_telefone')
-      if (dddGravado && dddGravado.length >= 2) return dddGravado.slice(0, 2)
-      const telRaw = (
-        clienteRec.getString('telefone') ||
-        clienteRec.getString('whatsapp') ||
-        ''
-      ).replace(/\D/g, '')
-      if (!telRaw) return ''
-      let s = telRaw
-      if (s.startsWith('0')) s = s.slice(1)
-      if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
-      return s.slice(0, 2)
-    }
-
-    /**
-     * Blindagem de ATACADO unificada e estrita (fonte única):
-     */
-    function isClienteAtacado(clienteRec) {
-      if (!clienteRec) return false
-      const regiao = normalizarTextoNFD(clienteRec.getString('regiao'))
-      if (regiao === 'ATACADO' || regiao.includes('ATACADO')) {
-        return true
-      }
-      const vendRaw = normalizarTextoNFD(clienteRec.getString('vendedor'))
-      const tipoVend = normalizarTextoNFD(clienteRec.getString('tipo_vendedor'))
-      const canalRaw = normalizarTextoNFD(clienteRec.getString('canal'))
-      if (
-        vendRaw.startsWith('ATR -') ||
-        vendRaw.startsWith('ATR-') ||
-        vendRaw.startsWith('ATACADO -') ||
-        vendRaw.startsWith('ATACADO-') ||
-        vendRaw.includes('ATACADO') ||
-        tipoVend === 'ATACADO' ||
-        tipoVend.includes('ATACADO') ||
-        canalRaw === 'ATACADO' ||
-        canalRaw.includes('ATACADO')
-      ) {
-        return true
-      }
-      const ddd = extrairDddCliente(clienteRec)
-      const dddsAtacado = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
-      if (
-        dddsAtacado.includes(ddd) &&
-        (canalRaw === 'ATACADO' ||
-          tipoVend === 'ATACADO' ||
-          vendRaw.startsWith('ATR') ||
-          vendRaw.includes('ATACADO'))
-      ) {
-        return true
-      }
-      return false
-    }
-
-    function expurgarLocksExpiradosAtomicamente(appInstance) {
-      const now = new Date()
-      const cutoffLock = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
-      const nowIso = now.toISOString()
-
-      let liberados = 0
-      try {
-        const resBase = appInstance
-          .db()
-          .newQuery(
-            `UPDATE clientes
-             SET estado = 'na_base', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
-             WHERE (estado = 'reservado' OR estado = 'em_atendimento')
-               AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
-               AND (standby_ate IS NULL OR standby_ate = '' OR datetime(standby_ate) <= datetime({:now}))`,
-          )
-          .bind({ cutoff: cutoffLock, now: nowIso })
-          .execute()
-
-        if (resBase && typeof resBase.rowsAffected === 'function') {
-          liberados += resBase.rowsAffected()
-        }
-
-        const resStandby = appInstance
-          .db()
-          .newQuery(
-            `UPDATE clientes
-             SET estado = 'reativado', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
-             WHERE (estado = 'reservado' OR estado = 'em_atendimento')
-               AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
-               AND standby_ate IS NOT NULL AND standby_ate != '' AND datetime(standby_ate) > datetime({:now})`,
-          )
-          .bind({ cutoff: cutoffLock, now: nowIso })
-          .execute()
-
-        if (resStandby && typeof resStandby.rowsAffected === 'function') {
-          liberados += resStandby.rowsAffected()
-        }
-      } catch (err) {
-        console.log('[expurgo_locks] Erro ao executar expurgo de locks: ' + err.message)
-      }
-      return liberados
-    }
-
     try {
       const authRecord = e.auth
       if (!authRecord || !authRecord.id) {
@@ -1160,7 +1058,21 @@ routerAdd(
               error: `Este cliente pertence a outro DDD do Atacado e não está na sua carteira (${atacadoDddsPermitidos.join(', ')}).`,
             })
           }
-        } else if (!isRepescagem) {
+        } else if (isRepescagem) {
+          // Trava em memória: Repescagem não pode abrir clientes de Atacado nem contatados pelo vendedor original
+          if (isClienteAtacado(cliente)) {
+            return e.json(403, {
+              error:
+                'Este cliente pertence à fila exclusiva do ATACADO e não pode ser atendido pela Repescagem.',
+            })
+          }
+          if (jaContatadoPeloVendedorOriginal($app, cliente)) {
+            return e.json(403, {
+              error:
+                'Este cliente já foi contatado pelo vendedor original da rota e não pode ser atendido pela Repescagem.',
+            })
+          }
+        } else {
           // Trava em memória: operador que não é Atacado NUNCA pode abrir cliente de Atacado
           if (isClienteAtacado(cliente)) {
             return e.json(403, {
@@ -1174,24 +1086,6 @@ routerAdd(
           try {
             usersSistema = $app.findRecordsByFilter('users', "role != 'cliente'", 'name', 500, 0)
           } catch (_) {}
-
-          function extrairRegioesDeUsuario(uRec) {
-            let rList = []
-            try {
-              const slice = uRec.getStringSlice('regioes')
-              if (slice && slice.length > 0) rList = slice
-              else {
-                const raw = uRec.getString('regioes')
-                if (raw && raw.trim().startsWith('[')) rList = JSON.parse(raw)
-                else {
-                  const rawGet = uRec.get('regioes')
-                  if (Array.isArray(rawGet)) rList = rawGet
-                }
-              }
-            } catch (_) {}
-            if (!Array.isArray(rList)) rList = []
-            return rList.map((r) => normalizarTextoNFD(r)).filter(Boolean)
-          }
 
           const listaAtivos = []
           const listaInativos = []
@@ -1241,20 +1135,6 @@ routerAdd(
             const cRec = cidadesRotasRecs[crIdx]
             const cn = cRec.getString('cidade_normalizada')
             if (cn) mapaCidadeParaRota[cn] = normalizarTextoNFD(cRec.getString('rota'))
-          }
-
-          const classificarTipoCadeiraCliente = (vendedorStr, tipoVendStr) => {
-            const vNorm = normalizarTextoNFD(vendedorStr)
-            const tNorm = normalizarTextoNFD(tipoVendStr)
-            if (
-              vNorm.startsWith('VCORP') ||
-              vNorm.includes('VCORP') ||
-              tNorm === 'CORPORATIVO' ||
-              tNorm.includes('CORPORATIVO')
-            ) {
-              return 'corporativo'
-            }
-            return 'especialista_externo'
           }
 
           const resolverRotaDoCliente = (clienteRec) => {
@@ -1654,7 +1534,7 @@ routerAdd(
         const normRes =
           typeof normalizarPesoEUnidade === 'function'
             ? normalizarPesoEUnidade(valRef, rawPesoInput, rawValorInput, rawPesoInput)
-            : null
+            : normalizarPesoEUnidadeLocal(valRef, rawPesoInput, rawValorInput, rawPesoInput)
 
         if (normRes) {
           respostas.q16 = normRes.peso_bruto // mantém raw em q16

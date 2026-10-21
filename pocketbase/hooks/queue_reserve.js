@@ -23,293 +23,365 @@
 //
 // PRESERVADOS INTEGRALMENTE:
 // - BLINDAGEM DE ATACADO da v0.0.152 (regressão crítica): exclusão SQL de região ATACADO nos filtros de varejo,
-//   função isClienteAtacado em memória e trava pré-salvamento (cliente ne7ys3txxqjen4a Iracemápolis DDD 19 -> Julio Melo).
+//   função isClienteAtacado em memória e trava pré-salvamento.
 // - Atacado por DDD: Larissa Terra (11,12,13), Julio Melo (15,19), Wilson Neto (14,16,17,18).
 // - Prioridade 60–89 dias primeiro, 90+ depois.
 // - Locks de 30 minutos e expurgo automático.
 // - Rota especial Repescagem (90+ dias, todas as regiões, exceto já contatados pelo vendedor original).
 // - Base Cliente Final e Atacado Fora do Mapa segregados fora da fila.
 // - Rastreabilidade em eventos_log com filtro_origem: primario_nominal, secundario_tipo, terciario_regiao, atacado_ddd, repescagem.
+//
+// TODAS as funções auxiliares são declaradas no topo do arquivo (escopo global do módulo).
+
+function normalizarTextoNFD(str) {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .trim()
+}
+
+function limparPrefixoVendedor(vendedorStr) {
+  let v = normalizarTextoNFD(vendedorStr)
+  const prefixos = [
+    'VARE - ',
+    'VCORP - ',
+    'VAREXT - ',
+    'ATR - ',
+    'VARC - ',
+    'ADMV - ',
+    'ATF - ',
+    'ESPECIALISTE - ',
+    'ESPECIALISTA - ',
+    'EXT - ',
+    'INT - ',
+    'REP - ',
+  ]
+  for (let i = 0; i < prefixos.length; i++) {
+    const p = normalizarTextoNFD(prefixos[i])
+    if (v.startsWith(p)) {
+      v = v.slice(p.length).trim()
+      break
+    }
+  }
+  return v
+}
+
+function obterVariantesVendedor(nomeOuToken) {
+  const norm = normalizarTextoNFD(nomeOuToken)
+  const variantes = new Set()
+  if (!norm) return []
+
+  variantes.add(norm)
+
+  if (norm.includes('ALESSANDRO') || norm.includes('JAPA')) {
+    variantes.add('ALESSANDRO')
+    variantes.add('JAPA')
+  }
+  if (norm.includes('JESSICA') || norm.includes('JESSIKA')) {
+    variantes.add('JESSICA')
+    variantes.add('JESSIKA')
+  }
+  if (norm.includes('JOSE FELIPE') || norm.includes('FELIPE') || norm.includes('JOSE')) {
+    variantes.add('JOSE FELIPE')
+    variantes.add('FELIPE')
+    variantes.add('JOSE')
+  }
+  if (norm.includes('ARIANE') || norm.includes('CONSTRUCAO CIVIL') || norm.includes('CONSTRUCAO')) {
+    variantes.add('ARIANE')
+    variantes.add('CONSTRUCAO CIVIL')
+    variantes.add('CONSTRUCAO')
+  }
+  if (norm.includes('JOSIANE') || norm.includes('FRAZAO')) {
+    variantes.add('JOSIANE')
+    variantes.add('JOSIANE FRAZAO')
+    variantes.add('FRAZAO')
+  }
+  if (norm.includes('CAMILA') || norm.includes('GUIMENTI')) {
+    variantes.add('CAMILA')
+    variantes.add('CAMILA GUIMENTI')
+    variantes.add('GUIMENTI')
+  }
+
+  const partes = norm.split(/[\s,()/-]+/).filter((p) => p.length >= 3)
+  for (let i = 0; i < partes.length; i++) {
+    variantes.add(partes[i])
+    if (partes[i] === 'JAPA') variantes.add('ALESSANDRO')
+    if (partes[i] === 'ALESSANDRO') variantes.add('JAPA')
+    if (partes[i] === 'JESSIKA') variantes.add('JESSICA')
+    if (partes[i] === 'JESSICA') variantes.add('JESSIKA')
+    if (partes[i] === 'FELIPE') {
+      variantes.add('JOSE FELIPE')
+      variantes.add('JOSE')
+    }
+  }
+
+  return Array.from(variantes)
+}
+
+function matchesCarteiraVendedorTolerante(clienteRec, userName) {
+  if (!userName) return true
+  const vRaw = clienteRec.getString('vendedor') || ''
+  const tipoVendRaw = clienteRec.getString('tipo_vendedor') || ''
+  if (!vRaw && !tipoVendRaw) return false
+
+  const vLimpo = limparPrefixoVendedor(vRaw)
+  const tipoLimpo = normalizarTextoNFD(tipoVendRaw)
+  const vTextoCompleto = `${vLimpo} ${tipoLimpo}`
+
+  const userNorm = normalizarTextoNFD(userName)
+  const userVariantes = obterVariantesVendedor(userNorm)
+
+  if (vLimpo === userNorm || vLimpo.includes(userNorm) || userNorm.includes(vLimpo)) {
+    return true
+  }
+
+  for (let i = 0; i < userVariantes.length; i++) {
+    const varItem = userVariantes[i]
+    if (varItem.length < 3) continue
+
+    if (
+      vLimpo.includes(varItem) ||
+      tipoLimpo.includes(varItem) ||
+      vTextoCompleto.includes(varItem)
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function buildVendedorSqlTerms(userName) {
+  const variantes = obterVariantesVendedor(userName)
+  const tokens = []
+  for (let i = 0; i < variantes.length; i++) {
+    const v = variantes[i]
+    if (v.length >= 3 && v !== 'DOS' && v !== 'DAS' && v !== 'SILVA') {
+      tokens.push(v)
+    }
+  }
+  return tokens
+}
+
+function extrairDddCliente(clienteRec) {
+  if (!clienteRec) return ''
+  const dddGravado = clienteRec.getString('ddd_telefone')
+  if (dddGravado && dddGravado.length >= 2) return dddGravado.slice(0, 2)
+  const telRaw = (
+    clienteRec.getString('telefone') ||
+    clienteRec.getString('whatsapp') ||
+    ''
+  ).replace(/\D/g, '')
+  if (!telRaw) return ''
+  let s = telRaw
+  if (s.startsWith('0')) s = s.slice(1)
+  if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
+  return s.slice(0, 2)
+}
+
+/**
+ * Blindagem de ATACADO unificada e estrita (fonte única no backend):
+ * 1. Região cadastrada explícita: 'ATACADO'
+ * 2. Vendedor ou tipo de vendedor com prefixo ou menção de atacado (ATR-, ATACADO-, etc.)
+ * 3. DDD pertencente ao mapa de atacado (11 a 19) com canal/perfil atacado
+ */
+function isClienteAtacado(clienteRec) {
+  if (!clienteRec) return false
+
+  // 1. Região cadastrada explícita
+  const regiao = normalizarTextoNFD(clienteRec.getString('regiao'))
+  if (regiao === 'ATACADO' || regiao.includes('ATACADO')) {
+    return true
+  }
+
+  // 2. Vendedor ou tipo de vendedor com prefixo ou menção de atacado
+  const vendRaw = normalizarTextoNFD(clienteRec.getString('vendedor'))
+  const tipoVend = normalizarTextoNFD(clienteRec.getString('tipo_vendedor'))
+  const canalRaw = normalizarTextoNFD(clienteRec.getString('canal'))
+  if (
+    vendRaw.startsWith('ATR -') ||
+    vendRaw.startsWith('ATR-') ||
+    vendRaw.startsWith('ATACADO -') ||
+    vendRaw.startsWith('ATACADO-') ||
+    vendRaw.includes('ATACADO') ||
+    tipoVend === 'ATACADO' ||
+    tipoVend.includes('ATACADO') ||
+    canalRaw === 'ATACADO' ||
+    canalRaw.includes('ATACADO')
+  ) {
+    return true
+  }
+
+  // 3. DDD pertencente ao mapa de atacado (11 a 19) com canal/perfil atacado
+  const ddd = extrairDddCliente(clienteRec)
+  const dddsAtacado = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
+  if (
+    dddsAtacado.includes(ddd) &&
+    (canalRaw === 'ATACADO' ||
+      tipoVend === 'ATACADO' ||
+      vendRaw.startsWith('ATR') ||
+      vendRaw.includes('ATACADO'))
+  ) {
+    return true
+  }
+
+  return false
+}
+
+function extrairCidadeCliente(clienteRec) {
+  if (!clienteRec) return ''
+  const cidDireta = clienteRec.getString('cidade')
+  if (cidDireta && cidDireta.trim()) {
+    return normalizarTextoNFD(cidDireta)
+  }
+
+  const endRaw = clienteRec.getString('endereco') || ''
+  if (endRaw) {
+    const partesHifen = endRaw.split('-')
+    if (partesHifen.length >= 2) {
+      const antesUf = partesHifen[partesHifen.length - 2].trim()
+      const partesVirgula = antesUf.split(',')
+      const possivelCidade = partesVirgula[partesVirgula.length - 1].trim()
+      if (possivelCidade) {
+        return normalizarTextoNFD(possivelCidade)
+      }
+    }
+    const partesVirgula = endRaw.split(',')
+    if (partesVirgula.length > 1) {
+      return normalizarTextoNFD(partesVirgula[partesVirgula.length - 1])
+    }
+    return normalizarTextoNFD(endRaw)
+  }
+  return ''
+}
+
+function expurgarLocksExpiradosAtomicamente(appInstance) {
+  const now = new Date()
+  const cutoffLock = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
+  const nowIso = now.toISOString()
+
+  let liberados = 0
+  try {
+    const resBase = appInstance
+      .db()
+      .newQuery(
+        `UPDATE clientes
+         SET estado = 'na_base', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
+         WHERE (estado = 'reservado' OR estado = 'em_atendimento')
+           AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
+           AND (standby_ate IS NULL OR standby_ate = '' OR datetime(standby_ate) <= datetime({:now}))`,
+      )
+      .bind({ cutoff: cutoffLock, now: nowIso })
+      .execute()
+
+    if (resBase && typeof resBase.rowsAffected === 'function') {
+      liberados += resBase.rowsAffected()
+    }
+
+    const resStandby = appInstance
+      .db()
+      .newQuery(
+        `UPDATE clientes
+         SET estado = 'reativado', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
+         WHERE (estado = 'reservado' OR estado = 'em_atendimento')
+           AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
+           AND standby_ate IS NOT NULL AND standby_ate != '' AND datetime(standby_ate) > datetime({:now})`,
+      )
+      .bind({ cutoff: cutoffLock, now: nowIso })
+      .execute()
+
+    if (resStandby && typeof resStandby.rowsAffected === 'function') {
+      liberados += resStandby.rowsAffected()
+    }
+  } catch (err) {
+    console.log('[expurgo_locks] Erro ao executar expurgo de locks: ' + err.message)
+  }
+  return liberados
+}
+
+function extrairRegioesDeUsuario(uRec) {
+  let rList = []
+  try {
+    const slice = uRec.getStringSlice('regioes')
+    if (slice && slice.length > 0) rList = slice
+    else {
+      const raw = uRec.getString('regioes')
+      if (raw && raw.trim().startsWith('[')) rList = JSON.parse(raw)
+      else {
+        const rawGet = uRec.get('regioes')
+        if (Array.isArray(rawGet)) rList = rawGet
+      }
+    }
+  } catch (_) {}
+  if (!Array.isArray(rList)) rList = []
+  return rList.map((r) => normalizarTextoNFD(r)).filter(Boolean)
+}
+
+function classificarTipoCadeiraCliente(vendedorStr, tipoVendStr) {
+  const vNorm = normalizarTextoNFD(vendedorStr)
+  const tNorm = normalizarTextoNFD(tipoVendStr)
+  if (
+    vNorm.startsWith('VCORP') ||
+    vNorm.includes('VCORP') ||
+    tNorm === 'CORPORATIVO' ||
+    tNorm.includes('CORPORATIVO')
+  ) {
+    return 'corporativo'
+  }
+  return 'especialista_externo'
+}
+
+function jaContatadoPeloVendedorOriginal(appInstance, clienteRec) {
+  try {
+    const cId = clienteRec.id
+    const vendedorOriginal = (clienteRec.getString('vendedor') || '').trim().toUpperCase()
+    let interacoes = []
+    try {
+      interacoes = appInstance.findRecordsByFilter(
+        'interacoes',
+        `cliente = '${cId}'`,
+        '-created',
+        10,
+        0,
+      )
+    } catch (_) {
+      return false
+    }
+    if (!interacoes || interacoes.length === 0) return false
+
+    for (let i = 0; i < interacoes.length; i++) {
+      const it = interacoes[i]
+      const opId = it.getString('operador')
+      if (!opId) continue
+      try {
+        const opUser = appInstance.findRecordById('users', opId)
+        if (opUser) {
+          const opNome = (opUser.getString('name') || '').trim().toUpperCase()
+          const opEmail = (opUser.getString('email') || '').trim().toUpperCase()
+          if (vendedorOriginal) {
+            if (
+              opNome === vendedorOriginal ||
+              opNome.includes(vendedorOriginal) ||
+              vendedorOriginal.includes(opNome) ||
+              opEmail.includes(vendedorOriginal)
+            ) {
+              return true
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return false
+  } catch (_) {
+    return false
+  }
+}
 
 routerAdd(
   'POST',
   '/backend/v1/queue/reserve-next',
   (e) => {
-    function normalizarTextoNFD(str) {
-      return String(str || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .trim()
-    }
-
-    function limparPrefixoVendedor(vendedorStr) {
-      let v = normalizarTextoNFD(vendedorStr)
-      const prefixos = [
-        'VARE - ',
-        'VCORP - ',
-        'VAREXT - ',
-        'ATR - ',
-        'VARC - ',
-        'ADMV - ',
-        'ATF - ',
-        'ESPECIALISTE - ',
-        'ESPECIALISTA - ',
-        'EXT - ',
-        'INT - ',
-        'REP - ',
-      ]
-      for (let i = 0; i < prefixos.length; i++) {
-        const p = normalizarTextoNFD(prefixos[i])
-        if (v.startsWith(p)) {
-          v = v.slice(p.length).trim()
-          break
-        }
-      }
-      return v
-    }
-
-    function obterVariantesVendedor(nomeOuToken) {
-      const norm = normalizarTextoNFD(nomeOuToken)
-      const variantes = new Set()
-      if (!norm) return []
-
-      variantes.add(norm)
-
-      if (norm.includes('ALESSANDRO') || norm.includes('JAPA')) {
-        variantes.add('ALESSANDRO')
-        variantes.add('JAPA')
-      }
-      if (norm.includes('JESSICA') || norm.includes('JESSIKA')) {
-        variantes.add('JESSICA')
-        variantes.add('JESSIKA')
-      }
-      if (norm.includes('JOSE FELIPE') || norm.includes('FELIPE') || norm.includes('JOSE')) {
-        variantes.add('JOSE FELIPE')
-        variantes.add('FELIPE')
-        variantes.add('JOSE')
-      }
-      if (
-        norm.includes('ARIANE') ||
-        norm.includes('CONSTRUCAO CIVIL') ||
-        norm.includes('CONSTRUCAO')
-      ) {
-        variantes.add('ARIANE')
-        variantes.add('CONSTRUCAO CIVIL')
-        variantes.add('CONSTRUCAO')
-      }
-      if (norm.includes('JOSIANE') || norm.includes('FRAZAO')) {
-        variantes.add('JOSIANE')
-        variantes.add('JOSIANE FRAZAO')
-        variantes.add('FRAZAO')
-      }
-      if (norm.includes('CAMILA') || norm.includes('GUIMENTI')) {
-        variantes.add('CAMILA')
-        variantes.add('CAMILA GUIMENTI')
-        variantes.add('GUIMENTI')
-      }
-
-      const partes = norm.split(/[\s,()/-]+/).filter((p) => p.length >= 3)
-      for (let i = 0; i < partes.length; i++) {
-        variantes.add(partes[i])
-        if (partes[i] === 'JAPA') variantes.add('ALESSANDRO')
-        if (partes[i] === 'ALESSANDRO') variantes.add('JAPA')
-        if (partes[i] === 'JESSIKA') variantes.add('JESSICA')
-        if (partes[i] === 'JESSICA') variantes.add('JESSIKA')
-        if (partes[i] === 'FELIPE') {
-          variantes.add('JOSE FELIPE')
-          variantes.add('JOSE')
-        }
-      }
-
-      return Array.from(variantes)
-    }
-
-    function matchesCarteiraVendedorTolerante(clienteRec, userName) {
-      if (!userName) return true
-      const vRaw = clienteRec.getString('vendedor') || ''
-      const tipoVendRaw = clienteRec.getString('tipo_vendedor') || ''
-      if (!vRaw && !tipoVendRaw) return false
-
-      const vLimpo = limparPrefixoVendedor(vRaw)
-      const tipoLimpo = normalizarTextoNFD(tipoVendRaw)
-      const vTextoCompleto = `${vLimpo} ${tipoLimpo}`
-
-      const userNorm = normalizarTextoNFD(userName)
-      const userVariantes = obterVariantesVendedor(userNorm)
-
-      if (vLimpo === userNorm || vLimpo.includes(userNorm) || userNorm.includes(vLimpo)) {
-        return true
-      }
-
-      for (let i = 0; i < userVariantes.length; i++) {
-        const varItem = userVariantes[i]
-        if (varItem.length < 3) continue
-
-        if (
-          vLimpo.includes(varItem) ||
-          tipoLimpo.includes(varItem) ||
-          vTextoCompleto.includes(varItem)
-        ) {
-          return true
-        }
-      }
-
-      return false
-    }
-
-    function buildVendedorSqlTerms(userName) {
-      const variantes = obterVariantesVendedor(userName)
-      const tokens = []
-      for (let i = 0; i < variantes.length; i++) {
-        const v = variantes[i]
-        if (v.length >= 3 && v !== 'DOS' && v !== 'DAS' && v !== 'SILVA') {
-          tokens.push(v)
-        }
-      }
-      return tokens
-    }
-
-    function extrairDddCliente(clienteRec) {
-      if (!clienteRec) return ''
-      const dddGravado = clienteRec.getString('ddd_telefone')
-      if (dddGravado && dddGravado.length >= 2) return dddGravado.slice(0, 2)
-      const telRaw = (
-        clienteRec.getString('telefone') ||
-        clienteRec.getString('whatsapp') ||
-        ''
-      ).replace(/\D/g, '')
-      if (!telRaw) return ''
-      let s = telRaw
-      if (s.startsWith('0')) s = s.slice(1)
-      if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
-      return s.slice(0, 2)
-    }
-
-    /**
-     * Blindagem de ATACADO unificada e estrita (fonte única no backend):
-     * 1. Região cadastrada explícita: 'ATACADO'
-     * 2. Vendedor ou tipo de vendedor com prefixo ou menção de atacado (ATR-, ATACADO-, etc.)
-     * 3. DDD pertencente ao mapa de atacado (11 a 19) com canal/perfil atacado
-     */
-    function isClienteAtacado(clienteRec) {
-      if (!clienteRec) return false
-
-      // 1. Região cadastrada explícita
-      const regiao = normalizarTextoNFD(clienteRec.getString('regiao'))
-      if (regiao === 'ATACADO' || regiao.includes('ATACADO')) {
-        return true
-      }
-
-      // 2. Vendedor ou tipo de vendedor com prefixo ou menção de atacado
-      const vendRaw = normalizarTextoNFD(clienteRec.getString('vendedor'))
-      const tipoVend = normalizarTextoNFD(clienteRec.getString('tipo_vendedor'))
-      const canalRaw = normalizarTextoNFD(clienteRec.getString('canal'))
-      if (
-        vendRaw.startsWith('ATR -') ||
-        vendRaw.startsWith('ATR-') ||
-        vendRaw.startsWith('ATACADO -') ||
-        vendRaw.startsWith('ATACADO-') ||
-        vendRaw.includes('ATACADO') ||
-        tipoVend === 'ATACADO' ||
-        tipoVend.includes('ATACADO') ||
-        canalRaw === 'ATACADO' ||
-        canalRaw.includes('ATACADO')
-      ) {
-        return true
-      }
-
-      // 3. DDD pertencente ao mapa de atacado (11 a 19) com canal/perfil atacado
-      const ddd = extrairDddCliente(clienteRec)
-      const dddsAtacado = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
-      if (
-        dddsAtacado.includes(ddd) &&
-        (canalRaw === 'ATACADO' ||
-          tipoVend === 'ATACADO' ||
-          vendRaw.startsWith('ATR') ||
-          vendRaw.includes('ATACADO'))
-      ) {
-        return true
-      }
-
-      return false
-    }
-
-    function extrairCidadeCliente(clienteRec) {
-      // 1. Campo explícito se existir
-      const cidDireta = clienteRec.getString('cidade')
-      if (cidDireta && cidDireta.trim()) {
-        return normalizarTextoNFD(cidDireta)
-      }
-
-      // 2. Campo endereco: normalmente "Cidade - UF" ou "Rua..., Bairro, Cidade - UF"
-      const endRaw = clienteRec.getString('endereco') || ''
-      if (endRaw) {
-        // Se contiver hífen: ex "BRAGANCA PAULISTA - SP" ou "... - CIDADE - UF"
-        const partesHifen = endRaw.split('-')
-        if (partesHifen.length >= 2) {
-          const antesUf = partesHifen[partesHifen.length - 2].trim()
-          // Se tiver vírgula antes da cidade, pega após a última vírgula
-          const partesVirgula = antesUf.split(',')
-          const possivelCidade = partesVirgula[partesVirgula.length - 1].trim()
-          if (possivelCidade) {
-            return normalizarTextoNFD(possivelCidade)
-          }
-        }
-        // Se não tiver hífen, tenta split por vírgula
-        const partesVirgula = endRaw.split(',')
-        if (partesVirgula.length > 1) {
-          return normalizarTextoNFD(partesVirgula[partesVirgula.length - 1])
-        }
-        return normalizarTextoNFD(endRaw)
-      }
-      return ''
-    }
-
-    function expurgarLocksExpiradosAtomicamente(appInstance) {
-      const now = new Date()
-      const cutoffLock = new Date(now.getTime() - 30 * 60 * 1000).toISOString()
-      const nowIso = now.toISOString()
-
-      let liberados = 0
-      try {
-        const resBase = appInstance
-          .db()
-          .newQuery(
-            `UPDATE clientes
-             SET estado = 'na_base', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
-             WHERE (estado = 'reservado' OR estado = 'em_atendimento')
-               AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
-               AND (standby_ate IS NULL OR standby_ate = '' OR datetime(standby_ate) <= datetime({:now}))`,
-          )
-          .bind({ cutoff: cutoffLock, now: nowIso })
-          .execute()
-
-        if (resBase && typeof resBase.rowsAffected === 'function') {
-          liberados += resBase.rowsAffected()
-        }
-
-        const resStandby = appInstance
-          .db()
-          .newQuery(
-            `UPDATE clientes
-             SET estado = 'reativado', operador = '', lock_timestamp = '1970-01-01 00:00:00.000Z'
-             WHERE (estado = 'reservado' OR estado = 'em_atendimento')
-               AND (lock_timestamp IS NULL OR lock_timestamp = '' OR lock_timestamp <= '1970-01-01 00:00:00.000Z' OR lock_timestamp < {:cutoff})
-               AND standby_ate IS NOT NULL AND standby_ate != '' AND datetime(standby_ate) > datetime({:now})`,
-          )
-          .bind({ cutoff: cutoffLock, now: nowIso })
-          .execute()
-
-        if (resStandby && typeof resStandby.rowsAffected === 'function') {
-          liberados += resStandby.rowsAffected()
-        }
-      } catch (err) {
-        console.log('[expurgo_locks] Erro ao executar expurgo de locks: ' + err.message)
-      }
-      return liberados
-    }
-
     try {
       const authRecord = e.auth
       if (!authRecord || !authRecord.id) {
@@ -627,24 +699,6 @@ routerAdd(
         console.log('[queue_reserve] Erro ao carregar users: ' + uErr.message)
       }
 
-      function extrairRegioesDeUsuario(uRec) {
-        let rList = []
-        try {
-          const slice = uRec.getStringSlice('regioes')
-          if (slice && slice.length > 0) rList = slice
-          else {
-            const raw = uRec.getString('regioes')
-            if (raw && raw.trim().startsWith('[')) rList = JSON.parse(raw)
-            else {
-              const rawGet = uRec.get('regioes')
-              if (Array.isArray(rawGet)) rList = rawGet
-            }
-          }
-        } catch (_) {}
-        if (!Array.isArray(rList)) rList = []
-        return rList.map((r) => normalizarTextoNFD(r)).filter(Boolean)
-      }
-
       const listaAtivos = []
       const listaInativos = []
 
@@ -720,22 +774,6 @@ routerAdd(
         if (cn) {
           mapaCidadeParaRota[cn] = normalizarTextoNFD(cRec.getString('rota'))
         }
-      }
-
-      // Função de classificação do tipo do cliente a partir do prefixo do vendedor e tipo_vendedor
-      // Retorna 'corporativo' | 'especialista_externo'
-      const classificarTipoCadeiraCliente = (vendedorStr, tipoVendStr) => {
-        const vNorm = normalizarTextoNFD(vendedorStr)
-        const tNorm = normalizarTextoNFD(tipoVendStr)
-        if (
-          vNorm.startsWith('VCORP') ||
-          vNorm.includes('VCORP') ||
-          tNorm === 'CORPORATIVO' ||
-          tNorm.includes('CORPORATIVO')
-        ) {
-          return 'corporativo'
-        }
-        return 'especialista_externo'
       }
 
       // Função auxiliar: resolve a rota de um cliente por cidade do cadastro ou regiao
@@ -963,56 +1001,8 @@ routerAdd(
         }
       }
 
-      // Função defensiva de checagem para Repescagem
-      const jaContatadoPeloVendedorOriginal = (clienteRec) => {
-        try {
-          const cId = clienteRec.id
-          const vendedorOriginal = (clienteRec.getString('vendedor') || '').trim().toUpperCase()
-
-          let interacoes = []
-          try {
-            interacoes = $app.findRecordsByFilter(
-              'interacoes',
-              `cliente = '${cId}'`,
-              '-created',
-              10,
-              0,
-            )
-          } catch (_) {
-            return false
-          }
-
-          if (!interacoes || interacoes.length === 0) return false
-
-          for (let i = 0; i < interacoes.length; i++) {
-            const it = interacoes[i]
-            const opId = it.getString('operador')
-            if (!opId) continue
-
-            try {
-              const opUser = $app.findRecordById('users', opId)
-              if (opUser) {
-                const opNome = (opUser.getString('name') || '').trim().toUpperCase()
-                const opEmail = (opUser.getString('email') || '').trim().toUpperCase()
-
-                if (vendedorOriginal) {
-                  if (
-                    opNome === vendedorOriginal ||
-                    opNome.includes(vendedorOriginal) ||
-                    vendedorOriginal.includes(opNome) ||
-                    opEmail.includes(vendedorOriginal)
-                  ) {
-                    return true
-                  }
-                }
-              }
-            } catch (_) {}
-          }
-          return false
-        } catch (_) {
-          return false
-        }
-      }
+      // Helper defensivo de checagem para Repescagem
+      const checarJaContatado = (clienteRec) => jaContatadoPeloVendedorOriginal($app, clienteRec)
 
       const isCandidatoRepetidoRecente = (c) => {
         if (!c) return true
@@ -1074,19 +1064,35 @@ routerAdd(
       }
 
       // Ordenação determinística EM MEMÓRIA do topo da fila:
-      // score desc -> dias_sem_faturar desc -> codigo asc (desempate estável).
-      // Garante que a puxada sirva sempre o cliente prioritário do TOPO, mesmo que o
-      // sort do banco venha em ordem inesperada (ex.: scores zerados/iguais na base
-      // importada ou ordenação léxica do campo score).
+      // REGRA MESTRA DO PROJETO GUERRA:
+      // Prioridade 1: Faixa 60–89 dias PRIMEIRO (menor tempo de inatividade = mais quente para reativar).
+      // Prioridade 2: Faixa 90+ dias DEPOIS.
+      // Dentro de cada grupo de prioridade: score desc -> dias_sem_faturar desc -> codigo asc.
       const ordenarPoolPorPrioridade = (pool) => {
         if (!pool || pool.length < 2) return pool
         return pool.slice().sort((a, b) => {
+          // Checa faixa de prioridade de 60-89 vs 90+
+          const fA = a.getString('faixa')
+          const dA = a.getInt('dias_sem_faturar')
+          const eh60A = fA === '60_89' || (dA >= 60 && dA <= 89)
+
+          const fB = b.getString('faixa')
+          const dB = b.getInt('dias_sem_faturar')
+          const eh60B = fB === '60_89' || (dB >= 60 && dB <= 89)
+
+          // 60-89 tem prioridade sobre 90+
+          if (eh60A && !eh60B) return -1
+          if (!eh60A && eh60B) return 1
+
+          // Mesmo grupo de prioridade: score desc
           const scoreA = a.getInt('score')
           const scoreB = b.getInt('score')
           if (scoreB !== scoreA) return scoreB - scoreA
-          const diasA = a.getInt('dias_sem_faturar')
-          const diasB = b.getInt('dias_sem_faturar')
-          if (diasB !== diasA) return diasB - diasA
+
+          // Desempate 1: dias_sem_faturar desc (mais antigo dentro da faixa)
+          if (dB !== dA) return dB - dA
+
+          // Desempate 2: codigo asc
           const codA = a.getString('codigo') || ''
           const codB = b.getString('codigo') || ''
           return codA < codB ? -1 : codA > codB ? 1 : 0
@@ -1171,12 +1177,9 @@ routerAdd(
                 .slice()
                 .sort((a, b) => a.getInt('dias_sem_faturar') - b.getInt('dias_sem_faturar'))[0]
             } else {
-              const faixa60 = poolOperadorOrdenado.filter((c) => {
-                const f = c.getString('faixa')
-                const d = c.getInt('dias_sem_faturar')
-                return f === '60_89' || (d >= 60 && d <= 89)
-              })
-              cand = faixa60.length > 0 ? faixa60[0] : poolOperadorOrdenado[0]
+              // Prioridade padrão: poolOperadorOrdenado já tem 60-89 primeiro, depois 90+,
+              // ordenado por score desc -> dias_sem_faturar desc -> codigo asc.
+              cand = poolOperadorOrdenado[0]
             }
             filtroOrigemAtendido = 'atacado_ddd'
           }
@@ -1187,36 +1190,48 @@ routerAdd(
 
       if (!cand && isRepescagem) {
         const nowIsoQueue = now.toISOString()
-        let repescagemFilter = `estado = 'na_base' && regiao != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (faixa = '90_plus' || dias_sem_faturar >= 90) && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
+        // Blindagem no banco de dados e em memória:
+        // Exclui clientes marcados com regiao='ATACADO', tipo_vendedor='ATACADO' e vendedor com prefixo ATR
+        // para que um grande volume de clientes de atacado (ex.: centenas de Sem Região / ATR) não
+        // lote o buffer dos 500 primeiros registros e abafe os clientes legítimos de varejo da Repescagem!
+        let repescagemFilter = `estado = 'na_base' && regiao != 'ATACADO' && tipo_vendedor != 'ATACADO' && vendedor !~ 'ATR' && vendedor !~ 'ATACADO' && canal != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (faixa = '90_plus' || dias_sem_faturar >= 90) && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
         if (filtroSegmento && filtroSegmento !== 'todos') {
           repescagemFilter += ` && segmento = '${filtroSegmento}'`
         }
 
         try {
+          // Busca pool expandido (até 1000) ordenado por score desc
           const poolRepescagem = $app.findRecordsByFilter(
             'clientes',
             repescagemFilter,
             '-score',
-            500,
+            1000,
             0,
           )
           const poolNaoRepetido = poolRepescagem.filter((c) => !isCandidatoRepetidoRecente(c))
           const poolOrdenadoRepescagem = ordenarPoolPorPrioridade(poolNaoRepetido)
+          let puladosPorAtacado = 0
+          let puladosPorContatoPrevio = 0
+
           for (let m = 0; m < poolOrdenadoRepescagem.length; m++) {
             const item = poolOrdenadoRepescagem[m]
-            // Blindagem Atacado: operador sem região ATACADO nunca recebe cliente de atacado na repescagem
+            // Blindagem Atacado estrita em memória: operador sem região ATACADO nunca recebe cliente de atacado na repescagem
             if (!isAtacado && isClienteAtacado(item)) {
-              console.log(
-                `[queue_reserve] Repescagem: candidato atacado ignorado para operador ${userName}: ${item.id} (${item.getString('codigo')})`,
-              )
+              puladosPorAtacado++
               continue
             }
-            if (!jaContatadoPeloVendedorOriginal(item)) {
-              cand = item
-              filtroOrigemAtendido = 'repescagem'
-              break
+            if (checarJaContatado(item)) {
+              puladosPorContatoPrevio++
+              continue
             }
+            cand = item
+            filtroOrigemAtendido = 'repescagem'
+            break
           }
+
+          console.log(
+            `[queue_reserve] Repescagem avaliada para ${userName}: ${poolRepescagem.length} registros no filtro SQL, ${puladosPorAtacado} pulados por atacado, ${puladosPorContatoPrevio} pulados por contato prévio, candidato encontrado: ${cand ? cand.getString('codigo') : 'NENHUM'}`,
+          )
         } catch (repErr) {
           const repMsg = repErr && repErr.message ? repErr.message : String(repErr)
           console.error('[queue_reserve] Erro interno na fila da Repescagem: ' + repMsg)
@@ -1256,28 +1271,9 @@ routerAdd(
               .slice()
               .sort((a, b) => a.getInt('dias_sem_faturar') - b.getInt('dias_sem_faturar'))[0]
           }
-          if (ordenacaoEscolhida === 'antigos' || ordenacaoEscolhida === 'novos') {
-            return poolOrdenado[0]
-          }
-          const faixa60 = poolOrdenado.filter((c) => {
-            const f = c.getString('faixa')
-            const d = c.getInt('dias_sem_faturar')
-            return f === '60_89' || (d >= 60 && d <= 89)
-          })
-          if (faixa60.length > 0) return faixa60[0]
-          const faixa90 = poolOrdenado.filter((c) => {
-            const f = c.getString('faixa')
-            const d = c.getInt('dias_sem_faturar')
-            return f === '90_plus' || d >= 90
-          })
-          if (faixa90.length > 0) {
-            faixa90.sort(
-              (a, b) =>
-                b.getInt('dias_sem_faturar') - a.getInt('dias_sem_faturar') ||
-                b.getInt('score') - a.getInt('score'),
-            )
-            return faixa90[0]
-          }
+          // Prioridade padrão: poolOrdenado já prioriza 60-89 primeiro, depois 90+,
+          // e dentro de cada grupo ordena por score desc -> dias_sem_faturar desc -> codigo asc.
+          // Retornar poolOrdenado[0] entrega rigorosamente o TOPO da fila.
           return poolOrdenado[0]
         }
 
