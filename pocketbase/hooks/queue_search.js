@@ -175,6 +175,39 @@ routerAdd(
       return false
     }
 
+    function matchesCarteiraVendedorTolerante(clienteRec, userName) {
+      if (!userName) return true
+      const vRaw = clienteRec.getString('vendedor') || ''
+      const tipoVendRaw = clienteRec.getString('tipo_vendedor') || ''
+      if (!vRaw && !tipoVendRaw) return false
+
+      const vLimpo = limparPrefixoVendedor(vRaw)
+      const tipoLimpo = normalizarTextoNFD(tipoVendRaw)
+      const vTextoCompleto = `${vLimpo} ${tipoLimpo}`
+
+      const userNorm = normalizarTextoNFD(userName)
+      const userVariantes = obterVariantesVendedor(userNorm)
+
+      if (vLimpo === userNorm || vLimpo.includes(userNorm) || userNorm.includes(vLimpo)) {
+        return true
+      }
+
+      for (let i = 0; i < userVariantes.length; i++) {
+        const varItem = userVariantes[i]
+        if (varItem.length < 3) continue
+
+        if (
+          vLimpo.includes(varItem) ||
+          tipoLimpo.includes(varItem) ||
+          vTextoCompleto.includes(varItem)
+        ) {
+          return true
+        }
+      }
+
+      return false
+    }
+
     function isClienteAtacado(clienteRec) {
       if (!clienteRec) return false
 
@@ -213,39 +246,6 @@ routerAdd(
           vendRaw.includes('ATACADO'))
       ) {
         return true
-      }
-
-      return false
-    }
-
-    function matchesCarteiraVendedorTolerante(clienteRec, userName) {
-      if (!userName) return true
-      const vRaw = clienteRec.getString('vendedor') || ''
-      const tipoVendRaw = clienteRec.getString('tipo_vendedor') || ''
-      if (!vRaw && !tipoVendRaw) return false
-
-      const vLimpo = limparPrefixoVendedor(vRaw)
-      const tipoLimpo = normalizarTextoNFD(tipoVendRaw)
-      const vTextoCompleto = `${vLimpo} ${tipoLimpo}`
-
-      const userNorm = normalizarTextoNFD(userName)
-      const userVariantes = obterVariantesVendedor(userNorm)
-
-      if (vLimpo === userNorm || vLimpo.includes(userNorm) || userNorm.includes(vLimpo)) {
-        return true
-      }
-
-      for (let i = 0; i < userVariantes.length; i++) {
-        const varItem = userVariantes[i]
-        if (varItem.length < 3) continue
-
-        if (
-          vLimpo.includes(varItem) ||
-          tipoLimpo.includes(varItem) ||
-          vTextoCompleto.includes(varItem)
-        ) {
-          return true
-        }
       }
 
       return false
