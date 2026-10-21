@@ -35,11 +35,6 @@ routerAdd(
   'POST',
   '/backend/v1/queue/reserve-next',
   (e) => {
-    var isClienteAtacado = globalThis.isClienteAtacado
-    if (typeof isClienteAtacado !== 'function') {
-      throw new Error('[atacado_guard] módulo não carregado')
-    }
-
     function normalizarTextoNFD(str) {
       return String(str || '')
         .normalize('NFD')
@@ -176,6 +171,7 @@ routerAdd(
     }
 
     function extrairDddCliente(clienteRec) {
+      if (!clienteRec) return ''
       const dddGravado = clienteRec.getString('ddd_telefone')
       if (dddGravado && dddGravado.length >= 2) return dddGravado.slice(0, 2)
       const telRaw = (
@@ -188,6 +184,55 @@ routerAdd(
       if (s.startsWith('0')) s = s.slice(1)
       if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
       return s.slice(0, 2)
+    }
+
+    /**
+     * Blindagem de ATACADO unificada e estrita (fonte única no backend):
+     * 1. Região cadastrada explícita: 'ATACADO'
+     * 2. Vendedor ou tipo de vendedor com prefixo ou menção de atacado (ATR-, ATACADO-, etc.)
+     * 3. DDD pertencente ao mapa de atacado (11 a 19) com canal/perfil atacado
+     */
+    function isClienteAtacado(clienteRec) {
+      if (!clienteRec) return false
+
+      // 1. Região cadastrada explícita
+      const regiao = normalizarTextoNFD(clienteRec.getString('regiao'))
+      if (regiao === 'ATACADO' || regiao.includes('ATACADO')) {
+        return true
+      }
+
+      // 2. Vendedor ou tipo de vendedor com prefixo ou menção de atacado
+      const vendRaw = normalizarTextoNFD(clienteRec.getString('vendedor'))
+      const tipoVend = normalizarTextoNFD(clienteRec.getString('tipo_vendedor'))
+      const canalRaw = normalizarTextoNFD(clienteRec.getString('canal'))
+      if (
+        vendRaw.startsWith('ATR -') ||
+        vendRaw.startsWith('ATR-') ||
+        vendRaw.startsWith('ATACADO -') ||
+        vendRaw.startsWith('ATACADO-') ||
+        vendRaw.includes('ATACADO') ||
+        tipoVend === 'ATACADO' ||
+        tipoVend.includes('ATACADO') ||
+        canalRaw === 'ATACADO' ||
+        canalRaw.includes('ATACADO')
+      ) {
+        return true
+      }
+
+      // 3. DDD pertencente ao mapa de atacado (11 a 19) com canal/perfil atacado
+      const ddd = extrairDddCliente(clienteRec)
+      const dddsAtacado = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
+      if (
+        dddsAtacado.includes(ddd) &&
+        (canalRaw === 'ATACADO' ||
+          tipoVend === 'ATACADO' ||
+          vendRaw.startsWith('ATR') ||
+          vendRaw.includes('ATACADO'))
+      ) {
+        return true
+      }
+
+      return false
     }
 
     function extrairCidadeCliente(clienteRec) {

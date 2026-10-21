@@ -10,11 +10,6 @@ routerAdd(
   'POST',
   '/backend/v1/queue/search-carteira',
   (e) => {
-    var isClienteAtacado = globalThis.isClienteAtacado
-    if (typeof isClienteAtacado !== 'function') {
-      throw new Error('[atacado_guard] módulo não carregado')
-    }
-
     function normalizarTextoNFD(str) {
       return String(str || '')
         .normalize('NFD')
@@ -171,6 +166,7 @@ routerAdd(
     }
 
     function extrairDddCliente(clienteRec) {
+      if (!clienteRec) return ''
       const dddGravado = clienteRec.getString('ddd_telefone')
       if (dddGravado && dddGravado.length >= 2) return dddGravado.slice(0, 2)
       const telRaw = (
@@ -183,6 +179,45 @@ routerAdd(
       if (s.startsWith('0')) s = s.slice(1)
       if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
       return s.slice(0, 2)
+    }
+
+    /**
+     * Blindagem de ATACADO unificada e estrita (fonte única):
+     */
+    function isClienteAtacado(clienteRec) {
+      if (!clienteRec) return false
+      const regiao = normalizarTextoNFD(clienteRec.getString('regiao'))
+      if (regiao === 'ATACADO' || regiao.includes('ATACADO')) {
+        return true
+      }
+      const vendRaw = normalizarTextoNFD(clienteRec.getString('vendedor'))
+      const tipoVend = normalizarTextoNFD(clienteRec.getString('tipo_vendedor'))
+      const canalRaw = normalizarTextoNFD(clienteRec.getString('canal'))
+      if (
+        vendRaw.startsWith('ATR -') ||
+        vendRaw.startsWith('ATR-') ||
+        vendRaw.startsWith('ATACADO -') ||
+        vendRaw.startsWith('ATACADO-') ||
+        vendRaw.includes('ATACADO') ||
+        tipoVend === 'ATACADO' ||
+        tipoVend.includes('ATACADO') ||
+        canalRaw === 'ATACADO' ||
+        canalRaw.includes('ATACADO')
+      ) {
+        return true
+      }
+      const ddd = extrairDddCliente(clienteRec)
+      const dddsAtacado = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
+      if (
+        dddsAtacado.includes(ddd) &&
+        (canalRaw === 'ATACADO' ||
+          tipoVend === 'ATACADO' ||
+          vendRaw.startsWith('ATR') ||
+          vendRaw.includes('ATACADO'))
+      ) {
+        return true
+      }
+      return false
     }
 
     function extrairCidadeCliente(clienteRec) {
@@ -786,11 +821,6 @@ routerAdd(
   'POST',
   '/backend/v1/queue/reserve-specific',
   (e) => {
-    var isClienteAtacado = globalThis.isClienteAtacado
-    if (typeof isClienteAtacado !== 'function') {
-      throw new Error('[atacado_guard] módulo não carregado')
-    }
-
     function normalizarTextoNFD(str) {
       return String(str || '')
         .normalize('NFD')
@@ -900,6 +930,7 @@ routerAdd(
     }
 
     function extrairDddCliente(clienteRec) {
+      if (!clienteRec) return ''
       const dddGravado = clienteRec.getString('ddd_telefone')
       if (dddGravado && dddGravado.length >= 2) return dddGravado.slice(0, 2)
       const telRaw = (
@@ -912,6 +943,45 @@ routerAdd(
       if (s.startsWith('0')) s = s.slice(1)
       if (s.startsWith('55') && s.length >= 12) s = s.slice(2)
       return s.slice(0, 2)
+    }
+
+    /**
+     * Blindagem de ATACADO unificada e estrita (fonte única):
+     */
+    function isClienteAtacado(clienteRec) {
+      if (!clienteRec) return false
+      const regiao = normalizarTextoNFD(clienteRec.getString('regiao'))
+      if (regiao === 'ATACADO' || regiao.includes('ATACADO')) {
+        return true
+      }
+      const vendRaw = normalizarTextoNFD(clienteRec.getString('vendedor'))
+      const tipoVend = normalizarTextoNFD(clienteRec.getString('tipo_vendedor'))
+      const canalRaw = normalizarTextoNFD(clienteRec.getString('canal'))
+      if (
+        vendRaw.startsWith('ATR -') ||
+        vendRaw.startsWith('ATR-') ||
+        vendRaw.startsWith('ATACADO -') ||
+        vendRaw.startsWith('ATACADO-') ||
+        vendRaw.includes('ATACADO') ||
+        tipoVend === 'ATACADO' ||
+        tipoVend.includes('ATACADO') ||
+        canalRaw === 'ATACADO' ||
+        canalRaw.includes('ATACADO')
+      ) {
+        return true
+      }
+      const ddd = extrairDddCliente(clienteRec)
+      const dddsAtacado = ['11', '12', '13', '14', '15', '16', '17', '18', '19']
+      if (
+        dddsAtacado.includes(ddd) &&
+        (canalRaw === 'ATACADO' ||
+          tipoVend === 'ATACADO' ||
+          vendRaw.startsWith('ATR') ||
+          vendRaw.includes('ATACADO'))
+      ) {
+        return true
+      }
+      return false
     }
 
     function expurgarLocksExpiradosAtomicamente(appInstance) {

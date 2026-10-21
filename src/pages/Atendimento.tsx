@@ -434,8 +434,16 @@ export default function AtendimentoPage() {
     } catch (err: unknown) {
       const rawMsg = err instanceof Error ? err.message : String(err)
       const isServer500 =
-        rawMsg.includes('500') || rawMsg.toLowerCase().includes('internal server error')
+        rawMsg.includes('500') ||
+        rawMsg.toLowerCase().includes('internal server error') ||
+        rawMsg.includes('Something went wrong')
       const isAuthError = rawMsg.toLowerCase().includes('autentica') || rawMsg.includes('401')
+
+      let desc = rawMsg
+      if (desc === 'Something went wrong while processing your request.') {
+        desc =
+          'Ocorreu uma instabilidade no servidor ao processar sua solicitação. Por favor, tente novamente em instantes.'
+      }
 
       toast({
         variant: 'destructive',
@@ -447,8 +455,10 @@ export default function AtendimentoPage() {
         description: isAuthError
           ? 'Sua sessão expirou. Por favor, recarregue a página ou faça login novamente.'
           : isServer500
-            ? 'Ocorreu uma instabilidade no servidor ao reservar o cliente. O erro foi reportado; por favor, tente novamente em instantes.'
-            : rawMsg || 'Não foi possível reservar um cliente neste momento.',
+            ? desc && !desc.includes('500') && !desc.toLowerCase().includes('internal server')
+              ? desc
+              : 'Ocorreu uma instabilidade no servidor ao reservar o cliente. O erro foi reportado; por favor, tente novamente em instantes.'
+            : desc || 'Não foi possível reservar um cliente neste momento.',
       })
     } finally {
       setReservandoNovo(false)

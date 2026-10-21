@@ -1,6 +1,6 @@
 {
-  "version": "0.0.159",
-  "buildTime": "2026-10-21T17:30:00.000Z",
-  "buildId": "v0.0.159",
-  "mensagem": "v0.0.159: Eliminação definitiva do erro isClienteAtacado is not defined com importação compartilhada de atacado_guard.js em todos os handlers e proteção dos catches."
+  "version": "0.0.161",
+  "buildTime": "2026-10-21T18:00:00.000Z",
+  "buildId": "v0.0.161",
+  "mensagem": "v0.0.161: Correção do erro 500 na reserva da fila e busca de carteira, restauração da função autocontida isClienteAtacado nos handlers sem dependência de atacado_guard.js, blindagem estrita do atacado e mensagens em português no frontend."
 }

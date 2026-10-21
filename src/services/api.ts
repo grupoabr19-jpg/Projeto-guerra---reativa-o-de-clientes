@@ -426,7 +426,12 @@ export async function reserveNextQueueClient(options?: {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.message || 'Falha ao reservar cliente na fila')
+    let msg = err.error || err.message || 'Falha ao reservar cliente na fila'
+    if (msg === 'Something went wrong while processing your request.') {
+      msg =
+        'Instabilidade temporária no servidor ao processar a reserva. Tente novamente em instantes.'
+    }
+    throw new Error(msg)
   }
   return res.json() as Promise<{
     cliente: Cliente | null
@@ -521,9 +526,12 @@ export async function reserveSpecificQueueClient(clienteId: string): Promise<{
   )
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}))
-    const error = new Error(
-      errData.error || errData.message || 'Falha ao reservar cliente',
-    ) as ReserveSpecificError
+    let msg = errData.error || errData.message || 'Falha ao reservar cliente'
+    if (msg === 'Something went wrong while processing your request.') {
+      msg =
+        'Instabilidade temporária no servidor ao processar a reserva. Tente novamente em instantes.'
+    }
+    const error = new Error(msg) as ReserveSpecificError
     if (errData.is_standby) {
       error.isStandby = true
       error.standbyAte = errData.standby_ate
