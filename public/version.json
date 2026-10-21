@@ -1,6 +1,6 @@
 {
-  "version": "0.0.152",
-  "buildTime": "2026-10-15T18:40:00.000Z",
-  "buildId": "v0.0.152",
-  "mensagem": "v0.0.152: Blindagem definitiva da fila do Atacado: exclusão de clientes ATACADO de filtros de varejo, trava em memória contra contaminação de operadores de varejo e saneamento de clientes da fila."
+  "version": "0.0.159",
+  "buildTime": "2026-10-21T17:30:00.000Z",
+  "buildId": "v0.0.159",
+  "mensagem": "v0.0.159: Eliminação definitiva do erro isClienteAtacado is not defined com importação compartilhada de atacado_guard.js em todos os handlers e proteção dos catches."
 }
