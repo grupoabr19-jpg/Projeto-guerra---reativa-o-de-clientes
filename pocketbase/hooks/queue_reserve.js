@@ -1073,6 +1073,26 @@ routerAdd(
         return false
       }
 
+      // Ordenação determinística EM MEMÓRIA do topo da fila:
+      // score desc -> dias_sem_faturar desc -> codigo asc (desempate estável).
+      // Garante que a puxada sirva sempre o cliente prioritário do TOPO, mesmo que o
+      // sort do banco venha em ordem inesperada (ex.: scores zerados/iguais na base
+      // importada ou ordenação léxica do campo score).
+      const ordenarPoolPorPrioridade = (pool) => {
+        if (!pool || pool.length < 2) return pool
+        return pool.slice().sort((a, b) => {
+          const scoreA = a.getInt('score')
+          const scoreB = b.getInt('score')
+          if (scoreB !== scoreA) return scoreB - scoreA
+          const diasA = a.getInt('dias_sem_faturar')
+          const diasB = b.getInt('dias_sem_faturar')
+          if (diasB !== diasA) return diasB - diasA
+          const codA = a.getString('codigo') || ''
+          const codB = b.getString('codigo') || ''
+          return codA < codB ? -1 : codA > codB ? 1 : 0
+        })
+      }
+
       let cand = null
       let filtroOrigemAtendido = '' // 'reagendado' | 'primario_nominal' | 'secundario_cidade' | 'atacado_ddd' | 'repescagem'
 
@@ -1140,16 +1160,23 @@ routerAdd(
             return atacadoDddsPermitidos.includes(ddd)
           })
 
-          if (poolOperador.length > 0) {
-            if (ordenacaoEscolhida === 'antigos' || ordenacaoEscolhida === 'novos') {
-              cand = poolOperador[0]
+          const poolOperadorOrdenado = ordenarPoolPorPrioridade(poolOperador)
+          if (poolOperadorOrdenado.length > 0) {
+            if (ordenacaoEscolhida === 'antigos') {
+              cand = poolOperadorOrdenado
+                .slice()
+                .sort((a, b) => b.getInt('dias_sem_faturar') - a.getInt('dias_sem_faturar'))[0]
+            } else if (ordenacaoEscolhida === 'novos') {
+              cand = poolOperadorOrdenado
+                .slice()
+                .sort((a, b) => a.getInt('dias_sem_faturar') - b.getInt('dias_sem_faturar'))[0]
             } else {
-              const faixa60 = poolOperador.filter((c) => {
+              const faixa60 = poolOperadorOrdenado.filter((c) => {
                 const f = c.getString('faixa')
                 const d = c.getInt('dias_sem_faturar')
                 return f === '60_89' || (d >= 60 && d <= 89)
               })
-              cand = faixa60.length > 0 ? faixa60[0] : poolOperador[0]
+              cand = faixa60.length > 0 ? faixa60[0] : poolOperadorOrdenado[0]
             }
             filtroOrigemAtendido = 'atacado_ddd'
           }
@@ -1174,8 +1201,9 @@ routerAdd(
             0,
           )
           const poolNaoRepetido = poolRepescagem.filter((c) => !isCandidatoRepetidoRecente(c))
-          for (let m = 0; m < poolNaoRepetido.length; m++) {
-            const item = poolNaoRepetido[m]
+          const poolOrdenadoRepescagem = ordenarPoolPorPrioridade(poolNaoRepetido)
+          for (let m = 0; m < poolOrdenadoRepescagem.length; m++) {
+            const item = poolOrdenadoRepescagem[m]
             // Blindagem Atacado: operador sem região ATACADO nunca recebe cliente de atacado na repescagem
             if (!isAtacado && isClienteAtacado(item)) {
               console.log(
@@ -1216,25 +1244,41 @@ routerAdd(
         // Helper de ordenação padrão (60-89 primeiro, depois 90+ mais antigos)
         const selecionarMelhorCandidato = (pool) => {
           if (!pool || pool.length === 0) return null
-          if (ordenacaoEscolhida === 'antigos' || ordenacaoEscolhida === 'novos') {
-            return pool[0]
+          // Reordena SEMPRE em memória: não confia na ordem devolvida pelo banco.
+          const poolOrdenado = ordenarPoolPorPrioridade(pool)
+          if (ordenacaoEscolhida === 'antigos') {
+            return poolOrdenado
+              .slice()
+              .sort((a, b) => b.getInt('dias_sem_faturar') - a.getInt('dias_sem_faturar'))[0]
           }
-          const faixa60 = pool.filter((c) => {
+          if (ordenacaoEscolhida === 'novos') {
+            return poolOrdenado
+              .slice()
+              .sort((a, b) => a.getInt('dias_sem_faturar') - b.getInt('dias_sem_faturar'))[0]
+          }
+          if (ordenacaoEscolhida === 'antigos' || ordenacaoEscolhida === 'novos') {
+            return poolOrdenado[0]
+          }
+          const faixa60 = poolOrdenado.filter((c) => {
             const f = c.getString('faixa')
             const d = c.getInt('dias_sem_faturar')
             return f === '60_89' || (d >= 60 && d <= 89)
           })
           if (faixa60.length > 0) return faixa60[0]
-          const faixa90 = pool.filter((c) => {
+          const faixa90 = poolOrdenado.filter((c) => {
             const f = c.getString('faixa')
             const d = c.getInt('dias_sem_faturar')
             return f === '90_plus' || d >= 90
           })
           if (faixa90.length > 0) {
-            faixa90.sort((a, b) => b.getInt('dias_sem_faturar') - a.getInt('dias_sem_faturar'))
+            faixa90.sort(
+              (a, b) =>
+                b.getInt('dias_sem_faturar') - a.getInt('dias_sem_faturar') ||
+                b.getInt('score') - a.getInt('score'),
+            )
             return faixa90[0]
           }
-          return pool[0]
+          return poolOrdenado[0]
         }
 
         // =======================================================================
