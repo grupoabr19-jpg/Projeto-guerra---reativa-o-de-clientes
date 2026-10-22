@@ -1,6 +1,6 @@
 {
-  "version": "0.0.161",
-  "buildTime": "2026-10-21T18:00:00.000Z",
-  "buildId": "v0.0.161",
-  "mensagem": "v0.0.161: Correção do erro 500 na reserva da fila e busca de carteira, restauração da função autocontida isClienteAtacado nos handlers sem dependência de atacado_guard.js, blindagem estrita do atacado e mensagens em português no frontend."
+  "version": "0.0.164",
+  "buildTime": "2026-10-22T17:00:00.000Z",
+  "buildId": "v0.0.164",
+  "mensagem": "v0.0.164: Correção crítica de eNorm não declarada no casamento de cadeira do reserve-next (/backend/v1/queue/reserve-next), liberando a puxada da fila para operadoras de varejo como Inayara."
 }

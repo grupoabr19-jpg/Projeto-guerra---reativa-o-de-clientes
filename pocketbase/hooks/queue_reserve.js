@@ -893,10 +893,10 @@ routerAdd(
               mesmaCadeira =
                 corpNorm && (uNomeNorm.includes(corpNorm) || corpNorm.includes(uNomeNorm))
             } else {
-              const espNorm = normalizarTextoNFD(cadRota.especialista)
+              const eNorm = normalizarTextoNFD(cadRota.especialista)
               const veNorm = normalizarTextoNFD(cadRota.vendedor_externo)
               mesmaCadeira =
-                (espNorm && (uNomeNorm.includes(espNorm) || eNorm.includes(uNomeNorm))) ||
+                (eNorm && (uNomeNorm.includes(eNorm) || eNorm.includes(uNomeNorm))) ||
                 (veNorm && (uNomeNorm.includes(veNorm) || veNorm.includes(uNomeNorm)))
             }
           }
