@@ -62,11 +62,41 @@ routerAdd(
         'EXT - ',
         'INT - ',
         'REP - ',
+        'VARE-',
+        'VCORP-',
+        'VAREXT-',
+        'ATR-',
+        'VARC-',
+        'ADMV-',
+        'ATF-',
+        'EXT-',
+        'INT-',
+        'REP-',
       ]
       for (let i = 0; i < prefixos.length; i++) {
         const p = normalizarTextoNFD(prefixos[i])
         if (v.startsWith(p)) {
           v = v.slice(p.length).trim()
+          break
+        }
+      }
+      const rotasSufixo = [
+        ' - BRAGANCA',
+        ' - BRAGANCA PAULISTA',
+        ' - JUNDIAI',
+        ' - VARGINHA',
+        ' - POUSO ALEGRE',
+        ' - POCOS DE CALDAS',
+        ' - POCOS CALDAS',
+        ' - ITAJUBA',
+        ' - EXTREMA',
+        ' - CAMBUI',
+        ' - ATACADO',
+      ]
+      for (let j = 0; j < rotasSufixo.length; j++) {
+        const s = normalizarTextoNFD(rotasSufixo[j])
+        if (v.endsWith(s)) {
+          v = v.slice(0, v.length - s.length).trim()
           break
         }
       }
@@ -83,15 +113,19 @@ routerAdd(
       if (norm.includes('ALESSANDRO') || norm.includes('JAPA')) {
         variantes.add('ALESSANDRO')
         variantes.add('JAPA')
+        variantes.add('ALESSANDRO FARIAS')
       }
       if (norm.includes('JESSICA') || norm.includes('JESSIKA')) {
         variantes.add('JESSICA')
         variantes.add('JESSIKA')
+        variantes.add('JESSICA.S')
+        variantes.add('JESSICA SANTOS')
       }
-      if (norm.includes('JOSE FELIPE') || norm.includes('FELIPE') || norm.includes('JOSE')) {
+      if (norm.includes('JOSE FELIPE') || norm.includes('FELIPE') || norm.includes('JOSE REIS')) {
         variantes.add('JOSE FELIPE')
         variantes.add('FELIPE')
         variantes.add('JOSE')
+        variantes.add('JOSE REIS')
       }
       if (
         norm.includes('ARIANE') ||
@@ -99,11 +133,13 @@ routerAdd(
         norm.includes('CONSTRUCAO')
       ) {
         variantes.add('ARIANE')
+        variantes.add('ARIANE SOUZA')
         variantes.add('CONSTRUCAO CIVIL')
         variantes.add('CONSTRUCAO')
       }
       if (norm.includes('JOSIANE') || norm.includes('FRAZAO')) {
         variantes.add('JOSIANE')
+        variantes.add('JOSIANE LIMA')
         variantes.add('JOSIANE FRAZAO')
         variantes.add('FRAZAO')
       }
@@ -112,21 +148,150 @@ routerAdd(
         variantes.add('CAMILA GUIMENTI')
         variantes.add('GUIMENTI')
       }
+      if (norm.includes('LEIZ')) {
+        variantes.add('LEIZ')
+        variantes.add('LEIZ TORSO')
+      }
+      if (norm.includes('HELOA') || norm.includes('HELOA LEITE')) {
+        variantes.add('HELOA')
+        variantes.add('HELOA LEITE')
+      }
+      if (norm.includes('INAYARA')) {
+        variantes.add('INAYARA')
+        variantes.add('INAYARA CUNHA')
+      }
+      if (norm.includes('DYOVANA')) {
+        variantes.add('DYOVANA')
+        variantes.add('DYOVANA SILVA')
+      }
+      if (norm.includes('BRUNA')) {
+        variantes.add('BRUNA')
+        variantes.add('BRUNA PEREIRA')
+      }
+      if (norm.includes('THAIS')) {
+        variantes.add('THAIS')
+        variantes.add('THAIS OLIVEIRA')
+      }
+      if (norm.includes('PETERSON')) {
+        variantes.add('PETERSON')
+        variantes.add('PETERSON SEIXAS')
+      }
+      if (norm.includes('VITORIA')) {
+        variantes.add('VITORIA')
+        variantes.add('VITORIA TAVARES')
+      }
+      if (norm.includes('RAFAELA') || norm.includes('RAFAELA RESENDE')) {
+        variantes.add('RAFAELA')
+        variantes.add('RAFAELA RESENDE')
+      }
+      if (norm.includes('PAOLA')) {
+        variantes.add('PAOLA')
+        variantes.add('PAOLA SANTOS')
+      }
+      if (norm.includes('MILENA')) {
+        variantes.add('MILENA')
+        variantes.add('MILENA VAZ')
+      }
+      if (norm.includes('GABRIELA')) {
+        variantes.add('GABRIELA')
+        variantes.add('GABRIELA CUNHA')
+      }
+      if (norm.includes('JENNIFER')) {
+        variantes.add('JENNIFER')
+        variantes.add('JENNIFER SILVA')
+      }
+      if (norm.includes('TAINARA')) {
+        variantes.add('TAINARA')
+        variantes.add('TAINARA MATILDE')
+      }
+      if (norm.includes('GUSTAVO')) {
+        variantes.add('GUSTAVO')
+        variantes.add('GUSTAVO ARAUJO')
+      }
+      if (norm.includes('EDMILA')) {
+        variantes.add('EDMILA')
+        variantes.add('EDMILA MELO')
+      }
+      if (norm.includes('JULIANO')) {
+        variantes.add('JULIANO')
+        variantes.add('JULIANO PEREIRA')
+      }
+      if (
+        norm.includes('MATHEUS TEIXEIRA') ||
+        (norm.includes('MATHEUS') && !norm.includes('OUTRO'))
+      ) {
+        variantes.add('MATHEUS')
+        variantes.add('MATHEUS TEIXEIRA')
+      }
 
-      const partes = norm.split(/[\s,()/-]+/).filter((p) => p.length >= 3)
+      const stopWords = ['DOS', 'DAS', 'DE', 'DA', 'DO', 'E', 'LTDA', 'ME', 'EPP']
+      const partes = norm.split(/[\s,()/-]+/).filter((p) => p.length >= 3 && !stopWords.includes(p))
       for (let i = 0; i < partes.length; i++) {
         variantes.add(partes[i])
-        if (partes[i] === 'JAPA') variantes.add('ALESSANDRO')
-        if (partes[i] === 'ALESSANDRO') variantes.add('JAPA')
-        if (partes[i] === 'JESSIKA') variantes.add('JESSICA')
-        if (partes[i] === 'JESSICA') variantes.add('JESSIKA')
-        if (partes[i] === 'FELIPE') {
-          variantes.add('JOSE FELIPE')
-          variantes.add('JOSE')
-        }
       }
 
       return Array.from(variantes)
+    }
+
+    function nomesSaoCompativeis(nomeA, nomeB) {
+      if (!nomeA || !nomeB) return false
+      const aNorm = normalizarTextoNFD(nomeA)
+      const bNorm = normalizarTextoNFD(nomeB)
+      if (!aNorm || !bNorm) return false
+
+      if (aNorm === bNorm || aNorm.includes(bNorm) || bNorm.includes(aNorm)) {
+        return true
+      }
+
+      const aEhJosiane = aNorm.includes('JOSIANE') || aNorm.includes('FRAZAO')
+      const bEhJosiane = bNorm.includes('JOSIANE') || bNorm.includes('FRAZAO')
+      if (aEhJosiane && bEhJosiane) {
+        return true
+      }
+
+      const aEhJessica = aNorm.includes('JESSICA') || aNorm.includes('JESSIKA')
+      const bEhJessica = bNorm.includes('JESSICA') || bNorm.includes('JESSIKA')
+      if (aEhJessica && bEhJessica) {
+        return true
+      }
+
+      const aEhJapa = aNorm.includes('ALESSANDRO') || aNorm.includes('JAPA')
+      const bEhJapa = bNorm.includes('ALESSANDRO') || bNorm.includes('JAPA')
+      if (aEhJapa && bEhJapa) {
+        return true
+      }
+
+      const aEhFelipe = aNorm.includes('JOSE FELIPE') || aNorm.includes('FELIPE')
+      const bEhFelipe = bNorm.includes('JOSE FELIPE') || bNorm.includes('FELIPE')
+      if (aEhFelipe && bEhFelipe) {
+        return true
+      }
+
+      const stopWords = ['DOS', 'DAS', 'DE', 'DA', 'DO']
+      const aTokens = aNorm
+        .split(/[\s,()/-]+/)
+        .filter((p) => p.length >= 3 && !stopWords.includes(p))
+      const bTokens = bNorm
+        .split(/[\s,()/-]+/)
+        .filter((p) => p.length >= 3 && !stopWords.includes(p))
+
+      if (aTokens.length > 0 && bTokens.length > 0) {
+        const aPrimeiro = aTokens[0]
+        const bPrimeiro = bTokens[0]
+        if (aPrimeiro === bPrimeiro && aPrimeiro.length >= 4) {
+          return true
+        }
+      }
+
+      const aVars = obterVariantesVendedor(aNorm)
+      for (let i = 0; i < aVars.length; i++) {
+        const v = aVars[i]
+        if (v.length >= 4 && (bNorm.includes(v) || bTokens.includes(v))) {
+          return true
+        }
+      }
+
+      return false
     }
 
     function matchesCarteiraVendedorTolerante(clienteRec, userName) {
@@ -136,30 +301,9 @@ routerAdd(
       if (!vRaw && !tipoVendRaw) return false
 
       const vLimpo = limparPrefixoVendedor(vRaw)
-      const tipoLimpo = normalizarTextoNFD(tipoVendRaw)
-      const vTextoCompleto = `${vLimpo} ${tipoLimpo}`
-
       const userNorm = normalizarTextoNFD(userName)
-      const userVariantes = obterVariantesVendedor(userNorm)
 
-      if (vLimpo === userNorm || vLimpo.includes(userNorm) || userNorm.includes(vLimpo)) {
-        return true
-      }
-
-      for (let i = 0; i < userVariantes.length; i++) {
-        const varItem = userVariantes[i]
-        if (varItem.length < 3) continue
-
-        if (
-          vLimpo.includes(varItem) ||
-          tipoLimpo.includes(varItem) ||
-          vTextoCompleto.includes(varItem)
-        ) {
-          return true
-        }
-      }
-
-      return false
+      return nomesSaoCompativeis(vLimpo, userNorm)
     }
 
     function buildVendedorSqlTerms(userName) {
@@ -799,26 +943,10 @@ routerAdd(
 
       const buscarColaboradorAtivoPorNomeMatriz = (nomeMatriz) => {
         if (!nomeMatriz || !nomeMatriz.trim()) return null
-        const nNorm = normalizarTextoNFD(nomeMatriz)
-        const nVars = obterVariantesVendedor(nNorm)
-
         for (let i = 0; i < listaAtivos.length; i++) {
           const at = listaAtivos[i]
-          const atNorm = normalizarTextoNFD(at.nome)
-          if (nNorm === atNorm || nNorm.includes(atNorm) || atNorm.includes(nNorm)) {
+          if (nomesSaoCompativeis(nomeMatriz, at.nome)) {
             return at
-          }
-          for (let vI = 0; vI < nVars.length; vI++) {
-            const vItem = nVars[vI]
-            if (vItem.length >= 3 && (atNorm.includes(vItem) || at.variantes.includes(vItem))) {
-              return at
-            }
-          }
-          for (let aV = 0; aV < at.variantes.length; aV++) {
-            const aItem = at.variantes[aV]
-            if (aItem.length >= 3 && nNorm.includes(aItem)) {
-              return at
-            }
           }
         }
         return null
@@ -836,34 +964,20 @@ routerAdd(
 
         for (let aIdx = 0; aIdx < listaAtivos.length; aIdx++) {
           const atUser = listaAtivos[aIdx]
-          const atNorm = normalizarTextoNFD(atUser.nome)
-          if (vNorm === atNorm || vNorm.includes(atNorm) || atNorm.includes(vNorm)) {
+          if (nomesSaoCompativeis(vLimpo, atUser.nome)) {
             return { temCadastro: true, ativo: true, usuario: atUser }
-          }
-          for (let vI = 0; vI < atUser.variantes.length; vI++) {
-            const vItem = atUser.variantes[vI]
-            if (vItem.length >= 3 && (vNorm.includes(vItem) || vItem.includes(vNorm))) {
-              return { temCadastro: true, ativo: true, usuario: atUser }
-            }
           }
         }
 
         for (let inIdx = 0; inIdx < listaInativos.length; inIdx++) {
           const inUser = listaInativos[inIdx]
-          const inNorm = normalizarTextoNFD(inUser.nome)
-          if (vNorm === inNorm || vNorm.includes(inNorm) || inNorm.includes(vNorm)) {
+          if (nomesSaoCompativeis(vLimpo, inUser.nome)) {
             return { temCadastro: true, ativo: false, usuario: inUser }
-          }
-          for (let vI = 0; vI < inUser.variantes.length; vI++) {
-            const vItem = inUser.variantes[vI]
-            if (vItem.length >= 3 && (vNorm.includes(vItem) || vItem.includes(vNorm))) {
-              return { temCadastro: true, ativo: false, usuario: inUser }
-            }
           }
         }
 
-        if (vNorm.includes('KAYLANE')) {
-          return { temCadastro: true, ativo: false, nome: 'KAYLANE SILVA' }
+        if (vNorm.includes('KAYLANE') || vNorm.includes('FERNANDA SANTOS')) {
+          return { temCadastro: true, ativo: false, nome: vNorm }
         }
 
         return { temCadastro: false, ativo: false }
@@ -887,17 +1001,17 @@ routerAdd(
           let mesmaCadeira = true
           if (rotaCliente && matrizCadeirasPorRota[rotaCliente]) {
             const cadRota = matrizCadeirasPorRota[rotaCliente]
-            const uNomeNorm = normalizarTextoNFD(uVendedor.nome)
             if (tipoCadeira === 'corporativo') {
-              const corpNorm = normalizarTextoNFD(cadRota.corporativo)
-              mesmaCadeira =
-                corpNorm && (uNomeNorm.includes(corpNorm) || corpNorm.includes(uNomeNorm))
+              mesmaCadeira = Boolean(
+                cadRota.corporativo && nomesSaoCompativeis(cadRota.corporativo, uVendedor.nome),
+              )
             } else {
-              const eNorm = normalizarTextoNFD(cadRota.especialista)
-              const veNorm = normalizarTextoNFD(cadRota.vendedor_externo)
-              mesmaCadeira =
-                (eNorm && (uNomeNorm.includes(eNorm) || eNorm.includes(uNomeNorm))) ||
-                (veNorm && (uNomeNorm.includes(veNorm) || veNorm.includes(uNomeNorm)))
+              mesmaCadeira = Boolean(
+                (cadRota.especialista &&
+                  nomesSaoCompativeis(cadRota.especialista, uVendedor.nome)) ||
+                (cadRota.vendedor_externo &&
+                  nomesSaoCompativeis(cadRota.vendedor_externo, uVendedor.nome)),
+              )
             }
           }
 

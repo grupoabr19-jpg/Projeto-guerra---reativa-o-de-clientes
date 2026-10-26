@@ -1,6 +1,6 @@
 {
-  "version": "0.0.164",
-  "buildTime": "2026-10-22T17:00:00.000Z",
-  "buildId": "v0.0.164",
-  "mensagem": "v0.0.164: Correção crítica de eNorm não declarada no casamento de cadeira do reserve-next (/backend/v1/queue/reserve-next), liberando a puxada da fila para operadoras de varejo como Inayara."
+  "version": "0.0.165",
+  "buildTime": "2026-10-26T17:00:00.000Z",
+  "buildId": "v0.0.165",
+  "mensagem": "v0.0.165: Correção no casamento de nomes do Roteamento v3 (Josiane Frazão/Lima, prefixos VARC, sinonímias e primeiro nome das cadeiras regionais), restaurando a entrega de fila para operadores com carteira ativa."
 }
