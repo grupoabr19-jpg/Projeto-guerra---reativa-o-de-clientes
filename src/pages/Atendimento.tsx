@@ -119,10 +119,17 @@ export default function AtendimentoPage() {
   // Filtros da nova experiência do Operador
   const [filtroSegmento, setFiltroSegmento] = useState<string>('todos')
   const [filtroOrdenacao, setFiltroOrdenacao] = useState<'score' | 'antigos' | 'novos'>('score')
+  // Filtro de Inatividade: 'sem_limite' (default), '90', '180', '365' ou 'custom'
+  const [filtroInatividadePreset, setFiltroInatividadePreset] = useState<string>('sem_limite')
+  const [filtroInatividadeCustom, setFiltroInatividadeCustom] = useState<string>('')
   const [reservandoNovo, setReservandoNovo] = useState(false)
   const [showQuestionarioModal, setShowQuestionarioModal] = useState(false)
   const [avisoSegmentoZerado, setAvisoSegmentoZerado] = useState<{
     segmento: string
+    totalCarteiraSemFiltro: number
+  } | null>(null)
+  const [avisoInatividadeZerado, setAvisoInatividadeZerado] = useState<{
+    maxDias: number
     totalCarteiraSemFiltro: number
   } | null>(null)
 
@@ -219,7 +226,8 @@ export default function AtendimentoPage() {
     setBuscandoCarteira(true)
     const timer = setTimeout(async () => {
       try {
-        const res = await searchClientesCarteira(termo)
+        const maxDias = obterMaxDiasInatividadeEfetivo()
+        const res = await searchClientesCarteira(termo, { max_dias_inatividade: maxDias })
         setResultadosBuscaCarteira(res.items || [])
         setBuscaAberta(true)
       } catch (err: unknown) {
@@ -231,7 +239,7 @@ export default function AtendimentoPage() {
     }, 350)
 
     return () => clearTimeout(timer)
-  }, [termoBuscaCarteira])
+  }, [termoBuscaCarteira, filtroInatividadePreset, filtroInatividadeCustom])
 
   // Selecionar um cliente encontrado na busca e abrir ficha com lock de 30 min
   const handleSelecionarClienteBusca = async (item: ClienteBuscaCarteiraItem) => {
@@ -335,16 +343,30 @@ export default function AtendimentoPage() {
     }
   }
 
+  // Determina o valor numérico efetivo de dias de inatividade ou null (sem limite)
+  const obterMaxDiasInatividadeEfetivo = (): number | null => {
+    if (filtroInatividadePreset === 'sem_limite') return null
+    if (filtroInatividadePreset === 'custom') {
+      const parsed = parseInt(filtroInatividadeCustom.trim(), 10)
+      return !isNaN(parsed) && parsed > 0 ? parsed : null
+    }
+    const parsedPreset = parseInt(filtroInatividadePreset, 10)
+    return !isNaN(parsedPreset) && parsedPreset > 0 ? parsedPreset : null
+  }
+
   const checkExistingLockOrIdle = async () => {
     setLoading(true)
     try {
+      const maxDias = obterMaxDiasInatividadeEfetivo()
       // Se o operador já possuir um cliente em atendimento ou reservado, o backend retorna com ja_reservado = true
       const res = await reserveNextQueueClient({
         segmento: filtroSegmento === 'todos' ? undefined : filtroSegmento,
         ordenacao: filtroOrdenacao,
+        max_dias_inatividade: maxDias,
       })
       if (res.cliente) {
         setAvisoSegmentoZerado(null)
+        setAvisoInatividadeZerado(null)
         setCliente(res.cliente)
         loadCliente(res.cliente.id)
       } else {
@@ -354,8 +376,16 @@ export default function AtendimentoPage() {
             segmento: filtroSegmento,
             totalCarteiraSemFiltro: res.total_carteira_sem_filtro || 0,
           })
+          setAvisoInatividadeZerado(null)
+        } else if (res.filtro_inatividade_zerado && maxDias !== null) {
+          setAvisoInatividadeZerado({
+            maxDias,
+            totalCarteiraSemFiltro: res.total_carteira_sem_filtro || 0,
+          })
+          setAvisoSegmentoZerado(null)
         } else {
           setAvisoSegmentoZerado(null)
+          setAvisoInatividadeZerado(null)
         }
       }
     } catch (_) {
@@ -365,8 +395,16 @@ export default function AtendimentoPage() {
     }
   }
 
-  const handlePuxarNovoAtendimento = async (optionsParam?: { devolverEProximo?: boolean }) => {
+  const handlePuxarNovoAtendimento = async (optionsParam?: {
+    devolverEProximo?: boolean
+    overrideMaxDias?: number | null
+  }) => {
     const isDevolverEProximo = Boolean(optionsParam?.devolverEProximo)
+    const maxDias =
+      optionsParam?.overrideMaxDias !== undefined
+        ? optionsParam.overrideMaxDias
+        : obterMaxDiasInatividadeEfetivo()
+
     setReservandoNovo(true)
     try {
       const res = await reserveNextQueueClient({
@@ -375,9 +413,11 @@ export default function AtendimentoPage() {
         devolver_e_proximo: isDevolverEProximo,
         cliente_atual_id: cliente ? cliente.id : undefined,
         rascunho_respostas: isDevolverEProximo ? answers : undefined,
+        max_dias_inatividade: maxDias,
       })
       if (res.cliente) {
         setAvisoSegmentoZerado(null)
+        setAvisoInatividadeZerado(null)
         await loadCliente(res.cliente.id)
         navigate(`/atendimento/${res.cliente.id}`, { replace: true })
         if (res.ja_reservado) {
@@ -403,12 +443,13 @@ export default function AtendimentoPage() {
           navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila')
         }
 
-        // Distingue carteira esgotada real de filtro de segmento ativo que zerou a busca
+        // Distingue carteira esgotada real de filtro de segmento ativo ou filtro de inatividade ativo
         if (res.segmento_zerado && filtroSegmento !== 'todos') {
           setAvisoSegmentoZerado({
             segmento: filtroSegmento,
             totalCarteiraSemFiltro: res.total_carteira_sem_filtro || 0,
           })
+          setAvisoInatividadeZerado(null)
           toast({
             variant: 'default',
             title: 'Filtro de segmento sem resultados',
@@ -416,8 +457,22 @@ export default function AtendimentoPage() {
               res.message ||
               `Nenhum cliente disponível no segmento selecionado. Selecione 'Todos os Segmentos' para acessar os ${res.total_carteira_sem_filtro || 0} clientes da sua carteira.`,
           })
+        } else if (res.filtro_inatividade_zerado && maxDias !== null) {
+          setAvisoInatividadeZerado({
+            maxDias,
+            totalCarteiraSemFiltro: res.total_carteira_sem_filtro || 0,
+          })
+          setAvisoSegmentoZerado(null)
+          toast({
+            variant: 'default',
+            title: 'Filtro de inatividade sem resultados',
+            description:
+              res.message ||
+              `Nenhum cliente até ${maxDias} dias de inatividade na sua carteira (${res.total_carteira_sem_filtro || 0} disponíveis com mais dias) — ajuste o filtro ou puxe sem limite.`,
+          })
         } else {
           setAvisoSegmentoZerado(null)
+          setAvisoInatividadeZerado(null)
           toast({
             variant: res.carteira_esgotada ? 'destructive' : 'default',
             title: res.carteira_esgotada
@@ -1376,6 +1431,63 @@ export default function AtendimentoPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Filtro de Dias de Inatividade */}
+              <div className="space-y-1">
+                <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider block flex items-center gap-1">
+                  <Clock className="h-3 w-3 text-[#253575]" />
+                  <span>Inatividade Máxima</span>
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <Select
+                    value={filtroInatividadePreset}
+                    onValueChange={(val) => {
+                      setFiltroInatividadePreset(val)
+                      setAvisoInatividadeZerado(null)
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-xs w-36 bg-white border-slate-300">
+                      <SelectValue placeholder="Sem limite" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sem_limite" className="text-xs font-medium">
+                        Sem limite (Padrão)
+                      </SelectItem>
+                      <SelectItem value="90" className="text-xs">
+                        Até 90 dias
+                      </SelectItem>
+                      <SelectItem value="180" className="text-xs">
+                        Até 180 dias
+                      </SelectItem>
+                      <SelectItem value="365" className="text-xs">
+                        Até 365 dias
+                      </SelectItem>
+                      <SelectItem value="custom" className="text-xs text-[#F18800] font-semibold">
+                        ✏️ Personalizado...
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {filtroInatividadePreset === 'custom' && (
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number"
+                        min="1"
+                        max="9999"
+                        placeholder="Ex: 120"
+                        value={filtroInatividadeCustom}
+                        onChange={(e) => {
+                          setFiltroInatividadeCustom(e.target.value)
+                          setAvisoInatividadeZerado(null)
+                        }}
+                        className="h-8 text-xs w-20 bg-white border-slate-300 px-2"
+                        title="Digite até quantos dias de inatividade"
+                      />
+                      <span className="text-[11px] text-slate-500 font-medium">dias</span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Campo de Busca por Nome na Carteira do Operador + Botão Novo Atendimento */}
@@ -1706,6 +1818,51 @@ export default function AtendimentoPage() {
                   </Button>
                 </div>
               </div>
+            ) : avisoInatividadeZerado ? (
+              <div className="bg-blue-50 border border-blue-300 text-blue-950 rounded-xl p-4 max-w-lg text-left shadow-xs space-y-2">
+                <div className="flex items-center gap-2 font-bold text-xs text-[#253575]">
+                  <Clock className="h-4 w-4 text-[#F18800] shrink-0" />
+                  <span>
+                    Nenhum cliente até {avisoInatividadeZerado.maxDias} dias de inatividade na sua
+                    carteira
+                  </span>
+                </div>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  Você já atendeu ou não possui clientes com até{' '}
+                  <strong>{avisoInatividadeZerado.maxDias} dias</strong> sem faturar. Porém, há{' '}
+                  <strong className="text-[#253575]">
+                    {avisoInatividadeZerado.totalCarteiraSemFiltro} clientes disponíveis
+                  </strong>{' '}
+                  com mais de {avisoInatividadeZerado.maxDias} dias de inatividade aguardando
+                  contato.
+                </p>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setFiltroInatividadePreset('sem_limite')
+                      setFiltroInatividadeCustom('')
+                      setAvisoInatividadeZerado(null)
+                      handlePuxarNovoAtendimento({ overrideMaxDias: null })
+                    }}
+                    className="bg-[#253575] hover:bg-[#1d2b5e] text-white font-semibold text-xs h-8 px-3 shadow-xs"
+                  >
+                    Puxar sem limite ({avisoInatividadeZerado.totalCarteiraSemFiltro} clientes)
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setFiltroInatividadePreset('180')
+                      setFiltroInatividadeCustom('')
+                      setAvisoInatividadeZerado(null)
+                    }}
+                    className="bg-white hover:bg-slate-100 text-slate-800 border-slate-300 text-xs h-8 px-3"
+                  >
+                    Ampliar para até 180 dias
+                  </Button>
+                </div>
+              </div>
             ) : (
               <p className="text-xs text-slate-500 max-w-md">
                 {user?.regioes?.includes('REPESCAGEM')
@@ -1736,6 +1893,20 @@ export default function AtendimentoPage() {
                   className="text-xs border-slate-300"
                 >
                   Limpar filtro de segmento
+                </Button>
+              )}
+              {avisoInatividadeZerado && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setFiltroInatividadePreset('sem_limite')
+                    setFiltroInatividadeCustom('')
+                    setAvisoInatividadeZerado(null)
+                  }}
+                  className="text-xs border-slate-300"
+                >
+                  Limpar filtro de inatividade
                 </Button>
               )}
             </div>

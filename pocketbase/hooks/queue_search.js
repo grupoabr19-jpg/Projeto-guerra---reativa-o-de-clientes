@@ -556,6 +556,21 @@ routerAdd(
         })
       }
 
+      // Filtro opcional de Dias de Inatividade na busca
+      let maxDiasInatividade = null
+      if (
+        body.max_dias_inatividade !== undefined &&
+        body.max_dias_inatividade !== null &&
+        body.max_dias_inatividade !== '' &&
+        body.max_dias_inatividade !== 'todos' &&
+        body.max_dias_inatividade !== 'sem_limite'
+      ) {
+        const parsedDias = parseInt(String(body.max_dias_inatividade), 10)
+        if (!isNaN(parsedDias) && parsedDias > 0) {
+          maxDiasInatividade = parsedDias
+        }
+      }
+
       const userId = authRecord.id
       const userName = (authRecord.getString('name') || '').trim()
       const userRole = authRecord.getString('role')
@@ -613,6 +628,9 @@ routerAdd(
       const cleanTerm = termoBusca.replace(/['"\\]/g, '')
 
       let filterExpr = `(nome ~ '${cleanTerm}' || codigo ~ '${cleanTerm}') && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'`
+      if (maxDiasInatividade !== null && !isRepescagem) {
+        filterExpr += ` && dias_sem_faturar <= ${maxDiasInatividade}`
+      }
       if (userRole !== 'admin') {
         const nowIso = new Date().toISOString()
         // Clientes com pedido_em_aberto=true podem ser buscados (serão filtrados para o dono/admin abaixo)

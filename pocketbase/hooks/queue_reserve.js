@@ -534,6 +534,21 @@ routerAdd(
       const devolverEProximo = Boolean(body.devolver_e_proximo)
       const clienteDevolvidoId = body.cliente_atual_id ? String(body.cliente_atual_id).trim() : ''
 
+      // Filtro de Dias de Inatividade escolhido pelo operador (ex.: 90, 180, 365 ou null/undefined = sem limite)
+      let maxDiasInatividade = null
+      if (
+        body.max_dias_inatividade !== undefined &&
+        body.max_dias_inatividade !== null &&
+        body.max_dias_inatividade !== '' &&
+        body.max_dias_inatividade !== 'todos' &&
+        body.max_dias_inatividade !== 'sem_limite'
+      ) {
+        const parsedDias = parseInt(String(body.max_dias_inatividade), 10)
+        if (!isNaN(parsedDias) && parsedDias > 0) {
+          maxDiasInatividade = parsedDias
+        }
+      }
+
       const userId = authRecord.id
       const userName = (authRecord.getString('name') || '').trim()
       const userRole = authRecord.getString('role')
@@ -1208,6 +1223,7 @@ routerAdd(
       // =========================================================================
       // ETAPA B: ATACADO E REPESCAGEM
       // =========================================================================
+      let contagemAtacadoTotalSemFiltroInatividade = 0
       if (!cand && isAtacado && (userRole === 'operador' || userRole === 'lider')) {
         let sortExpr = '-score'
         if (ordenacaoEscolhida === 'antigos') sortExpr = '-dias_sem_faturar'
@@ -1217,6 +1233,9 @@ routerAdd(
         let atacadoFilter = `estado = 'na_base' && regiao = 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
         if (filtroSegmento && filtroSegmento !== 'todos') {
           atacadoFilter += ` && segmento = '${filtroSegmento}'`
+        }
+        if (maxDiasInatividade !== null) {
+          atacadoFilter += ` && dias_sem_faturar <= ${maxDiasInatividade}`
         }
 
         try {
@@ -1241,6 +1260,29 @@ routerAdd(
               cand = poolOperadorOrdenado[0]
             }
             filtroOrigemAtendido = 'atacado_ddd'
+          }
+
+          // Se não encontrou e havia corte de inatividade, verifica se há clientes sem o corte
+          if (!cand && maxDiasInatividade !== null) {
+            try {
+              let fAtacadoSemCorte = `estado = 'na_base' && regiao = 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
+              if (filtroSegmento && filtroSegmento !== 'todos') {
+                fAtacadoSemCorte += ` && segmento = '${filtroSegmento}'`
+              }
+              const pAtacadoSemCorte = $app.findRecordsByFilter(
+                'clientes',
+                fAtacadoSemCorte,
+                '-score',
+                500,
+                0,
+              )
+              const pNaoRepSemCorte = pAtacadoSemCorte.filter((c) => !isCandidatoRepetidoRecente(c))
+              const pOpSemCorte = pNaoRepSemCorte.filter((c) => {
+                const ddd = extrairDddCliente(c)
+                return atacadoDddsPermitidos.includes(ddd)
+              })
+              contagemAtacadoTotalSemFiltroInatividade = pOpSemCorte.length
+            } catch (_) {}
           }
         } catch (atacadoErr) {
           console.log('[queue_reserve] Erro na fila do Atacado: ' + atacadoErr.message)
@@ -1296,6 +1338,7 @@ routerAdd(
       // MOTOR DE FILA VAREJO — ROTEAMENTO v3 EM CASCATA DE 3 FILTROS
       // =========================================================================
       let contagemCarteiraNominalSemFiltroSegmento = 0
+      let contagemCarteiraTotalSemFiltroInatividade = 0
       const isVarejo = !isAtacado && !isRepescagem
       let rotasDoOperador = userRegioes.filter(
         (r) => r.toUpperCase() !== 'ATACADO' && r.toUpperCase() !== 'REPESCAGEM',
@@ -1326,10 +1369,13 @@ routerAdd(
         }
 
         // PASSO 1: FILTRO 1 — NOME DO VENDEDOR (primario_nominal)
-        const montarFilterNominal = (comSegmento) => {
+        const montarFilterNominal = (comSegmento, comInatividade) => {
           let f = `estado = 'na_base' && regiao != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
           if (comSegmento && filtroSegmento && filtroSegmento !== 'todos') {
             f += ` && segmento = '${filtroSegmento}'`
+          }
+          if (comInatividade && maxDiasInatividade !== null) {
+            f += ` && dias_sem_faturar <= ${maxDiasInatividade}`
           }
           if (vendedorTokens.length > 0) {
             const vConds = vendedorTokens.map((t) => `vendedor ~ '${t}'`)
@@ -1340,7 +1386,7 @@ routerAdd(
 
         let poolNominal = []
         try {
-          const fNom = montarFilterNominal(true)
+          const fNom = montarFilterNominal(true, true)
           poolNominal = $app.findRecordsByFilter('clientes', fNom, sortExpr, 500, 0)
         } catch (fnErr) {
           console.log('[queue_reserve] Erro busca nominal: ' + fnErr.message)
@@ -1362,9 +1408,11 @@ routerAdd(
 
         if (!cand && filtroSegmento && filtroSegmento !== 'todos') {
           try {
-            const fSemSeg = montarFilterNominal(false)
+            const fSemSeg = montarFilterNominal(false, true)
             const pSemSeg = $app.findRecordsByFilter('clientes', fSemSeg, '-score', 500, 0)
             contagemCarteiraNominalSemFiltroSegmento = pSemSeg.filter((c) => {
+              if (isCandidatoRepetidoRecente(c)) return false
+              if (isClienteAtacado(c)) return false
               if (!matchesCarteiraVendedorTolerante(c, userName)) return false
               const destino = resolverDestinoRoteamentov3(c)
               return destino.filtro === 'primario_nominal' && destino.operador_id === userId
@@ -1377,6 +1425,9 @@ routerAdd(
           let fBaseVarejo = `estado = 'na_base' && regiao != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
           if (filtroSegmento && filtroSegmento !== 'todos') {
             fBaseVarejo += ` && segmento = '${filtroSegmento}'`
+          }
+          if (maxDiasInatividade !== null) {
+            fBaseVarejo += ` && dias_sem_faturar <= ${maxDiasInatividade}`
           }
 
           let poolCandidatosGeral = []
@@ -1418,6 +1469,41 @@ routerAdd(
             filtroOrigemAtendido = 'terciario_regiao'
           }
         }
+
+        // Se após todos os passos de varejo cand continuar nulo E havia maxDiasInatividade ativo:
+        // Contabiliza quantos clientes existem na carteira do operador SEM o corte de inatividade,
+        // para dar feedback claro se a base acabou por causa do filtro de inatividade.
+        if (!cand && maxDiasInatividade !== null) {
+          try {
+            let fBaseSemCorte = `estado = 'na_base' && regiao != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
+            if (filtroSegmento && filtroSegmento !== 'todos') {
+              fBaseSemCorte += ` && segmento = '${filtroSegmento}'`
+            }
+            const pSemCorte = $app.findRecordsByFilter('clientes', fBaseSemCorte, '-score', 500, 0)
+            let totalElegivelSemCorte = 0
+            for (let scIdx = 0; scIdx < pSemCorte.length; scIdx++) {
+              const cSc = pSemCorte[scIdx]
+              if (isCandidatoRepetidoRecente(cSc)) continue
+              if (isClienteAtacado(cSc)) continue
+
+              if (matchesCarteiraVendedorTolerante(cSc, userName)) {
+                const dest = resolverDestinoRoteamentov3(cSc)
+                if (dest.filtro === 'primario_nominal' && dest.operador_id === userId) {
+                  totalElegivelSemCorte++
+                  continue
+                }
+              }
+
+              if (rotasDoOperador.length > 0) {
+                const dest = resolverDestinoRoteamentov3(cSc)
+                if (dest.operador_id === userId) {
+                  totalElegivelSemCorte++
+                }
+              }
+            }
+            contagemCarteiraTotalSemFiltroInatividade = totalElegivelSemCorte
+          } catch (_) {}
+        }
       }
 
       // NENHUM CANDIDATO ENCONTRADO
@@ -1428,8 +1514,28 @@ routerAdd(
             cliente: null,
             carteira_esgotada: false,
             segmento_zerado: true,
+            filtro_inatividade_zerado: false,
+            max_dias_inatividade: maxDiasInatividade,
             total_carteira_sem_filtro: contagemCarteiraNominalSemFiltroSegmento,
             message: `Nenhum cliente disponível no segmento selecionado. Selecione 'Todos os Segmentos' para acessar os ${contagemCarteiraNominalSemFiltroSegmento} clientes da sua carteira.`,
+          })
+        }
+
+        // REGRA DE SEGURANÇA: se o operador escolheu um limite (ex.: até 90) e a base nesse recorte acabou,
+        // a mensagem deve ser clara de que acabou DENTRO DAQUELE FILTRO e sugerir ampliar — NÃO genericamente "carteira esgotada".
+        const totalDisponivelSemInatividade = isAtacado
+          ? contagemAtacadoTotalSemFiltroInatividade
+          : contagemCarteiraTotalSemFiltroInatividade
+
+        if (maxDiasInatividade !== null && totalDisponivelSemInatividade > 0) {
+          return e.json(200, {
+            cliente: null,
+            carteira_esgotada: false,
+            segmento_zerado: false,
+            filtro_inatividade_zerado: true,
+            max_dias_inatividade: maxDiasInatividade,
+            total_carteira_sem_filtro: totalDisponivelSemInatividade,
+            message: `Nenhum cliente até ${maxDiasInatividade} dias de inatividade na sua carteira (${totalDisponivelSemInatividade} clientes disponíveis com mais de ${maxDiasInatividade} dias) — ajuste o filtro ou puxe sem limite.`,
           })
         }
 
@@ -1449,6 +1555,8 @@ routerAdd(
           cliente: null,
           carteira_esgotada: isCarteiraVazia,
           segmento_zerado: false,
+          filtro_inatividade_zerado: false,
+          max_dias_inatividade: maxDiasInatividade,
           total_carteira_sem_filtro: 0,
           message: msg,
         })

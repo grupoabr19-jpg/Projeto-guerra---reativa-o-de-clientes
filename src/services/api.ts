@@ -415,6 +415,7 @@ export async function reserveNextQueueClient(options?: {
   devolver_e_proximo?: boolean
   cliente_atual_id?: string
   rascunho_respostas?: Record<string, unknown>
+  max_dias_inatividade?: number | null
 }) {
   const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/queue/reserve-next`, {
     method: 'POST',
@@ -438,6 +439,8 @@ export async function reserveNextQueueClient(options?: {
     ja_reservado: boolean
     carteira_esgotada?: boolean
     segmento_zerado?: boolean
+    filtro_inatividade_zerado?: boolean
+    max_dias_inatividade?: number | null
     total_carteira_sem_filtro?: number
     segunda_passada_executada?: boolean
     message: string
@@ -473,7 +476,10 @@ export interface ClienteBuscaCarteiraItem {
  * Busca clientes por nome/código estritamente dentro da carteira do operador logado.
  * Retorna no máximo 20 registros e valida no servidor o vendedor da rota ou DDDs do atacado.
  */
-export async function searchClientesCarteira(termo: string): Promise<{
+export async function searchClientesCarteira(
+  termo: string,
+  options?: { max_dias_inatividade?: number | null },
+): Promise<{
   items: ClienteBuscaCarteiraItem[]
   total: number
   termo: string
@@ -486,7 +492,10 @@ export async function searchClientesCarteira(termo: string): Promise<{
         'Content-Type': 'application/json',
         Authorization: pb.authStore.token,
       },
-      body: JSON.stringify({ termo }),
+      body: JSON.stringify({
+        termo,
+        max_dias_inatividade: options?.max_dias_inatividade ?? null,
+      }),
     },
   )
   if (!res.ok) {
