@@ -131,6 +131,7 @@ export default function AtendimentoPage() {
   const [avisoInatividadeZerado, setAvisoInatividadeZerado] = useState<{
     maxDias: number
     totalCarteiraSemFiltro: number
+    totalAcimaDoCorte?: number
   } | null>(null)
 
   // Busca por nome na carteira do operador
@@ -377,10 +378,19 @@ export default function AtendimentoPage() {
             totalCarteiraSemFiltro: res.total_carteira_sem_filtro || 0,
           })
           setAvisoInatividadeZerado(null)
-        } else if (res.filtro_inatividade_zerado && maxDias !== null) {
+        } else if (
+          res.filtro_inatividade_zerado &&
+          (res.total_acima_do_corte || res.total_carteira_sem_filtro || maxDias !== null)
+        ) {
+          const totalCorte = res.total_acima_do_corte ?? res.total_carteira_sem_filtro ?? 0
+          const diasCorte =
+            res.max_dias_inatividade !== undefined && res.max_dias_inatividade !== null
+              ? res.max_dias_inatividade
+              : (maxDias ?? 90)
           setAvisoInatividadeZerado({
-            maxDias,
-            totalCarteiraSemFiltro: res.total_carteira_sem_filtro || 0,
+            maxDias: diasCorte,
+            totalCarteiraSemFiltro: totalCorte,
+            totalAcimaDoCorte: totalCorte,
           })
           setAvisoSegmentoZerado(null)
         } else {
@@ -457,10 +467,19 @@ export default function AtendimentoPage() {
               res.message ||
               `Nenhum cliente disponível no segmento selecionado. Selecione 'Todos os Segmentos' para acessar os ${res.total_carteira_sem_filtro || 0} clientes da sua carteira.`,
           })
-        } else if (res.filtro_inatividade_zerado && maxDias !== null) {
+        } else if (
+          res.filtro_inatividade_zerado &&
+          (res.total_acima_do_corte || res.total_carteira_sem_filtro || maxDias !== null)
+        ) {
+          const totalCorte = res.total_acima_do_corte ?? res.total_carteira_sem_filtro ?? 0
+          const diasCorte =
+            res.max_dias_inatividade !== undefined && res.max_dias_inatividade !== null
+              ? res.max_dias_inatividade
+              : (maxDias ?? 90)
           setAvisoInatividadeZerado({
-            maxDias,
-            totalCarteiraSemFiltro: res.total_carteira_sem_filtro || 0,
+            maxDias: diasCorte,
+            totalCarteiraSemFiltro: totalCorte,
+            totalAcimaDoCorte: totalCorte,
           })
           setAvisoSegmentoZerado(null)
           toast({
@@ -468,7 +487,7 @@ export default function AtendimentoPage() {
             title: 'Filtro de inatividade sem resultados',
             description:
               res.message ||
-              `Nenhum cliente até ${maxDias} dias de inatividade na sua carteira (${res.total_carteira_sem_filtro || 0} disponíveis com mais dias) — ajuste o filtro ou puxe sem limite.`,
+              `Nenhum cliente até ${diasCorte} dias de inatividade na sua carteira (${totalCorte} disponíveis com mais dias) — ajuste o filtro ou puxe sem limite.`,
           })
         } else {
           setAvisoSegmentoZerado(null)
@@ -1822,19 +1841,18 @@ export default function AtendimentoPage() {
               <div className="bg-blue-50 border border-blue-300 text-blue-950 rounded-xl p-4 max-w-lg text-left shadow-xs space-y-2">
                 <div className="flex items-center gap-2 font-bold text-xs text-[#253575]">
                   <Clock className="h-4 w-4 text-[#F18800] shrink-0" />
-                  <span>
-                    Nenhum cliente até {avisoInatividadeZerado.maxDias} dias de inatividade na sua
-                    carteira
-                  </span>
+                  <span>Acabou dentro do filtro de até {avisoInatividadeZerado.maxDias} dias</span>
                 </div>
                 <p className="text-xs text-slate-700 leading-relaxed">
                   Você já atendeu ou não possui clientes com até{' '}
                   <strong>{avisoInatividadeZerado.maxDias} dias</strong> sem faturar. Porém, há{' '}
                   <strong className="text-[#253575]">
-                    {avisoInatividadeZerado.totalCarteiraSemFiltro} clientes disponíveis
+                    {avisoInatividadeZerado.totalAcimaDoCorte ??
+                      avisoInatividadeZerado.totalCarteiraSemFiltro}{' '}
+                    clientes disponíveis
                   </strong>{' '}
                   com mais de {avisoInatividadeZerado.maxDias} dias de inatividade aguardando
-                  contato.
+                  contato na sua rota/carteira.
                 </p>
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <Button
@@ -1847,7 +1865,10 @@ export default function AtendimentoPage() {
                     }}
                     className="bg-[#253575] hover:bg-[#1d2b5e] text-white font-semibold text-xs h-8 px-3 shadow-xs"
                   >
-                    Puxar sem limite ({avisoInatividadeZerado.totalCarteiraSemFiltro} clientes)
+                    Puxar sem limite (
+                    {avisoInatividadeZerado.totalAcimaDoCorte ??
+                      avisoInatividadeZerado.totalCarteiraSemFiltro}{' '}
+                    clientes)
                   </Button>
                   <Button
                     size="sm"
@@ -1856,6 +1877,7 @@ export default function AtendimentoPage() {
                       setFiltroInatividadePreset('180')
                       setFiltroInatividadeCustom('')
                       setAvisoInatividadeZerado(null)
+                      handlePuxarNovoAtendimento({ overrideMaxDias: 180 })
                     }}
                     className="bg-white hover:bg-slate-100 text-slate-800 border-slate-300 text-xs h-8 px-3"
                   >

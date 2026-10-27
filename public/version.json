@@ -1,7 +1,7 @@
 {
-  "version": "0.0.166",
-  "buildTime": "2026-10-27T12:20:00.000Z",
-  "buildId": "v0.0.166",
-  "mensagem": "v0.0.166: Filtro de dias de inatividade configurável pelo operador na fila de atendimento com validação server-side e mensagens claras de recorte.",
+  "version": "0.0.167",
+  "buildTime": "2026-10-27T13:45:00.000Z",
+  "buildId": "v0.0.167",
+  "mensagem": "v0.0.167: Mensagem esperta de inatividade zerada na cascata v3 completa com total_acima_do_corte e botões de puxada sem limite ou ampliação para 180 dias.",
   "forceReload": false
 }

@@ -442,6 +442,7 @@ export async function reserveNextQueueClient(options?: {
     filtro_inatividade_zerado?: boolean
     max_dias_inatividade?: number | null
     total_carteira_sem_filtro?: number
+    total_acima_do_corte?: number
     segunda_passada_executada?: boolean
     message: string
   }>
