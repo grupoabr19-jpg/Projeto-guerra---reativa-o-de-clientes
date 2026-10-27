@@ -133,6 +133,10 @@ export default function AtendimentoPage() {
     totalCarteiraSemFiltro: number
     totalAcimaDoCorte?: number
   } | null>(null)
+  const [avisoCarteiraIndisponivel, setAvisoCarteiraIndisponivel] = useState<{
+    totalCarteiraSemFiltro: number
+    mensagem: string
+  } | null>(null)
 
   // Busca por nome na carteira do operador
   const [termoBuscaCarteira, setTermoBuscaCarteira] = useState('')
@@ -368,16 +372,31 @@ export default function AtendimentoPage() {
       if (res.cliente) {
         setAvisoSegmentoZerado(null)
         setAvisoInatividadeZerado(null)
+        setAvisoCarteiraIndisponivel(null)
         setCliente(res.cliente)
         loadCliente(res.cliente.id)
       } else {
         setCliente(null)
-        if (res.segmento_zerado && filtroSegmento !== 'todos') {
+        if (
+          res.carteira_indisponivel &&
+          (res.total_acima_do_corte || res.total_carteira_sem_filtro)
+        ) {
+          const totalDisp = res.total_acima_do_corte ?? res.total_carteira_sem_filtro ?? 0
+          setAvisoCarteiraIndisponivel({
+            totalCarteiraSemFiltro: totalDisp,
+            mensagem:
+              res.message ||
+              `Existem ${totalDisp} clientes na sua carteira, mas todos estão em atendimento, standby ou aguardando retorno agora. Tente novamente mais tarde.`,
+          })
+          setAvisoSegmentoZerado(null)
+          setAvisoInatividadeZerado(null)
+        } else if (res.segmento_zerado && filtroSegmento !== 'todos') {
           setAvisoSegmentoZerado({
             segmento: filtroSegmento,
             totalCarteiraSemFiltro: res.total_carteira_sem_filtro || 0,
           })
           setAvisoInatividadeZerado(null)
+          setAvisoCarteiraIndisponivel(null)
         } else if (
           res.filtro_inatividade_zerado &&
           (res.total_acima_do_corte || res.total_carteira_sem_filtro || maxDias !== null)
@@ -393,9 +412,11 @@ export default function AtendimentoPage() {
             totalAcimaDoCorte: totalCorte,
           })
           setAvisoSegmentoZerado(null)
+          setAvisoCarteiraIndisponivel(null)
         } else {
           setAvisoSegmentoZerado(null)
           setAvisoInatividadeZerado(null)
+          setAvisoCarteiraIndisponivel(null)
         }
       }
     } catch (_) {
@@ -428,6 +449,7 @@ export default function AtendimentoPage() {
       if (res.cliente) {
         setAvisoSegmentoZerado(null)
         setAvisoInatividadeZerado(null)
+        setAvisoCarteiraIndisponivel(null)
         await loadCliente(res.cliente.id)
         navigate(`/atendimento/${res.cliente.id}`, { replace: true })
         if (res.ja_reservado) {
@@ -453,13 +475,33 @@ export default function AtendimentoPage() {
           navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila')
         }
 
-        // Distingue carteira esgotada real de filtro de segmento ativo ou filtro de inatividade ativo
-        if (res.segmento_zerado && filtroSegmento !== 'todos') {
+        // Distingue carteira indisponível no momento, filtro de segmento ativo ou filtro de inatividade ativo
+        if (
+          res.carteira_indisponivel &&
+          (res.total_acima_do_corte || res.total_carteira_sem_filtro)
+        ) {
+          const totalDisp = res.total_acima_do_corte ?? res.total_carteira_sem_filtro ?? 0
+          const textoMsg =
+            res.message ||
+            `Existem ${totalDisp} clientes na sua carteira, mas todos estão em atendimento, standby ou aguardando retorno agora. Tente novamente mais tarde.`
+          setAvisoCarteiraIndisponivel({
+            totalCarteiraSemFiltro: totalDisp,
+            mensagem: textoMsg,
+          })
+          setAvisoSegmentoZerado(null)
+          setAvisoInatividadeZerado(null)
+          toast({
+            variant: 'default',
+            title: 'Clientes em andamento no momento',
+            description: textoMsg,
+          })
+        } else if (res.segmento_zerado && filtroSegmento !== 'todos') {
           setAvisoSegmentoZerado({
             segmento: filtroSegmento,
             totalCarteiraSemFiltro: res.total_carteira_sem_filtro || 0,
           })
           setAvisoInatividadeZerado(null)
+          setAvisoCarteiraIndisponivel(null)
           toast({
             variant: 'default',
             title: 'Filtro de segmento sem resultados',
@@ -482,6 +524,7 @@ export default function AtendimentoPage() {
             totalAcimaDoCorte: totalCorte,
           })
           setAvisoSegmentoZerado(null)
+          setAvisoCarteiraIndisponivel(null)
           toast({
             variant: 'default',
             title: 'Filtro de inatividade sem resultados',
@@ -492,6 +535,7 @@ export default function AtendimentoPage() {
         } else {
           setAvisoSegmentoZerado(null)
           setAvisoInatividadeZerado(null)
+          setAvisoCarteiraIndisponivel(null)
           toast({
             variant: res.carteira_esgotada ? 'destructive' : 'default',
             title: res.carteira_esgotada
@@ -1810,7 +1854,31 @@ export default function AtendimentoPage() {
             </div>
             <h3 className="text-base font-bold text-slate-800">Pronto para Iniciar Contatos</h3>
 
-            {avisoSegmentoZerado ? (
+            {avisoCarteiraIndisponivel ? (
+              <div className="bg-blue-50 border border-blue-300 text-blue-950 rounded-xl p-4 max-w-lg text-left shadow-xs space-y-2">
+                <div className="flex items-center gap-2 font-bold text-xs text-[#253575]">
+                  <Clock className="h-4 w-4 text-[#F18800] shrink-0" />
+                  <span>Clientes em andamento no momento</span>
+                </div>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  {avisoCarteiraIndisponivel.mensagem}
+                </p>
+                <div className="pt-1">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setAvisoCarteiraIndisponivel(null)
+                      handlePuxarNovoAtendimento()
+                    }}
+                    disabled={reservandoNovo}
+                    className="bg-[#253575] hover:bg-[#1d2b5e] text-white font-semibold text-xs h-8 px-3 shadow-xs"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                    Tentar novamente
+                  </Button>
+                </div>
+              </div>
+            ) : avisoSegmentoZerado ? (
               <div className="bg-amber-50 border border-amber-300 text-amber-900 rounded-xl p-4 max-w-lg text-left shadow-xs space-y-2">
                 <div className="flex items-center gap-2 font-bold text-xs text-amber-950">
                   <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
@@ -1929,6 +1997,21 @@ export default function AtendimentoPage() {
                   className="text-xs border-slate-300"
                 >
                   Limpar filtro de inatividade
+                </Button>
+              )}
+              {avisoCarteiraIndisponivel && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setAvisoCarteiraIndisponivel(null)
+                    handlePuxarNovoAtendimento()
+                  }}
+                  disabled={reservandoNovo}
+                  className="text-xs border-slate-300"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                  Tentar novamente
                 </Button>
               )}
             </div>

@@ -440,6 +440,7 @@ export async function reserveNextQueueClient(options?: {
     carteira_esgotada?: boolean
     segmento_zerado?: boolean
     filtro_inatividade_zerado?: boolean
+    carteira_indisponivel?: boolean
     max_dias_inatividade?: number | null
     total_carteira_sem_filtro?: number
     total_acima_do_corte?: number

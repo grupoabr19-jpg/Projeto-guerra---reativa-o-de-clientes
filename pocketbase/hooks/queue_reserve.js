@@ -1470,11 +1470,12 @@ routerAdd(
           }
         }
 
-        // Se após todos os passos de varejo cand continuar nulo E havia maxDiasInatividade ativo:
+        // Se após todos os passos de varejo cand continuar nulo:
         // Contabiliza quantos clientes existem elegíveis para o operador SEM o corte de inatividade,
         // executando exatamente a mesma cascata v3 (Filtro 1 Nominal + Filtro 2 Tipo + Filtro 3 Região),
         // com todas as travas idênticas (blindagem atacado, base_categoria, cliente_final, locks, etc).
-        if (!cand && maxDiasInatividade !== null) {
+        // Roda SEMPRE que a reserva voltar vazia, com ou sem filtro de inatividade.
+        if (!cand) {
           try {
             let fBaseSemCorte = `estado = 'na_base' && regiao != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
             if (filtroSegmento && filtroSegmento !== 'todos') {
@@ -1523,17 +1524,68 @@ routerAdd(
           ? contagemAtacadoTotalSemFiltroInatividade
           : contagemCarteiraTotalSemFiltroInatividade
 
-        if (maxDiasInatividade !== null && totalDisponivelSemInatividade > 0) {
-          return e.json(200, {
-            cliente: null,
-            carteira_esgotada: false,
-            segmento_zerado: false,
-            filtro_inatividade_zerado: true,
-            max_dias_inatividade: maxDiasInatividade,
-            total_carteira_sem_filtro: totalDisponivelSemInatividade,
-            total_acima_do_corte: totalDisponivelSemInatividade,
-            message: `Nenhum cliente até ${maxDiasInatividade} dias de inatividade na sua carteira (${totalDisponivelSemInatividade} clientes disponíveis com mais de ${maxDiasInatividade} dias) — ajuste o filtro ou puxe sem limite.`,
-          })
+        if (totalDisponivelSemInatividade > 0) {
+          if (maxDiasInatividade !== null) {
+            return e.json(200, {
+              cliente: null,
+              carteira_esgotada: false,
+              segmento_zerado: false,
+              filtro_inatividade_zerado: true,
+              max_dias_inatividade: maxDiasInatividade,
+              total_carteira_sem_filtro: totalDisponivelSemInatividade,
+              total_acima_do_corte: totalDisponivelSemInatividade,
+              message: `Nenhum cliente até ${maxDiasInatividade} dias de inatividade na sua carteira (${totalDisponivelSemInatividade} clientes disponíveis com mais de ${maxDiasInatividade} dias) — ajuste o filtro ou puxe sem limite.`,
+            })
+          } else {
+            return e.json(200, {
+              cliente: null,
+              carteira_esgotada: false,
+              filtro_inatividade_zerado: false,
+              carteira_indisponivel: true,
+              segmento_zerado: false,
+              max_dias_inatividade: null,
+              total_carteira_sem_filtro: totalDisponivelSemInatividade,
+              total_acima_do_corte: totalDisponivelSemInatividade,
+              message: `Existem ${totalDisponivelSemInatividade} clientes na sua carteira, mas todos estão em atendimento, standby ou aguardando retorno agora. Tente novamente mais tarde.`,
+            })
+          }
+        }
+
+        // Diagnóstico da carteira vazia antes do retorno genérico final
+        try {
+          let diagReservados = 0
+          let diagAtendidos = 0
+          let diagStandby = 0
+          let diagReagendados = 0
+
+          const vTokensDiag = buildVendedorSqlTerms(userName)
+          let fDiag = `regiao != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'`
+          if (vTokensDiag.length > 0) {
+            const vCondsDiag = vTokensDiag.map((t) => `vendedor ~ '${t}'`)
+            fDiag += ` && (${vCondsDiag.join(' || ')})`
+          }
+          const poolDiag = $app.findRecordsByFilter('clientes', fDiag, '-updated', 300, 0)
+          for (let dIdx = 0; dIdx < poolDiag.length; dIdx++) {
+            const dCli = poolDiag[dIdx]
+            const dEst = dCli.getString('estado')
+            const dSb = dCli.getString('standby_ate')
+            if (dSb && dSb > now.toISOString()) {
+              diagStandby++
+            } else if (dEst === 'reservado') {
+              diagReservados++
+            } else if (dEst === 'em_atendimento' || dEst === 'contatado') {
+              diagAtendidos++
+            } else if (dEst === 'reagendado') {
+              diagReagendados++
+            }
+          }
+          console.log(
+            `[queue_reserve] Diagnóstico carteira vazia: ${userName} — elegíveis_sem_corte=${totalDisponivelSemInatividade}, reservados=${diagReservados}, atendidos=${diagAtendidos}, standby=${diagStandby}, reagendados=${diagReagendados}`,
+          )
+        } catch (diagErr) {
+          console.log(
+            `[queue_reserve] Diagnóstico carteira vazia: ${userName} — elegíveis_sem_corte=${totalDisponivelSemInatividade} (erro diagnóstico: ${diagErr.message})`,
+          )
         }
 
         const isCarteiraVazia = userRole === 'operador' || userRole === 'lider'
@@ -1553,6 +1605,7 @@ routerAdd(
           carteira_esgotada: isCarteiraVazia,
           segmento_zerado: false,
           filtro_inatividade_zerado: false,
+          carteira_indisponivel: false,
           max_dias_inatividade: maxDiasInatividade,
           total_carteira_sem_filtro: 0,
           total_acima_do_corte: 0,
