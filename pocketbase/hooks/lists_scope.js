@@ -50,9 +50,28 @@ routerAdd(
       function limparPrefixoVendedor(vendedorStr) {
         let v = normalizarTextoNFD(vendedorStr)
         const prefixos = [
-          'VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ', 'VARC - ', 'ADMV - ', 'ATF - ',
-          'ESPECIALISTE - ', 'ESPECIALISTA - ', 'EXT - ', 'INT - ', 'REP - ',
-          'VARE-', 'VCORP-', 'VAREXT-', 'ATR-', 'VARC-', 'ADMV-', 'ATF-', 'EXT-', 'INT-', 'REP-',
+          'VARE - ',
+          'VCORP - ',
+          'VAREXT - ',
+          'ATR - ',
+          'VARC - ',
+          'ADMV - ',
+          'ATF - ',
+          'ESPECIALISTE - ',
+          'ESPECIALISTA - ',
+          'EXT - ',
+          'INT - ',
+          'REP - ',
+          'VARE-',
+          'VCORP-',
+          'VAREXT-',
+          'ATR-',
+          'VARC-',
+          'ADMV-',
+          'ATF-',
+          'EXT-',
+          'INT-',
+          'REP-',
         ]
         for (let i = 0; i < prefixos.length; i++) {
           const p = normalizarTextoNFD(prefixos[i])
@@ -62,9 +81,17 @@ routerAdd(
           }
         }
         const rotasSufixo = [
-          ' - BRAGANCA', ' - BRAGANCA PAULISTA', ' - JUNDIAI', ' - VARGINHA',
-          ' - POUSO ALEGRE', ' - POCOS DE CALDAS', ' - POCOS CALDAS', ' - ITAJUBA',
-          ' - EXTREMA', ' - CAMBUI', ' - ATACADO',
+          ' - BRAGANCA',
+          ' - BRAGANCA PAULISTA',
+          ' - JUNDIAI',
+          ' - VARGINHA',
+          ' - POUSO ALEGRE',
+          ' - POCOS DE CALDAS',
+          ' - POCOS CALDAS',
+          ' - ITAJUBA',
+          ' - EXTREMA',
+          ' - CAMBUI',
+          ' - ATACADO',
         ]
         for (let j = 0; j < rotasSufixo.length; j++) {
           const s = normalizarTextoNFD(rotasSufixo[j])
@@ -131,7 +158,8 @@ routerAdd(
           bindParams.filtroRegiao = filtroRegiao
         }
         if (filtroOperador && filtroOperador.toLowerCase() !== 'todos') {
-          scopeInteracaoCond += ' AND (i.operador = {:filtroOp} OR u.name = {:filtroOp} OR c.operador = {:filtroOp})'
+          scopeInteracaoCond +=
+            ' AND (i.operador = {:filtroOp} OR u.name = {:filtroOp} OR c.operador = {:filtroOp})'
           bindParams.filtroOp = filtroOperador
         }
       } else if (userRole === 'lider') {
@@ -147,20 +175,23 @@ routerAdd(
         }
         // Se o líder selecionar um operador específico do time dele
         if (filtroOperador && filtroOperador.toLowerCase() !== 'todos') {
-          scopeInteracaoCond += ' AND (i.operador = {:filtroOp} OR u.name = {:filtroOp} OR c.operador = {:filtroOp})'
+          scopeInteracaoCond +=
+            ' AND (i.operador = {:filtroOp} OR u.name = {:filtroOp} OR c.operador = {:filtroOp})'
           bindParams.filtroOp = filtroOperador
         }
       } else {
         // Operador padrão ou Vendedor Externo:
         // Restrito aos seus atendimentos e à sua carteira
-        scopeInteracaoCond += ' AND (i.operador = {:myUserId} OR c.operador = {:myUserId} OR c.vendedor LIKE {:myNomeLike})'
+        scopeInteracaoCond +=
+          ' AND (i.operador = {:myUserId} OR c.operador = {:myUserId} OR c.vendedor LIKE {:myNomeLike})'
         scopeClienteCond += ' AND (c.operador = {:myUserId} OR c.vendedor LIKE {:myNomeLike})'
         bindParams.myUserId = userId
         bindParams.myNomeLike = '%' + primeNome + '%'
       }
 
       // Regra básica: ignorar ativo_fora_base
-      const baseCliFilter = "c.estado != 'ativo_fora_base' AND (c.ativo_fora_base IS NULL OR c.ativo_fora_base = 0)"
+      const baseCliFilter =
+        "c.estado != 'ativo_fora_base' AND (c.ativo_fora_base IS NULL OR c.ativo_fora_base = 0)"
 
       // 1. LISTA 1: CLIENTES REATIVADOS
       // Apenas reativações reais com operador preenchido e interação confirmada
@@ -192,18 +223,20 @@ routerAdd(
           LIMIT ${limit}
         `
 
-        const reatRows = arrayOf(new DynamicModel({
-          cliente_id: '',
-          codigo: '',
-          nome: '',
-          endereco: '',
-          regiao: '',
-          vendedor_origem: '',
-          operador_nome: '',
-          pedido: '',
-          valor: -0,
-          data_reativacao: '',
-        }))
+        const reatRows = arrayOf(
+          new DynamicModel({
+            cliente_id: '',
+            codigo: '',
+            nome: '',
+            endereco: '',
+            regiao: '',
+            vendedor_origem: '',
+            operador_nome: '',
+            pedido: '',
+            valor: -0,
+            data_reativacao: '',
+          }),
+        )
 
         const qbReat = $app.db().newQuery(reatSql)
         if (Object.keys(bindParams).length > 0) qbReat.bind(bindParams)
@@ -256,18 +289,20 @@ routerAdd(
           LIMIT ${limit}
         `
 
-        const reagRows = arrayOf(new DynamicModel({
-          cliente_id: '',
-          codigo: '',
-          nome: '',
-          endereco: '',
-          regiao: '',
-          vendedor_origem: '',
-          operador_nome: '',
-          data_atendimento: '',
-          reagendado_para: '',
-          motivo: '',
-        }))
+        const reagRows = arrayOf(
+          new DynamicModel({
+            cliente_id: '',
+            codigo: '',
+            nome: '',
+            endereco: '',
+            regiao: '',
+            vendedor_origem: '',
+            operador_nome: '',
+            data_atendimento: '',
+            reagendado_para: '',
+            motivo: '',
+          }),
+        )
 
         const qbReag = $app.db().newQuery(reagSql)
         if (Object.keys(bindParams).length > 0) qbReag.bind(bindParams)
@@ -320,19 +355,21 @@ routerAdd(
           LIMIT ${limit}
         `
 
-        const follRows = arrayOf(new DynamicModel({
-          cliente_id: '',
-          codigo: '',
-          nome: '',
-          endereco: '',
-          regiao: '',
-          vendedor_origem: '',
-          telefone: '',
-          whatsapp: '',
-          data_retorno: '',
-          operador_nome: '',
-          estado: '',
-        }))
+        const follRows = arrayOf(
+          new DynamicModel({
+            cliente_id: '',
+            codigo: '',
+            nome: '',
+            endereco: '',
+            regiao: '',
+            vendedor_origem: '',
+            telefone: '',
+            whatsapp: '',
+            data_retorno: '',
+            operador_nome: '',
+            estado: '',
+          }),
+        )
 
         const qbFoll = $app.db().newQuery(follSql)
         if (Object.keys(bindParams).length > 0) qbFoll.bind(bindParams)

@@ -2123,7 +2123,13 @@ export async function fetchMetricasBaseKpis(options?: {
  * Exporta dados de relatórios em formato CSV compatível com Excel (sep=; e BOM)
  */
 export async function exportarRelatoriosCsv(options: {
-  tipo: 'reativados' | 'contatos' | 'reagendados' | 'followups' | 'vendas_perdidas' | 'resumo_diario'
+  tipo:
+    | 'reativados'
+    | 'contatos'
+    | 'reagendados'
+    | 'followups'
+    | 'vendas_perdidas'
+    | 'resumo_diario'
   periodoInicio?: string
   periodoFim?: string
   regiao?: string

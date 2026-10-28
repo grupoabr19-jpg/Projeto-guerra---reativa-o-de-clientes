@@ -201,12 +201,16 @@ export const ExportacaoRelatoriosSection: React.FC<ExportacaoRelatoriosSectionPr
               <CardTitle className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
                 Central de Relatórios e Exportação CSV
               </CardTitle>
-              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">
+              <Badge
+                variant="outline"
+                className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs"
+              >
                 Compatível com Excel (BOM / sep=;)
               </Badge>
             </div>
             <CardDescription className="text-xs text-slate-500 mt-0.5">
-              Exporte dados oficiais da operação para auditoria, apresentações ou cruzamentos externos.
+              Exporte dados oficiais da operação para auditoria, apresentações ou cruzamentos
+              externos.
             </CardDescription>
           </div>
 
@@ -258,7 +262,9 @@ export const ExportacaoRelatoriosSection: React.FC<ExportacaoRelatoriosSectionPr
                     <Icon className={`h-4.5 w-4.5 ${op.cor}`} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs font-bold text-slate-900 leading-tight">{op.titulo}</div>
+                    <div className="text-xs font-bold text-slate-900 leading-tight">
+                      {op.titulo}
+                    </div>
                     <div className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{op.desc}</div>
                   </div>
                 </div>
@@ -413,11 +419,13 @@ export const ExportacaoRelatoriosSection: React.FC<ExportacaoRelatoriosSectionPr
             <div>
               <div className="text-xs font-bold text-slate-900">
                 Pronto para exportar:{' '}
-                <span className="text-[#253575]">{cardsOpcoes.find((c) => c.id === tipo)?.titulo}</span>
+                <span className="text-[#253575]">
+                  {cardsOpcoes.find((c) => c.id === tipo)?.titulo}
+                </span>
               </div>
               <div className="text-[11px] text-slate-500">
-                Período: {dataInicio || 'Início'} até {dataFim || 'Fim'} • Região: {regiao} • Operador:{' '}
-                {operador}
+                Período: {dataInicio || 'Início'} até {dataFim || 'Fim'} • Região: {regiao} •
+                Operador: {operador}
               </div>
             </div>
           </div>

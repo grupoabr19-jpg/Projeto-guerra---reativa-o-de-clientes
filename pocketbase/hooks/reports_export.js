@@ -70,21 +70,50 @@ routerAdd(
       if (regiao && regiao.toLowerCase() !== 'todas') {
         const upper = regiao.toUpperCase().trim()
         if (upper === 'SEM REGIÃO' || upper === 'SEM REGIAO') {
-          regiaoCondition = " AND (c.regiao = '' OR c.regiao IS NULL OR UPPER(TRIM(c.regiao)) = 'SEM REGIÃO' OR UPPER(TRIM(c.regiao)) = 'SEM REGIAO')"
-        } else if (upper === 'BRAGANÇA' || upper === 'BRAGANCA' || upper === 'BRAGANÇA PAULISTA' || upper === 'BRAGANCA PAULISTA') {
-          regiaoCondition = " AND (UPPER(TRIM(c.regiao)) = 'BRAGANÇA' OR UPPER(TRIM(c.regiao)) = 'BRAGANCA' OR UPPER(TRIM(c.regiao)) = 'BRAGANÇA PAULISTA' OR UPPER(TRIM(c.regiao)) = 'BRAGANCA PAULISTA')"
-        } else if (upper === 'CAMBUÍ' || upper === 'CAMBUI' || upper === 'MICRO-REGIÃO' || upper === 'MICRO REGIAO' || upper === 'MICROREGIAO') {
-          regiaoCondition = " AND (UPPER(TRIM(c.regiao)) = 'CAMBUÍ' OR UPPER(TRIM(c.regiao)) = 'CAMBUI' OR UPPER(TRIM(c.regiao)) = 'MICRO-REGIÃO' OR UPPER(TRIM(c.regiao)) = 'MICRO REGIAO' OR UPPER(TRIM(c.regiao)) = 'MICROREGIAO')"
-        } else if (upper === 'POÇOS DE CALDAS' || upper === 'POCOS DE CALDAS' || upper === 'POÇOS CALDAS' || upper === 'POCOS CALDAS') {
-          regiaoCondition = " AND (UPPER(TRIM(c.regiao)) = 'POÇOS DE CALDAS' OR UPPER(TRIM(c.regiao)) = 'POCOS DE CALDAS' OR UPPER(TRIM(c.regiao)) = 'POÇOS CALDAS' OR UPPER(TRIM(c.regiao)) = 'POCOS CALDAS')"
+          regiaoCondition =
+            " AND (c.regiao = '' OR c.regiao IS NULL OR UPPER(TRIM(c.regiao)) = 'SEM REGIÃO' OR UPPER(TRIM(c.regiao)) = 'SEM REGIAO')"
+        } else if (
+          upper === 'BRAGANÇA' ||
+          upper === 'BRAGANCA' ||
+          upper === 'BRAGANÇA PAULISTA' ||
+          upper === 'BRAGANCA PAULISTA'
+        ) {
+          regiaoCondition =
+            " AND (UPPER(TRIM(c.regiao)) = 'BRAGANÇA' OR UPPER(TRIM(c.regiao)) = 'BRAGANCA' OR UPPER(TRIM(c.regiao)) = 'BRAGANÇA PAULISTA' OR UPPER(TRIM(c.regiao)) = 'BRAGANCA PAULISTA')"
+        } else if (
+          upper === 'CAMBUÍ' ||
+          upper === 'CAMBUI' ||
+          upper === 'MICRO-REGIÃO' ||
+          upper === 'MICRO REGIAO' ||
+          upper === 'MICROREGIAO'
+        ) {
+          regiaoCondition =
+            " AND (UPPER(TRIM(c.regiao)) = 'CAMBUÍ' OR UPPER(TRIM(c.regiao)) = 'CAMBUI' OR UPPER(TRIM(c.regiao)) = 'MICRO-REGIÃO' OR UPPER(TRIM(c.regiao)) = 'MICRO REGIAO' OR UPPER(TRIM(c.regiao)) = 'MICROREGIAO')"
+        } else if (
+          upper === 'POÇOS DE CALDAS' ||
+          upper === 'POCOS DE CALDAS' ||
+          upper === 'POÇOS CALDAS' ||
+          upper === 'POCOS CALDAS'
+        ) {
+          regiaoCondition =
+            " AND (UPPER(TRIM(c.regiao)) = 'POÇOS DE CALDAS' OR UPPER(TRIM(c.regiao)) = 'POCOS DE CALDAS' OR UPPER(TRIM(c.regiao)) = 'POÇOS CALDAS' OR UPPER(TRIM(c.regiao)) = 'POCOS CALDAS')"
         } else if (upper === 'JUNDIAÍ' || upper === 'JUNDIAI') {
-          regiaoCondition = " AND (UPPER(TRIM(c.regiao)) = 'JUNDIAÍ' OR UPPER(TRIM(c.regiao)) = 'JUNDIAI')"
+          regiaoCondition =
+            " AND (UPPER(TRIM(c.regiao)) = 'JUNDIAÍ' OR UPPER(TRIM(c.regiao)) = 'JUNDIAI')"
         } else if (upper === 'ITAJUBÁ' || upper === 'ITAJUBA') {
-          regiaoCondition = " AND (UPPER(TRIM(c.regiao)) = 'ITAJUBÁ' OR UPPER(TRIM(c.regiao)) = 'ITAJUBA')"
-        } else if (upper === 'VARGINHA' || upper === 'POUSO ALEGRE' || upper === 'EXTREMA' || upper === 'ATACADO' || upper === 'REPESCAGEM') {
+          regiaoCondition =
+            " AND (UPPER(TRIM(c.regiao)) = 'ITAJUBÁ' OR UPPER(TRIM(c.regiao)) = 'ITAJUBA')"
+        } else if (
+          upper === 'VARGINHA' ||
+          upper === 'POUSO ALEGRE' ||
+          upper === 'EXTREMA' ||
+          upper === 'ATACADO' ||
+          upper === 'REPESCAGEM'
+        ) {
           regiaoCondition = " AND UPPER(TRIM(c.regiao)) = '" + upper + "'"
         } else {
-          regiaoCondition = " AND (UPPER(TRIM(c.regiao)) = {:regiaoParam} OR UPPER(TRIM(c.regiao)) LIKE {:regiaoLike})"
+          regiaoCondition =
+            ' AND (UPPER(TRIM(c.regiao)) = {:regiaoParam} OR UPPER(TRIM(c.regiao)) LIKE {:regiaoLike})'
           bindParams.regiaoParam = upper
           bindParams.regiaoLike = '%' + upper + '%'
         }
@@ -92,7 +121,8 @@ routerAdd(
 
       let operadorCondition = ''
       if (operador && operador.toLowerCase() !== 'todos') {
-        operadorCondition = ' AND (u.name = {:opParam} OR c.operador = {:opParam} OR i.operador = {:opParam})'
+        operadorCondition =
+          ' AND (u.name = {:opParam} OR c.operador = {:opParam} OR i.operador = {:opParam})'
         bindParams.opParam = operador
       }
 
@@ -112,7 +142,8 @@ routerAdd(
 
       if (tipo === 'reativados') {
         filename = `reativados_${new Date().toISOString().slice(0, 10)}.csv`
-        csvContent += 'Código;Nome do Cliente;Cidade/UF;Região;Segmento;Operador;Pedido;Valor Recuperado;Data Reativação\r\n'
+        csvContent +=
+          'Código;Nome do Cliente;Cidade/UF;Região;Segmento;Operador;Pedido;Valor Recuperado;Data Reativação\r\n'
 
         // Regra única: reativação real com operador preenchido e interação confirmada
         const sql = `
@@ -140,17 +171,19 @@ routerAdd(
           ORDER BY data_reativacao DESC
         `
 
-        const rows = arrayOf(new DynamicModel({
-          codigo: '',
-          nome: '',
-          endereco: '',
-          regiao: '',
-          segmento: '',
-          operador_nome: '',
-          pedido: '',
-          valor: -0,
-          data_reativacao: '',
-        }))
+        const rows = arrayOf(
+          new DynamicModel({
+            codigo: '',
+            nome: '',
+            endereco: '',
+            regiao: '',
+            segmento: '',
+            operador_nome: '',
+            pedido: '',
+            valor: -0,
+            data_reativacao: '',
+          }),
+        )
 
         const qb = $app.db().newQuery(sql)
         if (Object.keys(bindParams).length > 0) qb.bind(bindParams)
@@ -161,17 +194,20 @@ routerAdd(
           const r = rows[idx]
           if (vistos[r.codigo]) continue
           vistos[r.codigo] = true
-          csvContent += [
-            escapeCsv(r.codigo),
-            escapeCsv(r.nome),
-            escapeCsv(r.endereco),
-            escapeCsv(r.regiao),
-            escapeCsv(r.segmento),
-            escapeCsv(r.operador_nome),
-            escapeCsv(r.pedido),
-            Number(r.valor || 0).toFixed(2).replace('.', ','),
-            escapeCsv(formatBrasiliaDate(r.data_reativacao)),
-          ].join(';') + '\r\n'
+          csvContent +=
+            [
+              escapeCsv(r.codigo),
+              escapeCsv(r.nome),
+              escapeCsv(r.endereco),
+              escapeCsv(r.regiao),
+              escapeCsv(r.segmento),
+              escapeCsv(r.operador_nome),
+              escapeCsv(r.pedido),
+              Number(r.valor || 0)
+                .toFixed(2)
+                .replace('.', ','),
+              escapeCsv(formatBrasiliaDate(r.data_reativacao)),
+            ].join(';') + '\r\n'
         }
       } else if (tipo === 'contatos') {
         filename = `contatos_${new Date().toISOString().slice(0, 10)}.csv`
@@ -198,16 +234,18 @@ routerAdd(
           LIMIT 5000
         `
 
-        const rows = arrayOf(new DynamicModel({
-          data_hora: '',
-          codigo: '',
-          nome: '',
-          regiao: '',
-          operador_nome: '',
-          tipo: '',
-          desfecho: '',
-          conteudo: '',
-        }))
+        const rows = arrayOf(
+          new DynamicModel({
+            data_hora: '',
+            codigo: '',
+            nome: '',
+            regiao: '',
+            operador_nome: '',
+            tipo: '',
+            desfecho: '',
+            conteudo: '',
+          }),
+        )
 
         const qb = $app.db().newQuery(sql)
         if (Object.keys(bindParams).length > 0) qb.bind(bindParams)
@@ -215,20 +253,22 @@ routerAdd(
 
         for (let idx = 0; idx < rows.length; idx++) {
           const r = rows[idx]
-          csvContent += [
-            escapeCsv(formatBrasiliaDate(r.data_hora)),
-            escapeCsv(r.codigo),
-            escapeCsv(r.nome),
-            escapeCsv(r.regiao),
-            escapeCsv(r.operador_nome),
-            escapeCsv(r.tipo),
-            escapeCsv(r.desfecho),
-            escapeCsv(r.conteudo),
-          ].join(';') + '\r\n'
+          csvContent +=
+            [
+              escapeCsv(formatBrasiliaDate(r.data_hora)),
+              escapeCsv(r.codigo),
+              escapeCsv(r.nome),
+              escapeCsv(r.regiao),
+              escapeCsv(r.operador_nome),
+              escapeCsv(r.tipo),
+              escapeCsv(r.desfecho),
+              escapeCsv(r.conteudo),
+            ].join(';') + '\r\n'
         }
       } else if (tipo === 'reagendados') {
         filename = `reagendados_${new Date().toISOString().slice(0, 10)}.csv`
-        csvContent += 'Código;Nome do Cliente;Cidade/UF;Região;Operador;Data Registro;Reagendado Para;Motivo\r\n'
+        csvContent +=
+          'Código;Nome do Cliente;Cidade/UF;Região;Operador;Data Registro;Reagendado Para;Motivo\r\n'
 
         const sql = `
           SELECT
@@ -250,16 +290,18 @@ routerAdd(
           ORDER BY i.created DESC
         `
 
-        const rows = arrayOf(new DynamicModel({
-          codigo: '',
-          nome: '',
-          endereco: '',
-          regiao: '',
-          operador_nome: '',
-          data_registro: '',
-          reagendado_para: '',
-          motivo: '',
-        }))
+        const rows = arrayOf(
+          new DynamicModel({
+            codigo: '',
+            nome: '',
+            endereco: '',
+            regiao: '',
+            operador_nome: '',
+            data_registro: '',
+            reagendado_para: '',
+            motivo: '',
+          }),
+        )
 
         const qb = $app.db().newQuery(sql)
         if (Object.keys(bindParams).length > 0) qb.bind(bindParams)
@@ -267,20 +309,22 @@ routerAdd(
 
         for (let idx = 0; idx < rows.length; idx++) {
           const r = rows[idx]
-          csvContent += [
-            escapeCsv(r.codigo),
-            escapeCsv(r.nome),
-            escapeCsv(r.endereco),
-            escapeCsv(r.regiao),
-            escapeCsv(r.operador_nome),
-            escapeCsv(formatBrasiliaDate(r.data_registro)),
-            escapeCsv(formatBrasiliaDate(r.reagendado_para)),
-            escapeCsv(r.motivo),
-          ].join(';') + '\r\n'
+          csvContent +=
+            [
+              escapeCsv(r.codigo),
+              escapeCsv(r.nome),
+              escapeCsv(r.endereco),
+              escapeCsv(r.regiao),
+              escapeCsv(r.operador_nome),
+              escapeCsv(formatBrasiliaDate(r.data_registro)),
+              escapeCsv(formatBrasiliaDate(r.reagendado_para)),
+              escapeCsv(r.motivo),
+            ].join(';') + '\r\n'
         }
       } else if (tipo === 'followups') {
         filename = `followups_programados_${new Date().toISOString().slice(0, 10)}.csv`
-        csvContent += 'Data Agendada;Código;Nome do Cliente;Telefone;Região;Operador Responsável;Status\r\n'
+        csvContent +=
+          'Data Agendada;Código;Nome do Cliente;Telefone;Região;Operador Responsável;Status\r\n'
 
         let followUpDateCond = ''
         if (startUtcIso) {
@@ -308,15 +352,17 @@ routerAdd(
           ORDER BY c.reagendado_para ASC
         `
 
-        const rows = arrayOf(new DynamicModel({
-          data_agendada: '',
-          codigo: '',
-          nome: '',
-          telefone: '',
-          regiao: '',
-          operador_nome: '',
-          estado: '',
-        }))
+        const rows = arrayOf(
+          new DynamicModel({
+            data_agendada: '',
+            codigo: '',
+            nome: '',
+            telefone: '',
+            regiao: '',
+            operador_nome: '',
+            estado: '',
+          }),
+        )
 
         const qb = $app.db().newQuery(sql)
         if (Object.keys(bindParams).length > 0) qb.bind(bindParams)
@@ -324,15 +370,16 @@ routerAdd(
 
         for (let idx = 0; idx < rows.length; idx++) {
           const r = rows[idx]
-          csvContent += [
-            escapeCsv(formatBrasiliaDate(r.data_agendada)),
-            escapeCsv(r.codigo),
-            escapeCsv(r.nome),
-            escapeCsv(r.telefone),
-            escapeCsv(r.regiao),
-            escapeCsv(r.operador_nome),
-            escapeCsv(r.estado),
-          ].join(';') + '\r\n'
+          csvContent +=
+            [
+              escapeCsv(formatBrasiliaDate(r.data_agendada)),
+              escapeCsv(r.codigo),
+              escapeCsv(r.nome),
+              escapeCsv(r.telefone),
+              escapeCsv(r.regiao),
+              escapeCsv(r.operador_nome),
+              escapeCsv(r.estado),
+            ].join(';') + '\r\n'
         }
       } else if (tipo === 'vendas_perdidas') {
         filename = `vendas_perdidas_${new Date().toISOString().slice(0, 10)}.csv`
@@ -357,15 +404,17 @@ routerAdd(
           ORDER BY i.created DESC
         `
 
-        const rows = arrayOf(new DynamicModel({
-          codigo: '',
-          nome: '',
-          regiao: '',
-          operador_nome: '',
-          data_perda: '',
-          motivo_perda: '',
-          conteudo: '',
-        }))
+        const rows = arrayOf(
+          new DynamicModel({
+            codigo: '',
+            nome: '',
+            regiao: '',
+            operador_nome: '',
+            data_perda: '',
+            motivo_perda: '',
+            conteudo: '',
+          }),
+        )
 
         const qb = $app.db().newQuery(sql)
         if (Object.keys(bindParams).length > 0) qb.bind(bindParams)
@@ -373,15 +422,16 @@ routerAdd(
 
         for (let idx = 0; idx < rows.length; idx++) {
           const r = rows[idx]
-          csvContent += [
-            escapeCsv(r.codigo),
-            escapeCsv(r.nome),
-            escapeCsv(r.regiao),
-            escapeCsv(r.operador_nome),
-            escapeCsv(formatBrasiliaDate(r.data_perda)),
-            escapeCsv(r.motivo_perda),
-            escapeCsv(r.conteudo),
-          ].join(';') + '\r\n'
+          csvContent +=
+            [
+              escapeCsv(r.codigo),
+              escapeCsv(r.nome),
+              escapeCsv(r.regiao),
+              escapeCsv(r.operador_nome),
+              escapeCsv(formatBrasiliaDate(r.data_perda)),
+              escapeCsv(r.motivo_perda),
+              escapeCsv(r.conteudo),
+            ].join(';') + '\r\n'
         }
       } else {
         // resumo_diario
@@ -417,14 +467,16 @@ routerAdd(
           ORDER BY dia DESC
         `
 
-        const rows = arrayOf(new DynamicModel({
-          dia: '',
-          reativacoes: 0,
-          contatos: 0,
-          reagendamentos: 0,
-          vendas_perdidas: 0,
-          total_interacoes: 0,
-        }))
+        const rows = arrayOf(
+          new DynamicModel({
+            dia: '',
+            reativacoes: 0,
+            contatos: 0,
+            reagendamentos: 0,
+            vendas_perdidas: 0,
+            total_interacoes: 0,
+          }),
+        )
 
         const qb = $app.db().newQuery(sql)
         if (Object.keys(bindParams).length > 0) qb.bind(bindParams)
@@ -432,14 +484,15 @@ routerAdd(
 
         for (let idx = 0; idx < rows.length; idx++) {
           const r = rows[idx]
-          csvContent += [
-            escapeCsv(r.dia),
-            r.reativacoes || 0,
-            r.contatos || 0,
-            r.reagendamentos || 0,
-            r.vendas_perdidas || 0,
-            r.total_interacoes || 0,
-          ].join(';') + '\r\n'
+          csvContent +=
+            [
+              escapeCsv(r.dia),
+              r.reativacoes || 0,
+              r.contatos || 0,
+              r.reagendamentos || 0,
+              r.vendas_perdidas || 0,
+              r.total_interacoes || 0,
+            ].join(';') + '\r\n'
         }
       }
 
