@@ -1,7 +1,7 @@
 {
-  "version": "0.0.168",
-  "buildTime": "2026-10-27T17:15:00.000Z",
-  "buildId": "v0.0.168",
-  "mensagem": "v0.0.168: Contagem de carteira sem corte universal, flag carteira_indisponivel sem toast vermelho e diagnóstico aprofundado de fila.",
+  "version": "0.0.169",
+  "buildTime": "2026-10-28T12:00:00.000Z",
+  "buildId": "v0.0.169",
+  "mensagem": "v0.0.169: Gráfico de evolução diária (série temporal multi-linha) nos Relatórios com reativações, contatos, reagendamentos, follow-ups e perdas.",
   "forceReload": false
 }

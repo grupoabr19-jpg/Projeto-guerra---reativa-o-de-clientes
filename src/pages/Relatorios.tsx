@@ -84,6 +84,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { ExpedienteStatusBadge } from '@/components/ExpedienteStatusBadge'
 import { OperadorFichasModal } from '@/components/OperadorFichasModal'
+import { DailyEvolutionSection } from '@/components/DailyEvolutionSection'
 
 export default function RelatoriosPage() {
   const { user } = useAuth()
@@ -1064,6 +1065,16 @@ export default function RelatoriosPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* ========================================================================= */}
+      {/* GRÁFICO DE EVOLUÇÃO DIÁRIA — SÉRIE TEMPORAL MULTI-LINHA */}
+      {/* ========================================================================= */}
+      <section className="space-y-4">
+        <DailyEvolutionSection
+          selectedRegiao={selectedRegiao !== 'todas' ? selectedRegiao : undefined}
+          selectedOperador={selectedOperador !== 'todos' ? selectedOperador : undefined}
+        />
+      </section>
 
       {/* ========================================================================= */}
       {/* BLOCO 1 — MÉTRICAS DE ATENDIMENTO (ATIVIDADE DA EQUIPE COMERCIAL) */}

@@ -14,7 +14,7 @@ declare const __APP_VERSION__: string | undefined
 declare const __APP_BUILD_ID__: string | undefined
 declare const __APP_BUILD_TIME__: string | undefined
 
-const resolvedVersion = (typeof __APP_VERSION__ !== 'undefined' && __APP_VERSION__) || '0.0.166'
+const resolvedVersion = (typeof __APP_VERSION__ !== 'undefined' && __APP_VERSION__) || '0.0.169'
 const resolvedBuildId =
   (typeof __APP_BUILD_ID__ !== 'undefined' && __APP_BUILD_ID__) || `v${resolvedVersion}`
 const resolvedBuildTime =

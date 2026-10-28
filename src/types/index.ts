@@ -884,3 +884,29 @@ export interface MetricasRespostasFormularioResponse {
   q10AcaoCorretiva: ContagemItem[]
   desfechos: ContagemItem[]
 }
+
+// Resposta do Endpoint de Evolução Diária (Série Temporal)
+export interface DailyEvolutionItem {
+  dia: string
+  label: string
+  reativacoes: number
+  contatos: number
+  reagendamentos: number
+  followUpsAgendados: number
+  vendasPerdidas: number
+  totalInteracoes: number
+}
+
+export interface ReportsDailyEvolutionResponse {
+  periodo: string
+  dataInicio: string
+  dataFim: string
+  totais: {
+    reativacoes: number
+    contatos: number
+    reagendamentos: number
+    followUpsAgendados: number
+    vendasPerdidas: number
+  }
+  serie: DailyEvolutionItem[]
+}

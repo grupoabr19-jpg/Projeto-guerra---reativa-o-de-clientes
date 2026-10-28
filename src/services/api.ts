@@ -1889,6 +1889,59 @@ export async function fetchMetricasRespostasFormulario(options?: {
   return res.json()
 }
 
+/**
+ * Consulta série temporal de evolução diária das reativações, contatos, reagendamentos,
+ * follow-ups agendados e vendas perdidas diretamente no SQLite do backend.
+ */
+export async function fetchReportsDailyEvolution(options?: {
+  regiao?: string
+  operador?: string
+  periodo?: string
+  mes?: string
+}): Promise<import('@/types').ReportsDailyEvolutionResponse> {
+  const params = new URLSearchParams()
+  const regiao = options?.regiao?.trim()
+  if (regiao && regiao.toLowerCase() !== 'todas') {
+    params.set('regiao', regiao)
+  }
+  const operador = options?.operador?.trim()
+  if (operador && operador.toLowerCase() !== 'todos') {
+    params.set('operador', operador)
+  }
+  if (options?.periodo) {
+    params.set('periodo', options.periodo)
+  }
+  if (options?.mes) {
+    params.set('mes', options.mes)
+  }
+
+  const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
+  const queryStr = params.toString()
+  const url = `${basePbUrl}/backend/v1/metrics/reports-daily-evolution${queryStr ? `?${queryStr}` : ''}`
+
+  const token = pb.authStore.token || ''
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = token
+  }
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers,
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(
+      err.error ||
+        err.message ||
+        `Falha ao calcular evolução diária de atendimentos (${res.status})`,
+    )
+  }
+
+  return res.json()
+}
+
 export async function fetchReportsAnalytics(
   filtros?: import('@/types').FiltrosRelatoriosAvancados,
 ): Promise<import('@/types').ReportsAnalyticsResponse> {
