@@ -239,13 +239,13 @@ routerAdd(
       // 1. KPIS GERAIS DA BASE FILTRADA
       // =========================================================================
       // Condição que define uma REATIVAÇÃO REAL DA EQUIPE:
-      // Cliente com estado 'reativado' QUE teve atendimento por operador e/ou pedido registrado
+      // Cliente com estado 'reativado' QUE teve atendimento por operador e atendimento correspondente em interacoes
       const isReativacaoRealCond =
-        "(estado = 'reativado' AND ((operador IS NOT NULL AND TRIM(operador) != '') OR (pedido_reativacao IS NOT NULL AND TRIM(pedido_reativacao) != '')))"
+        "(clientes.estado = 'reativado' AND clientes.operador IS NOT NULL AND TRIM(clientes.operador) != '' AND EXISTS (SELECT 1 FROM interacoes i_chk WHERE i_chk.cliente = clientes.id AND (i_chk.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk.numero_pedido IS NOT NULL AND TRIM(i_chk.numero_pedido) != '' AND TRIM(i_chk.numero_pedido) != '-'))))"
 
       // Condição que define CLIENTES COM FATURAMENTO RECENTE DETECTADOS NO CRUZAMENTO (sem atendimento de operador)
       const isFaturamentoCruzamentoCond =
-        "(estado = 'reativado' AND (operador IS NULL OR TRIM(operador) = '') AND (pedido_reativacao IS NULL OR TRIM(pedido_reativacao) = ''))"
+        "(clientes.estado = 'reativado' AND (clientes.operador IS NULL OR TRIM(clientes.operador) = '' OR NOT EXISTS (SELECT 1 FROM interacoes i_chk2 WHERE i_chk2.cliente = clientes.id AND (i_chk2.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk2.numero_pedido IS NOT NULL AND TRIM(i_chk2.numero_pedido) != '' AND TRIM(i_chk2.numero_pedido) != '-')))))"
 
       const kpisQuery = `
         SELECT

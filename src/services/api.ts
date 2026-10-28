@@ -2119,6 +2119,128 @@ export async function fetchMetricasBaseKpis(options?: {
   }
 }
 
+/**
+ * Exporta dados de relatórios em formato CSV compatível com Excel (sep=; e BOM)
+ */
+export async function exportarRelatoriosCsv(options: {
+  tipo: 'reativados' | 'contatos' | 'reagendados' | 'followups' | 'vendas_perdidas' | 'resumo_diario'
+  periodoInicio?: string
+  periodoFim?: string
+  regiao?: string
+  operador?: string
+}): Promise<{ filename: string; csv: string }> {
+  const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
+  const url = `${basePbUrl}/backend/v1/reports/export`
+
+  const token = pb.authStore.token || ''
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+  if (token) {
+    headers['Authorization'] = token
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      tipo: options.tipo,
+      periodo_inicio: options.periodoInicio,
+      periodo_fim: options.periodoFim,
+      regiao: options.regiao,
+      operador: options.operador,
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `Falha ao exportar relatório CSV (${res.status})`)
+  }
+
+  return res.json()
+}
+
+/**
+ * Consulta listas de clientes (reativados, reagendados e follow-ups) conforme o escopo do colaborador
+ */
+export async function fetchListasColaborador(options?: {
+  regiao?: string
+  operador?: string
+  tipo?: 'todas' | 'reativados' | 'reagendados' | 'followups'
+  limit?: number
+}): Promise<{
+  scope: { role: string; userId: string; userName: string; regioes: string[] }
+  totais: { reativados: number; reagendados: number; followups: number }
+  reativados: Array<{
+    id: string
+    codigo: string
+    nome: string
+    cidade: string
+    regiao: string
+    vendedorOrigem: string
+    operadorResponsavel: string
+    pedido: string
+    valor: number
+    data: string
+    dataFormatada: string
+  }>
+  reagendados: Array<{
+    id: string
+    codigo: string
+    nome: string
+    cidade: string
+    regiao: string
+    vendedorOrigem: string
+    operadorResponsavel: string
+    dataAtendimento: string
+    dataAtendimentoFormatada: string
+    reagendadoPara: string
+    reagendadoParaFormatada: string
+    motivo: string
+  }>
+  followups: Array<{
+    id: string
+    codigo: string
+    nome: string
+    cidade: string
+    regiao: string
+    vendedorOrigem: string
+    telefone: string
+    operadorResponsavel: string
+    dataRetorno: string
+    dataRetornoFormatada: string
+    estado: string
+  }>
+}> {
+  const params = new URLSearchParams()
+  if (options?.regiao && options.regiao !== 'todas') params.set('regiao', options.regiao)
+  if (options?.operador && options.operador !== 'todos') params.set('operador', options.operador)
+  if (options?.tipo) params.set('tipo', options.tipo)
+  if (options?.limit) params.set('limit', String(options.limit))
+
+  const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
+  const queryStr = params.toString()
+  const url = `${basePbUrl}/backend/v1/metrics/listas-colaborador${queryStr ? `?${queryStr}` : ''}`
+
+  const token = pb.authStore.token || ''
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = token
+  }
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers,
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `Falha ao carregar listas do colaborador (${res.status})`)
+  }
+
+  return res.json()
+}
+
 // Re-export diagnóstico e gamificação APIs
 export * from './diagnostico'
 export * from './gamificacao'

@@ -257,15 +257,6 @@ export default function Layout() {
             href: '/ranking',
             icon: Trophy,
           },
-          ...(hasRole(['supervisor', 'admin', 'lider'])
-            ? [
-                {
-                  title: 'Relatórios',
-                  href: '/relatorios',
-                  icon: BarChart3,
-                },
-              ]
-            : []),
           ...(hasRole('admin')
             ? [
                 {

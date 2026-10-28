@@ -96,11 +96,15 @@ routerAdd(
       // Regra fundamental: clientes marcados com ativo_fora_base (flag ou estado) ficam fora
       const baseFilterSql = `estado != 'ativo_fora_base' AND (ativo_fora_base IS NULL OR ativo_fora_base = 0) AND (${categoriaSql})`
 
+      // Regra unificada de Reativação Real:
+      // O cliente deve estar como 'reativado', com operador preenchido e com atendimento real
+      // correspondente na coleção interações (desfecho de reativação ou pedido preenchido)
+      // Clientes de importação sem operador ou sem atendimento real (ex: C023347 Nelson, C023355 Maria Cecilia) não contam.
       const isReativacaoRealCond =
-        "(estado = 'reativado' AND ((operador IS NOT NULL AND TRIM(operador) != '') OR (pedido_reativacao IS NOT NULL AND TRIM(pedido_reativacao) != '')))"
+        "(estado = 'reativado' AND operador IS NOT NULL AND TRIM(operador) != '' AND EXISTS (SELECT 1 FROM interacoes i_chk WHERE i_chk.cliente = clientes.id AND (i_chk.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk.numero_pedido IS NOT NULL AND TRIM(i_chk.numero_pedido) != '' AND TRIM(i_chk.numero_pedido) != '-'))))"
 
       const isFaturamentoCruzamentoCond =
-        "(estado = 'reativado' AND (operador IS NULL OR TRIM(operador) = '') AND (pedido_reativacao IS NULL OR TRIM(pedido_reativacao) = ''))"
+        "(estado = 'reativado' AND (operador IS NULL OR TRIM(operador) = '' OR NOT EXISTS (SELECT 1 FROM interacoes i_chk2 WHERE i_chk2.cliente = clientes.id AND (i_chk2.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk2.numero_pedido IS NOT NULL AND TRIM(i_chk2.numero_pedido) != '' AND TRIM(i_chk2.numero_pedido) != '-')))))"
 
       const kpisQuery = `
         SELECT

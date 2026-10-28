@@ -201,15 +201,16 @@ var DESFECHOS_ISENTOS = {
 
 /**
  * Condição SQL para definir Reativação Real da Equipe.
+ * Exige operador preenchido E atendimento real na tabela interacoes.
  */
 var SQL_IS_REATIVACAO_REAL =
-  "(estado = 'reativado' AND ((operador IS NOT NULL AND TRIM(operador) != '') OR (pedido_reativacao IS NOT NULL AND TRIM(pedido_reativacao) != '')))"
+  "(estado = 'reativado' AND operador IS NOT NULL AND TRIM(operador) != '' AND EXISTS (SELECT 1 FROM interacoes i_chk WHERE i_chk.cliente = clientes.id AND (i_chk.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk.numero_pedido IS NOT NULL AND TRIM(i_chk.numero_pedido) != '' AND TRIM(i_chk.numero_pedido) != '-'))))"
 
 /**
  * Condição SQL para definir Faturamento Recente do Cruzamento (sem atendimento da equipe).
  */
 var SQL_IS_FATURAMENTO_CRUZAMENTO =
-  "(estado = 'reativado' AND (operador IS NULL OR TRIM(operador) = '') AND (pedido_reativacao IS NULL OR TRIM(pedido_reativacao) = ''))"
+  "(estado = 'reativado' AND (operador IS NULL OR TRIM(operador) = '' OR NOT EXISTS (SELECT 1 FROM interacoes i_chk2 WHERE i_chk2.cliente = clientes.id AND (i_chk2.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk2.numero_pedido IS NOT NULL AND TRIM(i_chk2.numero_pedido) != '' AND TRIM(i_chk2.numero_pedido) != '-')))))"
 
 /**
  * Agrega valor e tonelagem oficiais a partir das fichas de atendimento (respostas_formulario).

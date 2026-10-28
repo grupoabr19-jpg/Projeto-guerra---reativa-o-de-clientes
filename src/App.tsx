@@ -15,7 +15,7 @@ import ImportacaoPage from '@/pages/Importacao'
 import FilaPage from '@/pages/Fila'
 import AtendimentoPage from '@/pages/Atendimento'
 import ClientesPage from '@/pages/Clientes'
-import RelatoriosPage from '@/pages/Relatorios'
+
 import ConfiguracoesPage from '@/pages/Configuracoes'
 import MeuPainelPage from '@/pages/MeuPainel'
 import RankingPage from '@/pages/Ranking'
@@ -118,11 +118,7 @@ const App = () => (
               />
               <Route
                 path="/relatorios"
-                element={
-                  <RoleRoute allowedRoles={['supervisor', 'admin', 'lider']}>
-                    <RelatoriosPage />
-                  </RoleRoute>
-                }
+                element={<Navigate to="/dashboard?tab=relatorios" replace />}
               />
 
               {/* Rota CA - Comunicação Interna (Acessível a todos os perfis autenticados) */}

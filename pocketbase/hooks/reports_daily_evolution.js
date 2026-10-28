@@ -167,8 +167,10 @@ routerAdd(
         SELECT
           strftime('%Y-%m-%d', datetime(i.created, '-3 hours')) as dia,
           SUM(CASE
-            WHEN i.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido')
-                 OR (i.numero_pedido IS NOT NULL AND TRIM(i.numero_pedido) != '' AND TRIM(i.numero_pedido) != '0' AND TRIM(i.numero_pedido) != '-')
+            WHEN (i.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido')
+                 OR (i.numero_pedido IS NOT NULL AND TRIM(i.numero_pedido) != '' AND TRIM(i.numero_pedido) != '0' AND TRIM(i.numero_pedido) != '-'))
+                 AND i.operador IS NOT NULL AND TRIM(i.operador) != ''
+                 AND c.estado = 'reativado'
             THEN 1 ELSE 0 END) as reativacoes,
           SUM(CASE
             WHEN (i.tipo IN ('formulario', 'ligacao') OR (i.desfecho IS NOT NULL AND TRIM(i.desfecho) != ''))
