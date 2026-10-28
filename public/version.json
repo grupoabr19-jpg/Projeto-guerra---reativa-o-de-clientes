@@ -1,7 +1,7 @@
 {
-  "version": "0.0.169",
-  "buildTime": "2026-10-28T12:00:00.000Z",
-  "buildId": "v0.0.169",
-  "mensagem": "v0.0.169: Gráfico de evolução diária (série temporal multi-linha) nos Relatórios com reativações, contatos, reagendamentos, follow-ups e perdas.",
+  "version": "0.0.170",
+  "buildTime": "2026-10-28T12:05:00.000Z",
+  "buildId": "v0.0.170",
+  "mensagem": "v0.0.170: Confirmação e publicação do hook reports_daily_evolution no PocketBase com validação de série temporal diária.",
   "forceReload": false
 }
