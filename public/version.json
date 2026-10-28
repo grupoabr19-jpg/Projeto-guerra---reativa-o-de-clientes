@@ -1,7 +1,7 @@
 {
-  "version": "0.0.170",
-  "buildTime": "2026-10-28T12:05:00.000Z",
-  "buildId": "v0.0.170",
-  "mensagem": "v0.0.170: Confirmação e publicação do hook reports_daily_evolution no PocketBase com validação de série temporal diária.",
+  "version": "0.0.175",
+  "buildTime": "2026-10-28T18:30:00.000Z",
+  "buildId": "v0.0.175",
+  "mensagem": "v0.0.175: Saneamento e auditoria Projeto Guerra - reciclagem de reagendados vencidos com blindagem de atacado, expurgo de locks inválidos e normalização VARC -> VARE.",
   "forceReload": false
 }

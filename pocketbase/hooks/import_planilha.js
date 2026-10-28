@@ -413,12 +413,17 @@ routerAdd(
               targetRec.set('canal', String(row.canal).trim())
               mudou = true
             }
-            if (
-              row.vendedor &&
-              stringsDifferent(targetRec.getString('vendedor'), String(row.vendedor).trim())
-            ) {
-              targetRec.set('vendedor', String(row.vendedor).trim())
-              mudou = true
+            if (row.vendedor) {
+              let vReconc = String(row.vendedor).trim()
+              if (vReconc.startsWith('VARC - ')) {
+                vReconc = 'VARE - ' + vReconc.slice(7)
+              } else if (vReconc.startsWith('VARC-')) {
+                vReconc = 'VARE - ' + vReconc.slice(5).trim()
+              }
+              if (stringsDifferent(targetRec.getString('vendedor'), vReconc)) {
+                targetRec.set('vendedor', vReconc)
+                mudou = true
+              }
             }
             if (row.regiao) {
               let regStr = String(row.regiao).trim().toUpperCase()
@@ -740,7 +745,14 @@ routerAdd(
               const vExt = regioesMap[parsedReg].getString('vendedor_externo')
               if (vExt) vendedorRow = vExt
             }
-            if (vendedorRow) rec.set('vendedor', vendedorRow)
+            if (vendedorRow) {
+              if (vendedorRow.startsWith('VARC - ')) {
+                vendedorRow = 'VARE - ' + vendedorRow.slice(7)
+              } else if (vendedorRow.startsWith('VARC-')) {
+                vendedorRow = 'VARE - ' + vendedorRow.slice(5).trim()
+              }
+              rec.set('vendedor', vendedorRow)
+            }
 
             let segNorm = ''
             if (row.segmento) {
@@ -915,7 +927,7 @@ routerAdd(
               .toUpperCase()
               .trim()
             let vNomeLimpo = vendUp
-            const pfxList = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ']
+            const pfxList = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ', 'VARC - ']
             for (let px = 0; px < pfxList.length; px++) {
               if (vNomeLimpo.startsWith(pfxList[px])) {
                 vNomeLimpo = vNomeLimpo.slice(pfxList[px].length).trim()
@@ -1085,6 +1097,13 @@ routerAdd(
               const vExt = regioesMap[parsedReg].getString('vendedor_externo')
               if (vExt) vendedorRow = vExt
             }
+            if (vendedorRow) {
+              if (vendedorRow.startsWith('VARC - ')) {
+                vendedorRow = 'VARE - ' + vendedorRow.slice(7)
+              } else if (vendedorRow.startsWith('VARC-')) {
+                vendedorRow = 'VARE - ' + vendedorRow.slice(5).trim()
+              }
+            }
             if (vendedorRow && stringsDifferent(rec.getString('vendedor'), vendedorRow)) {
               rec.set('vendedor', vendedorRow)
               mudou = true
@@ -1145,7 +1164,7 @@ routerAdd(
               .toUpperCase()
               .trim()
             let vNomeLimpoExist = vendUpExist
-            const pfxListExist = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ']
+            const pfxListExist = ['VARE - ', 'VCORP - ', 'VAREXT - ', 'ATR - ', 'VARC - ']
             for (let px = 0; px < pfxListExist.length; px++) {
               if (vNomeLimpoExist.startsWith(pfxListExist[px])) {
                 vNomeLimpoExist = vNomeLimpoExist.slice(pfxListExist[px].length).trim()
