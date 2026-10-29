@@ -1,7 +1,7 @@
 {
-  "version": "0.0.175",
-  "buildTime": "2026-10-28T18:30:00.000Z",
-  "buildId": "v0.0.175",
-  "mensagem": "v0.0.175: Saneamento e auditoria Projeto Guerra - reciclagem de reagendados vencidos com blindagem de atacado, expurgo de locks inválidos e normalização VARC -> VARE.",
+  "version": "0.0.176",
+  "buildTime": "2026-10-29T12:00:00.000Z",
+  "buildId": "v0.0.176",
+  "mensagem": "v0.0.176: Correção de cruzamento de pedidos na reconciliação de faturamento - pedido único por cliente, bloqueio de reativação fantasma e saneamento JPA/SS.",
   "forceReload": false
 }

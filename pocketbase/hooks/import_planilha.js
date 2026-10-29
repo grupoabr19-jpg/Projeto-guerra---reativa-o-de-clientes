@@ -339,6 +339,50 @@ routerAdd(
             ).trim()
             let rawDataPedido = String(row.ultima_compra || row.ultimo_pedido_data || '').trim()
 
+            // REGRA 1: PEDIDO ÚNICO POR CLIENTE NA RECONCILIAÇÃO
+            // Se a linha da planilha trouxer um número de pedido que já pertença a OUTRO cliente no banco:
+            // 1) NÃO atribuir o pedido ao cliente candidato.
+            // 2) NÃO alterar estado nem faturamento do candidato.
+            // 3) Registrar DIVERGÊNCIA de reconciliação para auditoria.
+            // 4) O pedido fica estritamente com o dono original.
+            let pedidoConflitante = false
+            if (numPedido) {
+              try {
+                const safeNumPedido = numPedido.replace(/'/g, "''")
+                const outroClienteComPedido = $app.findFirstRecordByFilter(
+                  'clientes',
+                  `id != '${targetRec.id}' && (pedido_reativacao = '${safeNumPedido}' || ultimo_pedido_numero = '${safeNumPedido}')`,
+                )
+                if (outroClienteComPedido) {
+                  pedidoConflitante = true
+                  countPedidosDivergentes++
+                  divergencias.push({
+                    codigo: targetRec.getString('codigo') || rawCodigo,
+                    nome: targetRec.getString('nome') || rawNome,
+                    pedidoEsperado: `Dono original: ${outroClienteComPedido.getString('codigo')} - ${outroClienteComPedido.getString('nome')}`,
+                    pedidoPlanilha: numPedido,
+                    tipo: 'pedido_duplicado_outro_cliente',
+                    clienteDonoCodigo: outroClienteComPedido.getString('codigo'),
+                    clienteDonoNome: outroClienteComPedido.getString('nome'),
+                    clienteDonoId: outroClienteComPedido.id,
+                  })
+
+                  // Log explícito no servidor para rastreamento de auditoria
+                  console.warn(
+                    `[RECONCILIAÇÃO] Conflito de pedido detectado: pedido ${numPedido} já pertence a ${outroClienteComPedido.getString('codigo')} (${outroClienteComPedido.getString('nome')}). Ignorando atribuição para ${targetRec.getString('codigo')} (${targetRec.getString('nome')}).`,
+                  )
+                }
+              } catch (_) {
+                // Nenhum outro cliente com esse pedido encontrado -> segue fluxo normal
+              }
+            }
+
+            if (pedidoConflitante) {
+              // Conflito de pedido entre clientes detectado: pula o candidato sem mudar seu estado
+              countInalteradas++
+              continue
+            }
+
             // Detecção de mudanças / dados alterados para gravação cirúrgica
             let mudou = false
 
@@ -444,38 +488,11 @@ routerAdd(
               }
             }
 
-            // Reconciliação com suporte à janela de standby de 60 dias e proteção de pedido_em_aberto:
-            // 0. Se pedido_em_aberto=true: NUNCA expurgar nem rebaixar estado, manter operador_reativacao/operador.
-            // 1. Se faturamento recente (<60 dias): é compra confirmada -> mantém/marca 'reativado', fora da fila.
-            // 2. Se faturamento >= 60 dias e estado='reativado': verificar se está em janela de standby de 60 dias.
-            //    Se standby_ate for no futuro, NÃO religar para 'na_base' — mantém 'reativado' em standby.
-            //    Só restaura para 'na_base' quando standby venceu E não há compra confirmada.
-            const temPedidoEmAberto = targetRec.getBool('pedido_em_aberto')
+            // REGRA 2: RECONCILIAÇÃO NUNCA MUDA ESTADO PARA "reativado" SOZINHA
+            // A importação/reconciliação de faturamento pode ATUALIZAR DADOS DE FATURAMENTO (valor, NF, data de faturamento),
+            // mas jamais alterar o estado do cliente para "reativado" nem contar conversão. Reativação só nasce de atendimento real.
             const estadoAtual = targetRec.getString('estado')
-            const isRecente = diasCalculados < 60
-
-            if (temPedidoEmAberto) {
-              // Cliente possui pedido em aberto aguardando faturamento:
-              // Preservar na base e manter operador responsável para complementação de faturamento.
-              // Apenas atualiza dados financeiros da planilha (já feito acima).
-            } else if (isRecente) {
-              if (estadoAtual !== 'reativado') {
-                targetRec.set('estado', 'reativado')
-                targetRec.set('operador', '')
-                targetRec.set('lock_timestamp', null)
-                countReconciliadosFaturaram++
-                mudou = true
-              }
-              if (!targetRec.getString('reativado_em')) {
-                targetRec.set('reativado_em', now.toISOString())
-                mudou = true
-              }
-              if (!targetRec.getString('standby_ate')) {
-                const standbyDate = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000)
-                targetRec.set('standby_ate', standbyDate.toISOString())
-                mudou = true
-              }
-            } else if (estadoAtual === 'reativado') {
+            if (estadoAtual === 'reativado') {
               const standbyAteStr = targetRec.getString('standby_ate')
               let emStandby = false
               if (standbyAteStr) {
@@ -506,7 +523,7 @@ routerAdd(
               }
             }
 
-            // Validação de divergência de pedido de reativação salvo
+            // Validação de divergência de pedido de reativação salvo para o mesmo cliente
             const pedidoSalvo = targetRec.getString('pedido_reativacao')
             if (pedidoSalvo && numPedido) {
               if (numPedido === pedidoSalvo) {
@@ -1506,6 +1523,28 @@ routerAdd(
 
             const pedidoSalvo = rec.getString('pedido_reativacao')
             const pedidoPlanilha = String(row.pedido || row.numero_pedido || '').trim()
+            if (pedidoPlanilha) {
+              try {
+                const safePedMestre = pedidoPlanilha.replace(/'/g, "''")
+                const outroClienteComPedidoMestre = $app.findFirstRecordByFilter(
+                  'clientes',
+                  `id != '${rec.id}' && (pedido_reativacao = '${safePedMestre}' || ultimo_pedido_numero = '${safePedMestre}')`,
+                )
+                if (outroClienteComPedidoMestre) {
+                  countPedidosDivergentes++
+                  divergencias.push({
+                    codigo: rawCodigo,
+                    nome: rawNome,
+                    pedidoEsperado: `Dono original: ${outroClienteComPedidoMestre.getString('codigo')} - ${outroClienteComPedidoMestre.getString('nome')}`,
+                    pedidoPlanilha: pedidoPlanilha,
+                    tipo: 'pedido_duplicado_outro_cliente',
+                    clienteDonoCodigo: outroClienteComPedidoMestre.getString('codigo'),
+                    clienteDonoNome: outroClienteComPedidoMestre.getString('nome'),
+                    clienteDonoId: outroClienteComPedidoMestre.id,
+                  })
+                }
+              } catch (_) {}
+            }
             if (pedidoSalvo) {
               if (pedidoPlanilha && pedidoPlanilha === pedidoSalvo) {
                 if (!rec.getBool('pedido_confirmado')) {
