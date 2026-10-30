@@ -1,7 +1,7 @@
 {
-  "version": "0.0.176",
-  "buildTime": "2026-10-29T12:00:00.000Z",
-  "buildId": "v0.0.176",
-  "mensagem": "v0.0.176: Correção de cruzamento de pedidos na reconciliação de faturamento - pedido único por cliente, bloqueio de reativação fantasma e saneamento JPA/SS.",
+  "version": "0.0.177",
+  "buildTime": "2026-10-30T13:00:00.000Z",
+  "buildId": "v0.0.177",
+  "mensagem": "v0.0.177: Saneamento definitivo de cruzamentos de faturamento de 28/10, unificação da régua de conversões reais com operador e precisão da Taxa de Recuperação.",
   "forceReload": false
 }

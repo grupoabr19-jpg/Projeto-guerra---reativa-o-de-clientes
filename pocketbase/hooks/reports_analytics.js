@@ -493,8 +493,13 @@ routerAdd(
 
       const naFila = naBaseCount + reservadoCount
       // TAXA DE RECUPERAÇÃO oficial: apenas reativações reais da equipe
+      const taxaReativacaoRaw = totalBase > 0 ? (reativadosReaisCount / totalBase) * 100 : 0
       const taxaReativacao =
-        totalBase > 0 ? Number(((reativadosReaisCount / totalBase) * 100).toFixed(1)) : 0
+        totalBase > 0
+          ? Number(
+              taxaReativacaoRaw < 1 ? taxaReativacaoRaw.toFixed(2) : taxaReativacaoRaw.toFixed(1),
+            )
+          : 0
       const taxaReativacaoInt = Math.round(taxaReativacao)
 
       // =========================================================================

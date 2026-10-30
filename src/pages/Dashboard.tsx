@@ -1658,11 +1658,17 @@ export default function Dashboard() {
                   {/* Valor Principal Protagonista */}
                   <div className="mt-4">
                     <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
-                      {taxaReativacao.toLocaleString('pt-BR', {
-                        minimumFractionDigits: 1,
-                        maximumFractionDigits: 1,
-                      })}
-                      %
+                      {clientesReativadosCount === 0 || totalInativosBase === 0
+                        ? '—'
+                        : taxaReativacao < 1
+                          ? `${taxaReativacao.toLocaleString('pt-BR', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}%`
+                          : `${taxaReativacao.toLocaleString('pt-BR', {
+                              minimumFractionDigits: 1,
+                              maximumFractionDigits: 1,
+                            })}%`}
                     </div>
                     <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
                       Meta operacional da esteira: &ge; 18%
