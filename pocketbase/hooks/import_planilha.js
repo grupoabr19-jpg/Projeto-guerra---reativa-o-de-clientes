@@ -270,10 +270,16 @@ routerAdd(
           } else if (rawNome) {
             const normNome = normalizeClean(rawNome)
             const normCidade = normalizeClean(rawCidade)
+            // No modo de faturamento/reconciliação, casamento por NOME SOZINHO foi removido
+            // para evitar vincular pedidos de clientes homônimos/diferentes (ex: JPA COMERCIO x SS ESTRUTURA).
+            // Apenas correspondência forte (Código ou Nome + Cidade/UF) é aceita para vincular.
             if (normCidade && clientsByNameKey[normNome + '::' + normCidade]) {
               targetRec = clientsByNameKey[normNome + '::' + normCidade]
               matchBy = 'name_city'
-            } else if (clientsByNameOnly[normNome]) {
+            } else if (
+              modoImportacao !== 'faturamento_reconciliacao' &&
+              clientsByNameOnly[normNome]
+            ) {
               targetRec = clientsByNameOnly[normNome]
               matchBy = 'name_only'
             }
@@ -1030,11 +1036,19 @@ routerAdd(
             }
             rec.set('sem_dono_equipe', !temDonoNaEquipe)
 
+            // REGRA M3: A importação da Base Mestre NUNCA carimba estado 'reativado' sozinha.
+            // Ela atualiza dados cadastrais e de faturamento apenas. Reativação exige operador real.
+            // Se a linha trouxer faixa 'recente' (faturou < 60 dias), o cliente entra como 'na_base'
+            // e é registrado em divergências/revisão para auditoria, sem virar reativado fantasma.
+            rec.set('estado', 'na_base')
             if (faixa === 'recente') {
-              rec.set('estado', 'reativado')
-              countReconciliadosFaturaram++
-            } else {
-              rec.set('estado', 'na_base')
+              divergencias.push({
+                codigo: rawCodigo,
+                nome: rawNome,
+                tipo: 'base_mestre_faixa_recente',
+                detalhe:
+                  'Cliente novo na Base Mestre possui faturamento recente (<60 dias). Cadastrado como na_base sem operador; marcado para auditoria/revisão.',
+              })
             }
             rec.set('origem', 'importacao')
 
@@ -1475,21 +1489,15 @@ routerAdd(
               // Cliente possui pedido em aberto aguardando faturamento:
               // Preservar na base e manter operador responsável para complementação de dados.
             } else if (faixa === 'recente') {
+              // REGRA M3: A importação da Base Mestre NUNCA muda estado para 'reativado'.
+              // Mantém o estado atual do cliente e apenas registra divergência se não for reativado oficial.
               if (currentEstado !== 'reativado') {
-                rec.set('estado', 'reativado')
-                rec.set('operador', '')
-                rec.set('lock_timestamp', null)
-                countReconciliadosFaturaram++
-                mudou = true
-              }
-              if (!rec.getString('reativado_em')) {
-                rec.set('reativado_em', now.toISOString())
-                mudou = true
-              }
-              if (!rec.getString('standby_ate')) {
-                const standbyDate = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000)
-                rec.set('standby_ate', standbyDate.toISOString())
-                mudou = true
+                divergencias.push({
+                  codigo: rawCodigo,
+                  nome: rawNome,
+                  tipo: 'base_mestre_faixa_recente_existente',
+                  detalhe: `Cliente com faturamento recente (<60 dias) na Base Mestre. Estado preservado como '${currentEstado}'; registrado para auditoria/revisão sem virar reativado fantasma.`,
+                })
               }
             } else if (currentEstado === 'reativado') {
               // Na Base Mestre para cliente existente que já era 'reativado' e a planilha trouxe faixa 60_89 ou 90_plus:

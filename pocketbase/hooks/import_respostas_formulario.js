@@ -167,11 +167,14 @@ routerAdd(
           }
         }
 
-        // Se não achou operador em users, fallback para o admin logado como criador técnico
-        const operadorId = operadorRec ? operadorRec.id : auth.id
+        // REGRA M5: Quando o operador do Forms não for identificado pelo nome/email,
+        // a reativação NÃO deve ser atribuída ao admin. Fica como operador não identificado
+        // (sem operador atribuído no cliente/reativação, sem inflar Ranking/metas de ninguém).
+        const operadorId = operadorRec ? operadorRec.id : ''
         const operadorNomeIdentificado = operadorRec
           ? operadorRec.getString('name')
           : rawNome || rawEmail || 'Operador não identificado'
+        const operadorNaoIdentificado = !operadorRec
 
         // Data de conclusão (ISO ou formato dd/MM/yyyy HH:mm)
         const dataConclusaoRaw = item.dataConclusao || item.dataInicio || ''
@@ -229,6 +232,7 @@ routerAdd(
           operadorId,
           operadorNomeIdentificado,
           operadorRec,
+          operadorNaoIdentificado,
           rawEmail,
           rawNome,
           dataConclusaoIso,
@@ -410,29 +414,31 @@ routerAdd(
 
           // 3. Atualização do Cliente:
           // Se o desfecho for 'reativado' E valor preenchido > 0:
-          // Atualiza o cliente para o estado de reativação real coerente com relatórios e máquina de estados:
-          // - estado = 'reativado'
-          // - operador_reativacao = operadorId
-          // - operador = operadorId (para garantir consistência em isReativacaoRealCond)
-          // - reativado_em = dataConclusaoIso || agora
-          // - standby_ate = reativado_em + 60 dias
-          // - pedido_reativacao = item.numeroPedido || 'FORMS'
-          // - pedido_confirmado = false
-          // - valor_ultima_compra = item.valorPotencial se maior que 0
-          // - toneladas_historico = item.toneladasPotencial se maior que 0
-          // Em TODOS os desfechos importados: garantir limpeza de lock e consistência de estado
+          // REGRA M5: Se o operador NÃO foi identificado, o cliente NÃO recebe operador admin.
+          // Fica marcado para revisão sem operador atribuído, sem inflar Ranking/metas de ninguém.
           if (item.desfechoNormalizado === 'reativado' && item.valorPotencial > 0) {
             const dataBase = item.dataConclusaoIso ? new Date(item.dataConclusaoIso) : new Date()
             const standbyBase = new Date(dataBase.getTime() + 60 * 24 * 60 * 60 * 1000)
 
-            cRec.set('estado', 'reativado')
-            cRec.set('operador', item.operadorId)
-            cRec.set('operador_reativacao', item.operadorId)
-            cRec.set('reativado_em', dataBase.toISOString().replace('T', ' ').slice(0, 19))
-            cRec.set('standby_ate', standbyBase.toISOString().replace('T', ' ').slice(0, 19))
-            cRec.set('pedido_reativacao', item.numeroPedido || 'FORMS-IMPORT')
-            cRec.set('pedido_confirmado', false)
-            cRec.set('lock_timestamp', '1970-01-01 00:00:00.000Z') // libera qualquer lock residual
+            if (item.operadorNaoIdentificado) {
+              // Operador não identificado: não infla ranking/metas nem atribui ao admin
+              // Mantém na base ou em revisão, gravando observação e pedido mas SEM operador
+              cRec.set('estado', 'na_base')
+              cRec.set('operador', '')
+              cRec.set('operador_reativacao', '')
+              cRec.set('lock_timestamp', '1970-01-01 00:00:00.000Z')
+              cRec.set('pedido_reativacao', item.numeroPedido || 'FORMS-SEM-OPERADOR')
+              cRec.set('pedido_confirmado', false)
+            } else {
+              cRec.set('estado', 'reativado')
+              cRec.set('operador', item.operadorId)
+              cRec.set('operador_reativacao', item.operadorId)
+              cRec.set('reativado_em', dataBase.toISOString().replace('T', ' ').slice(0, 19))
+              cRec.set('standby_ate', standbyBase.toISOString().replace('T', ' ').slice(0, 19))
+              cRec.set('pedido_reativacao', item.numeroPedido || 'FORMS-IMPORT')
+              cRec.set('pedido_confirmado', false)
+              cRec.set('lock_timestamp', '1970-01-01 00:00:00.000Z') // libera qualquer lock residual
+            }
 
             if (item.valorPotencial > 0) {
               cRec.set('valor_ultima_compra', item.valorPotencial)
@@ -442,7 +448,9 @@ routerAdd(
             }
 
             txApp.save(cRec)
-            reativacoesCompletas++
+            if (!item.operadorNaoIdentificado) {
+              reativacoesCompletas++
+            }
           } else if (item.desfechoNormalizado) {
             // Outros desfechos importados: limpar lock e transitar estado se estiver em_atendimento/reservado
             const estadoAtual = cRec.getString('estado')
