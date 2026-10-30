@@ -695,12 +695,14 @@ export default function Dashboard() {
                             className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg"
                           >
                             <p className="font-bold text-emerald-400 mb-1">
-                              Total de Conversões (Eventos):
+                              Conversões de Atendimento (Eventos):
                             </p>
                             <p className="text-slate-200 text-[11px] leading-relaxed">
-                              Conta cada atendimento/ficha fechado com sucesso (desfecho reativado
-                              ou pedido) no período. Diferente do card &quot;Clientes
-                              Reativados&quot; (21), que consolida clientes ÚNICOS.
+                              Soma de todos os atendimentos/ligações da equipe encerrados com
+                              desfecho de compra ou pedido no período (eventos de atendimento).
+                              Diferente do card &quot;Clientes Reativados (Real Equipe)&quot;
+                              abaixo, que consolida clientes ÚNICOS da carteira com reativação e
+                              pedido comprovado.
                             </p>
                           </TooltipContent>
                         </Tooltip>

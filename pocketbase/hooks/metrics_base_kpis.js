@@ -279,9 +279,15 @@ routerAdd(
             const vPot = Number(fr.valor_potencial || 0)
             let tPot = Number(fr.toneladas_potencial || 0)
 
+            // Padronização rigorosa de unidades de massa: 1 ton = 1000 kg.
+            // Se a ficha registrou peso em kg (tPot > 500) ou a razão vPot / tPot for < 100 R$/ton,
+            // normaliza dividindo por 1000 se tPot > 500 para obter toneladas reais.
+            if (tPot > 500) {
+              tPot = tPot / 1000.0
+            }
+
             // Cinto de segurança nos agregadores:
-            // Descartar fichas com valor_potencial > 0, toneladas_potencial > 0 e razão < 100 R$/ton
-            // e registrar console.log de aviso com o id da ficha
+            // Se mesmo após normalização a razão vPot / tPot for < 100 R$/ton (valor de sucata/abaixo do mercado), descarta.
             if (vPot > 0 && tPot > 0 && vPot / tPot < 100) {
               console.log(
                 '[metrics_base_kpis] Cinto de segurança ativado: ficha corrupta descartada id=' +
