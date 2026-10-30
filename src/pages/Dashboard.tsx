@@ -1658,7 +1658,7 @@ export default function Dashboard() {
                   {/* Valor Principal Protagonista */}
                   <div className="mt-4">
                     <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
-                      {clientesReativadosCount === 0 || totalInativosBase === 0
+                      {reativados === 0 || totalBase === 0
                         ? '—'
                         : taxaReativacao < 1
                           ? `${taxaReativacao.toLocaleString('pt-BR', {
