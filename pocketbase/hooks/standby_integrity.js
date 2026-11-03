@@ -46,12 +46,46 @@ onRecordCreateRequest((e) => {
       }
     }
 
+    // Helper inline para formatar mensagem útil de reativação já registrada
+    const montarMsgDuplicidadeReativacao = (cli) => {
+      let infoDataHora = ''
+      const reatStr = cli.getString('reativado_em')
+      if (reatStr) {
+        try {
+          const d = new Date(reatStr)
+          if (!isNaN(d.getTime())) {
+            // Conversão para horário de Brasília (UTC-3)
+            const brDate = new Date(d.getTime() - 3 * 60 * 60 * 1000)
+            const dia = String(brDate.getUTCDate()).padStart(2, '0')
+            const mes = String(brDate.getUTCMonth() + 1).padStart(2, '0')
+            const hora = String(brDate.getUTCHours()).padStart(2, '0')
+            const min = String(brDate.getUTCMinutes()).padStart(2, '0')
+            infoDataHora = ` em ${dia}/${mes} às ${hora}:${min}`
+          }
+        } catch (_) {}
+      }
+
+      let infoOperador = ''
+      const opId = cli.getString('operador_reativacao') || cli.getString('operador')
+      if (opId) {
+        try {
+          const opUser = $app.findRecordById('users', opId)
+          if (opUser) {
+            const opNome = opUser.getString('name') || opUser.getString('email')
+            if (opNome) {
+              infoOperador = ` por ${opNome}`
+            }
+          }
+        } catch (_) {}
+      }
+
+      return `Este atendimento já foi registrado: cliente reativado${infoDataHora}${infoOperador}. Aguarde o período de standby (60 dias).`
+    }
+
     // REGRA 1: Se o operador tenta fechar como 'reativado', mas o cliente já foi reativado nos últimos 30 dias ou está em standby
     if (desfecho === 'reativado' && (emStandby || reativadoRecentemente)) {
       if (userRole !== 'admin') {
-        throw new BadRequestError(
-          'Duplicidade bloqueada: Este cliente já foi reativado recentemente (dentro de 30 dias ou período de standby vigente). Não é permitido registrar uma nova reativação duplicada.',
-        )
+        throw new BadRequestError(montarMsgDuplicidadeReativacao(cliente))
       }
     }
 
@@ -243,6 +277,9 @@ onRecordAfterCreateSuccess((e) => {
 
     const temPedidoEmAberto = cliente.getBool('pedido_em_aberto')
 
+    // Limpeza de rascunho de respostas do cliente após conclusão do atendimento
+    cliente.set('rascunho_respostas', null)
+
     // Se houver pedido em aberto, o operador mantém o vínculo legitimamente conforme fluxo existente
     if (temPedidoEmAberto) {
       cliente.set('estado', desfecho)
@@ -252,7 +289,8 @@ onRecordAfterCreateSuccess((e) => {
         '[standby_integrity] Transição atômica server-side com pedido em aberto: ' +
           clienteId +
           ' -> ' +
-          desfecho,
+          desfecho +
+          ' (rascunho limpo)',
       )
       e.next()
       return
@@ -272,7 +310,7 @@ onRecordAfterCreateSuccess((e) => {
         clienteId +
         ' -> ' +
         desfecho +
-        ' (lock e operador zerados)',
+        ' (lock, operador e rascunho zerados)',
     )
   } catch (err) {
     if (err instanceof BadRequestError || (err && err.name === 'BadRequestError')) {
@@ -351,12 +389,45 @@ onRecordCreateRequest((e) => {
       }
     }
 
+    // Helper inline para formatar mensagem útil de reativação já registrada
+    const montarMsgDuplicidadeInteracao = (cli) => {
+      let infoDataHora = ''
+      const reatStr = cli.getString('reativado_em')
+      if (reatStr) {
+        try {
+          const d = new Date(reatStr)
+          if (!isNaN(d.getTime())) {
+            const brDate = new Date(d.getTime() - 3 * 60 * 60 * 1000)
+            const dia = String(brDate.getUTCDate()).padStart(2, '0')
+            const mes = String(brDate.getUTCMonth() + 1).padStart(2, '0')
+            const hora = String(brDate.getUTCHours()).padStart(2, '0')
+            const min = String(brDate.getUTCMinutes()).padStart(2, '0')
+            infoDataHora = ` em ${dia}/${mes} às ${hora}:${min}`
+          }
+        } catch (_) {}
+      }
+
+      let infoOperador = ''
+      const opId = cli.getString('operador_reativacao') || cli.getString('operador')
+      if (opId) {
+        try {
+          const opUser = $app.findRecordById('users', opId)
+          if (opUser) {
+            const opNome = opUser.getString('name') || opUser.getString('email')
+            if (opNome) {
+              infoOperador = ` por ${opNome}`
+            }
+          }
+        } catch (_) {}
+      }
+
+      return `Este atendimento já foi registrado: cliente reativado${infoDataHora}${infoOperador}. Aguarde o período de standby (60 dias).`
+    }
+
     // Impede nova interação de reativação se já foi reativado nos últimos 30 dias / em standby
     if (desfecho === 'reativado' && (emStandby || reativadoRecentemente)) {
       if (userRole !== 'admin') {
-        throw new BadRequestError(
-          'Duplicidade bloqueada: Este cliente já foi reativado recentemente (dentro de 30 dias ou período de standby vigente).',
-        )
+        throw new BadRequestError(montarMsgDuplicidadeInteracao(cliente))
       }
     }
 

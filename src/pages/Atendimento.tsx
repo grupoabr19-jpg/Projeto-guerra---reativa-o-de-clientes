@@ -1050,6 +1050,7 @@ export default function AtendimentoPage() {
 
   // Finalização do Atendimento com a Máquina de Estados completa
   const handleFinalizeAtendimento = async () => {
+    if (isFinalizing) return
     if (!cliente || !user || !desfechoFinal) {
       toast({
         variant: 'destructive',
@@ -1087,7 +1088,7 @@ export default function AtendimentoPage() {
       }
 
       let reativadoRecentemente = false
-      let reativadoDataFormatada = ''
+      let reativadoDataHoraFormatada = ''
       if (cliente.reativado_em) {
         const reatDate = new Date(cliente.reativado_em)
         if (!isNaN(reatDate.getTime())) {
@@ -1097,16 +1098,18 @@ export default function AtendimentoPage() {
           }
           const dia = String(reatDate.getDate()).padStart(2, '0')
           const mes = String(reatDate.getMonth() + 1).padStart(2, '0')
-          reativadoDataFormatada = `${dia}/${mes}`
+          const hora = String(reatDate.getHours()).padStart(2, '0')
+          const min = String(reatDate.getMinutes()).padStart(2, '0')
+          reativadoDataHoraFormatada = `${dia}/${mes} às ${hora}:${min}`
         }
       }
 
       if ((emStandby || reativadoRecentemente) && user.role !== 'admin') {
-        const dataStr = reativadoDataFormatada || 'data recente'
+        const dataStr = reativadoDataHoraFormatada || 'data recente'
         toast({
           variant: 'destructive',
-          title: 'Reativação duplicada bloqueada',
-          description: `Cliente já reativado em ${dataStr} — reativação duplicada bloqueada. Este cliente está protegido pelo período de standby de 60 dias.`,
+          title: 'Atendimento já registrado',
+          description: `Este atendimento já foi registrado: cliente reativado em ${dataStr}. Aguarde o período de standby (60 dias).`,
         })
         return
       }
@@ -1148,6 +1151,7 @@ export default function AtendimentoPage() {
   }
 
   const executeFinalize = async () => {
+    if (isFinalizing) return
     if (!cliente || !user || !desfechoFinal) return
 
     setIsFinalizing(true)
@@ -1229,6 +1233,7 @@ export default function AtendimentoPage() {
       // Valores reais aceitos pelo PocketBase para zerar campos: string vazia ''
       const updatePayload: Partial<Cliente> = {
         estado: desfechoFinal,
+        rascunho_respostas: null as unknown as undefined, // limpa o rascunho após conclusão
         lock_timestamp: '', // remove o lock atomicamente no PocketBase
         operador: '', // padrão: desvincula operador ao concluir
       }
@@ -1391,21 +1396,36 @@ export default function AtendimentoPage() {
       }).catch((e) => console.log('Kommo sync finalização silenciosa:', e))
 
       toast({
-        title: 'Atendimento concluído!',
-        description: 'Atendimento registrado e sincronizado com sucesso.',
+        title: 'Atendimento registrado com sucesso!',
+        description: `O atendimento de ${cliente.nome || 'cliente'} (${desfechoFinal}) foi gravado com sucesso.`,
       })
-      // Limpeza completa do estado local do cliente antes de navegar
+      // Limpeza completa e imediata do estado local do cliente antes de navegar
       setCliente(null)
       setAnswers({})
       setShowQuestionarioModal(false)
-      navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila')
+      navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila', {
+        replace: true,
+      })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao salvar atendimento'
+      const isDuplicidade =
+        msg.toLowerCase().includes('duplicidade') ||
+        msg.toLowerCase().includes('já foi reativado') ||
+        msg.toLowerCase().includes('já registrado')
       toast({
-        variant: 'destructive',
-        title: 'Erro ao salvar atendimento',
+        variant: isDuplicidade ? 'default' : 'destructive',
+        title: isDuplicidade ? 'Atendimento já registrado' : 'Erro ao salvar atendimento',
         description: msg,
       })
+      if (isDuplicidade) {
+        // Se já estava concluído/registrado, fecha a ficha para não prender a tela
+        setCliente(null)
+        setAnswers({})
+        setShowQuestionarioModal(false)
+        navigate(user?.role === 'operador' || user?.role === 'lider' ? '/meu-painel' : '/fila', {
+          replace: true,
+        })
+      }
     } finally {
       setIsFinalizing(false)
     }
@@ -3392,9 +3412,12 @@ export default function AtendimentoPage() {
                         size="sm"
                         onClick={handleFinalizeAtendimento}
                         disabled={isFinalizing || !desfechoFinal}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center gap-1.5"
                       >
-                        {isFinalizing ? 'Finalizando e Sincronizando...' : 'Concluir Atendimento'}
+                        {isFinalizing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                        <span>
+                          {isFinalizing ? 'Finalizando e Sincronizando...' : 'Concluir Atendimento'}
+                        </span>
                       </Button>
                     )}
                   </div>
@@ -3891,6 +3914,49 @@ export default function AtendimentoPage() {
             </div>
           )}
 
+          {/* AlertDialog de Confirmação: Reativar sem Pedido */}
+          <AlertDialog
+            open={showConfirmReativarSemPedido}
+            onOpenChange={setShowConfirmReativarSemPedido}
+          >
+            <AlertDialogContent className="max-w-md">
+              <AlertDialogHeader>
+                <div className="flex items-center space-x-2 text-amber-600">
+                  <AlertCircle className="h-5 w-5" />
+                  <AlertDialogTitle>Reativação sem Pedido Fechado</AlertDialogTitle>
+                </div>
+                <AlertDialogDescription className="text-xs text-slate-600 space-y-2 pt-2">
+                  <p>
+                    Você selecionou o desfecho <strong>REATIVADO</strong>, porém indicou que{' '}
+                    <strong>NÃO houve pedido fechado</strong> neste momento.
+                  </p>
+                  <p className="bg-amber-50 border border-amber-200 text-amber-900 p-2.5 rounded-md">
+                    O cliente sairá da esteira operacional e entrará no período de{' '}
+                    <strong>standby de 60 dias</strong>. Deseja realmente concluir o atendimento com
+                    este desfecho?
+                  </p>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isFinalizing} className="text-xs">
+                  Revisar Ficha
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={async (e) => {
+                    e.preventDefault()
+                    setShowConfirmReativarSemPedido(false)
+                    await executeFinalize()
+                  }}
+                  disabled={isFinalizing}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center gap-1.5"
+                >
+                  {isFinalizing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{isFinalizing ? 'Concluindo...' : 'Sim, Concluir Atendimento'}</span>
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
           {/* Modal / Dialog de Confirmação do Atendimento quando o operador clica em "Confirmar Atendimento" */}
           {showQuestionarioModal && (
             <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -4021,9 +4087,10 @@ export default function AtendimentoPage() {
                           handleFinalizeAtendimento()
                         }}
                         disabled={isFinalizing || !desfechoFinal}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5"
                       >
-                        {isFinalizing ? 'Finalizando...' : 'Concluir Atendimento'}
+                        {isFinalizing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                        <span>{isFinalizing ? 'Finalizando...' : 'Concluir Atendimento'}</span>
                       </Button>
                     )}
                   </div>
