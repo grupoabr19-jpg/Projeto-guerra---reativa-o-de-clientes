@@ -621,9 +621,6 @@ routerAdd(
         }
       }
 
-      // Helper de checagem Repescagem (não contatado pelo vendedor original)
-      const checarJaContatado = (clienteRec) => jaContatadoPeloVendedorOriginal($app, clienteRec)
-
       // Sanitiza termo de busca para SQLite filter
       const cleanTerm = termoBusca.replace(/['"\\]/g, '')
 
@@ -640,7 +637,7 @@ routerAdd(
       // Restrições de perfil/região
       if (isRepescagem) {
         filterExpr +=
-          " && regiao != 'ATACADO' && tipo_vendedor != 'ATACADO' && vendedor !~ 'ATR' && vendedor !~ 'ATACADO' && canal != 'ATACADO' && (faixa = '90_plus' || dias_sem_faturar >= 90)"
+          " && regiao != 'ATACADO' && tipo_vendedor != 'ATACADO' && vendedor !~ 'ATR' && vendedor !~ 'ATACADO' && canal != 'ATACADO' && dias_sem_faturar > 120"
       } else if (userRole === 'operador' || userRole === 'lider') {
         if (userRegioes.length > 0) {
           const parts = userRegioes.map((r) => buildRegiaoSqlFilter(r))
@@ -651,10 +648,10 @@ routerAdd(
         filterExpr += ` && (${parts.join(' || ')})`
       }
 
-      // Buscar registros no PocketBase
+      // Buscar registros no PocketBase ordenados por data de cadastro mais recente (-created)
       let pool = []
       try {
-        pool = $app.findRecordsByFilter('clientes', filterExpr, '-score', 120, 0)
+        pool = $app.findRecordsByFilter('clientes', filterExpr, '-created', 120, 0)
       } catch (err) {
         console.log('[queue_search] Erro ao buscar: ' + err.message)
       }
@@ -665,7 +662,7 @@ routerAdd(
         if (isRepescagem) {
           resultados = pool.filter((c) => {
             if (isClienteAtacado(c)) return false
-            return !checarJaContatado(c)
+            return c.getInt('dias_sem_faturar') > 120
           })
         } else if (isAtacado && (userRole === 'operador' || userRole === 'lider')) {
           resultados = pool.filter((c) => {
@@ -673,32 +670,7 @@ routerAdd(
             return atacadoDddsPermitidos.includes(ddd)
           })
         } else if (userRole === 'operador' || userRole === 'lider') {
-          // VAREJO — ROTEAMENTO v3 (Cascata: Nominal -> Tipo -> Região):
-          // Carrega ecossistema de usuários, cadeiras e mapa de cidades
-          let usersSistema = []
-          try {
-            usersSistema = $app.findRecordsByFilter('users', "role != 'cliente'", 'name', 500, 0)
-          } catch (_) {}
-
-          const listaAtivos = []
-          const listaInativos = []
-          for (let uIdx = 0; uIdx < usersSistema.length; uIdx++) {
-            const u = usersSistema[uIdx]
-            const uNome = (u.getString('name') || '').trim()
-            const uAtivo = u.getBool('ativo') !== false
-            const uVars = obterVariantesVendedor(uNome)
-            const uRegs = extrairRegioesDeUsuario(u)
-            const uObj = {
-              id: u.id,
-              nome: uNome,
-              ativo: uAtivo,
-              variantes: uVars,
-              regioes: uRegs,
-            }
-            if (uAtivo) listaAtivos.push(uObj)
-            else listaInativos.push(uObj)
-          }
-
+          // VAREJO — NOVA CASCATA (Próprios nominais até 90/120 OU Rota + Especialidade)
           let regioesComerciaisRecs = []
           try {
             regioesComerciaisRecs = $app.findRecordsByFilter(
@@ -738,6 +710,22 @@ routerAdd(
             if (cn) mapaCidadeParaRota[cn] = normalizarTextoNFD(cRec.getString('rota'))
           }
 
+          const rotasDoOperador = userRegioes.filter(
+            (r) => r.toUpperCase() !== 'ATACADO' && r.toUpperCase() !== 'REPESCAGEM',
+          )
+
+          let operadorEspecialidade = 'especialista'
+          if (rotasDoOperador.length > 0) {
+            for (let rIdx = 0; rIdx < rotasDoOperador.length; rIdx++) {
+              const rNorm = normalizarTextoNFD(rotasDoOperador[rIdx])
+              const cad = matrizCadeirasPorRota[rNorm]
+              if (cad && cad.corporativo && nomesSaoCompativeis(cad.corporativo, userName)) {
+                operadorEspecialidade = 'corporativo'
+                break
+              }
+            }
+          }
+
           const resolverRotaDoCliente = (clienteRec) => {
             const cidCli = extrairCidadeCliente(clienteRec)
             if (cidCli && mapaCidadeParaRota[cidCli]) return mapaCidadeParaRota[cidCli]
@@ -763,108 +751,34 @@ routerAdd(
             return ''
           }
 
-          const buscarColaboradorAtivoPorNomeMatriz = (nomeMatriz) => {
-            if (!nomeMatriz || !nomeMatriz.trim()) return null
-            for (let i = 0; i < listaAtivos.length; i++) {
-              const at = listaAtivos[i]
-              if (nomesSaoCompativeis(nomeMatriz, at.nome)) return at
-            }
-            return null
-          }
-
-          const checarStatusVendedorCadastro = (vendedorStr) => {
-            if (!vendedorStr || !vendedorStr.trim()) return { temCadastro: false, ativo: false }
-            const vLimpo = limparPrefixoVendedor(vendedorStr)
-            const vNorm = normalizarTextoNFD(vLimpo)
-            if (!vNorm || vNorm.length < 3) return { temCadastro: false, ativo: false }
-            for (let aIdx = 0; aIdx < listaAtivos.length; aIdx++) {
-              const atUser = listaAtivos[aIdx]
-              if (nomesSaoCompativeis(vLimpo, atUser.nome)) {
-                return { temCadastro: true, ativo: true, usuario: atUser }
-              }
-            }
-            for (let inIdx = 0; inIdx < listaInativos.length; inIdx++) {
-              const inUser = listaInativos[inIdx]
-              if (nomesSaoCompativeis(vLimpo, inUser.nome)) {
-                return { temCadastro: true, ativo: false, usuario: inUser }
-              }
-            }
-            if (vNorm.includes('KAYLANE') || vNorm.includes('FERNANDA SANTOS')) {
-              return { temCadastro: true, ativo: false, nome: vNorm }
-            }
-            return { temCadastro: false, ativo: false }
-          }
-
-          const resolverDestinoCliente = (clienteRec) => {
-            const vRaw = clienteRec.getString('vendedor') || ''
-            const tipoVendRaw = clienteRec.getString('tipo_vendedor') || ''
-            const rotaCliente = resolverRotaDoCliente(clienteRec)
-            const tipoCadeira = classificarTipoCadeiraCliente(vRaw, tipoVendRaw)
-            const statusV = checarStatusVendedorCadastro(vRaw)
-
-            // Filtro 1: Nome do vendedor
-            if (statusV.temCadastro && statusV.ativo && statusV.usuario) {
-              const uVendedor = statusV.usuario
-              const uRegs = uVendedor.regioes || []
-              const mesmaRota = rotaCliente ? uRegs.includes(rotaCliente) : true
-              let mesmaCadeira = true
-              if (rotaCliente && matrizCadeirasPorRota[rotaCliente]) {
-                const cadRota = matrizCadeirasPorRota[rotaCliente]
-                if (tipoCadeira === 'corporativo') {
-                  mesmaCadeira = Boolean(
-                    cadRota.corporativo && nomesSaoCompativeis(cadRota.corporativo, uVendedor.nome),
-                  )
-                } else {
-                  mesmaCadeira = Boolean(
-                    (cadRota.especialista &&
-                      nomesSaoCompativeis(cadRota.especialista, uVendedor.nome)) ||
-                    (cadRota.vendedor_externo &&
-                      nomesSaoCompativeis(cadRota.vendedor_externo, uVendedor.nome)),
-                  )
-                }
-              }
-              if (mesmaRota && mesmaCadeira) {
-                return {
-                  filtro: 'primario_nominal',
-                  operador_id: uVendedor.id,
-                  operador_nome: uVendedor.nome,
-                }
-              }
-            }
-
-            // Filtros 2 e 3: Cadeira da rota
-            if (rotaCliente && matrizCadeirasPorRota[rotaCliente]) {
-              const cadRota = matrizCadeirasPorRota[rotaCliente]
-              let titular = ''
-              if (tipoCadeira === 'corporativo') {
-                titular = cadRota.corporativo
-              } else {
-                titular = cadRota.especialista || cadRota.vendedor_externo
-              }
-              if (titular) {
-                const opTitular = buscarColaboradorAtivoPorNomeMatriz(titular)
-                if (opTitular) {
-                  const temPrefixoTipo =
-                    normalizarTextoNFD(vRaw).startsWith('VCORP') ||
-                    normalizarTextoNFD(vRaw).startsWith('VARE')
-                  return {
-                    filtro: temPrefixoTipo ? 'secundario_tipo' : 'terciario_regiao',
-                    operador_id: opTitular.id,
-                    operador_nome: opTitular.nome,
-                  }
-                }
-              }
-            }
-
-            return { filtro: 'sem_destino', operador_id: '', operador_nome: '' }
-          }
-
           resultados = pool.filter((c) => {
-            // Trava em memória: operador do varejo NÃO pode buscar nem abrir cliente de atacado
             if (isClienteAtacado(c)) return false
 
-            const dest = resolverDestinoCliente(c)
-            return dest.operador_id === userId
+            // 1. Cliente nominal próprio
+            if (matchesCarteiraVendedorTolerante(c, userName)) {
+              return true
+            }
+
+            // 2. Rota + Especialidade (inclui vendedores anteriores)
+            const rotaCli = resolverRotaDoCliente(c)
+            const bateuRota = rotasDoOperador.some((r) => {
+              const rNorm = normalizarTextoNFD(r)
+              return (
+                rotaCli === rNorm ||
+                (rotaCli && (rNorm.includes(rotaCli) || rotaCli.includes(rNorm)))
+              )
+            })
+            if (!bateuRota) return false
+
+            const vRaw = c.getString('vendedor') || ''
+            const tipoVendRaw = c.getString('tipo_vendedor') || ''
+            const tipoCadeiraCli = classificarTipoCadeiraCliente(vRaw, tipoVendRaw)
+            const bateuEspecialidade =
+              operadorEspecialidade === 'corporativo'
+                ? tipoCadeiraCli === 'corporativo'
+                : tipoCadeiraCli !== 'corporativo'
+
+            return bateuEspecialidade
           })
         } else {
           resultados = pool
@@ -1575,17 +1489,16 @@ routerAdd(
             })
           }
         } else if (isRepescagem) {
-          // Trava em memória: Repescagem não pode abrir clientes de Atacado nem contatados pelo vendedor original
+          // Trava em memória: Repescagem não pode abrir clientes de Atacado nem clientes com <=120 dias
           if (isClienteAtacado(cliente)) {
             return e.json(403, {
               error:
                 'Este cliente pertence à fila exclusiva do ATACADO e não pode ser atendido pela Repescagem.',
             })
           }
-          if (jaContatadoPeloVendedorOriginal($app, cliente)) {
+          if (cliente.getInt('dias_sem_faturar') <= 120) {
             return e.json(403, {
-              error:
-                'Este cliente já foi contatado pelo vendedor original da rota e não pode ser atendido pela Repescagem.',
+              error: 'A Repescagem atende apenas clientes com mais de 120 dias de inatividade.',
             })
           }
         } else {
@@ -1597,172 +1510,117 @@ routerAdd(
             })
           }
 
-          // Varejo — Roteamento v3: validação de permissão de abertura
-          let usersSistema = []
-          try {
-            usersSistema = $app.findRecordsByFilter('users', "role != 'cliente'", 'name', 500, 0)
-          } catch (_) {}
+          // Varejo — Nova Cascata de 3 níveis:
+          // O operador pode abrir se:
+          // 1) O cliente é da carteira própria nominal dele; OU
+          // 2) O cliente pertence à mesma rota do operador E à mesma especialidade (incluindo vendedores anteriores)
+          const ehProprioNominal = matchesCarteiraVendedorTolerante(cliente, userName)
+          let podeAbrir = ehProprioNominal
 
-          const listaAtivos = []
-          const listaInativos = []
-          for (let uIdx = 0; uIdx < usersSistema.length; uIdx++) {
-            const u = usersSistema[uIdx]
-            const uNome = (u.getString('name') || '').trim()
-            const uAtivo = u.getBool('ativo') !== false
-            const uVars = obterVariantesVendedor(uNome)
-            const uRegs = extrairRegioesDeUsuario(u)
-            const uObj = { id: u.id, nome: uNome, ativo: uAtivo, variantes: uVars, regioes: uRegs }
-            if (uAtivo) listaAtivos.push(uObj)
-            else listaInativos.push(uObj)
-          }
+          if (!podeAbrir) {
+            let regioesComerciaisRecs = []
+            try {
+              regioesComerciaisRecs = $app.findRecordsByFilter(
+                'regioes',
+                "tipo = 'comercial' && ativo = true",
+                'ordem',
+                50,
+                0,
+              )
+            } catch (_) {}
+            const matrizCadeirasPorRota = {}
+            for (let rgI = 0; rgI < regioesComerciaisRecs.length; rgI++) {
+              const rg = regioesComerciaisRecs[rgI]
+              matrizCadeirasPorRota[normalizarTextoNFD(rg.getString('nome'))] = {
+                corporativo: rg.getString('corporativo') || '',
+                especialista: rg.getString('especialista') || '',
+                vendedor_externo: rg.getString('vendedor_externo') || '',
+              }
+            }
 
-          let regioesComerciaisRecs = []
-          try {
-            regioesComerciaisRecs = $app.findRecordsByFilter(
-              'regioes',
-              "tipo = 'comercial' && ativo = true",
-              'ordem',
-              50,
-              0,
+            let cidadesRotasRecs = []
+            try {
+              cidadesRotasRecs = $app.findRecordsByFilter(
+                'cidades_rotas',
+                'ativo = true',
+                'cidade',
+                1000,
+                0,
+              )
+            } catch (_) {}
+            const mapaCidadeParaRota = {}
+            for (let crIdx = 0; crIdx < cidadesRotasRecs.length; crIdx++) {
+              const cRec = cidadesRotasRecs[crIdx]
+              const cn = cRec.getString('cidade_normalizada')
+              if (cn) mapaCidadeParaRota[cn] = normalizarTextoNFD(cRec.getString('rota'))
+            }
+
+            const rotasDoOperador = userRegioes.filter(
+              (r) => r.toUpperCase() !== 'ATACADO' && r.toUpperCase() !== 'REPESCAGEM',
             )
-          } catch (_) {}
-          const matrizCadeirasPorRota = {}
-          for (let rgI = 0; rgI < regioesComerciaisRecs.length; rgI++) {
-            const rg = regioesComerciaisRecs[rgI]
-            matrizCadeirasPorRota[normalizarTextoNFD(rg.getString('nome'))] = {
-              corporativo: rg.getString('corporativo') || '',
-              especialista: rg.getString('especialista') || '',
-              vendedor_externo: rg.getString('vendedor_externo') || '',
-            }
-          }
 
-          let cidadesRotasRecs = []
-          try {
-            cidadesRotasRecs = $app.findRecordsByFilter(
-              'cidades_rotas',
-              'ativo = true',
-              'cidade',
-              1000,
-              0,
-            )
-          } catch (_) {}
-          const mapaCidadeParaRota = {}
-          for (let crIdx = 0; crIdx < cidadesRotasRecs.length; crIdx++) {
-            const cRec = cidadesRotasRecs[crIdx]
-            const cn = cRec.getString('cidade_normalizada')
-            if (cn) mapaCidadeParaRota[cn] = normalizarTextoNFD(cRec.getString('rota'))
-          }
-
-          const resolverRotaDoCliente = (clienteRec) => {
-            const cidCli = extrairCidadeCliente(clienteRec)
-            if (cidCli && mapaCidadeParaRota[cidCli]) return mapaCidadeParaRota[cidCli]
-            if (cidCli) {
-              const keys = Object.keys(mapaCidadeParaRota)
-              for (let kI = 0; kI < keys.length; kI++) {
-                const k = keys[kI]
-                if (cidCli === k || cidCli.includes(k) || k.includes(cidCli))
-                  return mapaCidadeParaRota[k]
-              }
-            }
-            const endCli = normalizarTextoNFD(clienteRec.getString('endereco'))
-            if (endCli) {
-              const keys = Object.keys(mapaCidadeParaRota)
-              for (let kI = 0; kI < keys.length; kI++) {
-                const k = keys[kI]
-                if (k.length >= 4 && endCli.includes(k)) return mapaCidadeParaRota[k]
-              }
-            }
-            const regCliNorm = normalizarTextoNFD(clienteRec.getString('regiao'))
-            if (regCliNorm && matrizCadeirasPorRota[regCliNorm]) return regCliNorm
-            return ''
-          }
-
-          const buscarColaboradorAtivoPorNomeMatriz = (nomeMatriz) => {
-            if (!nomeMatriz || !nomeMatriz.trim()) return null
-            for (let i = 0; i < listaAtivos.length; i++) {
-              const at = listaAtivos[i]
-              if (nomesSaoCompativeis(nomeMatriz, at.nome)) return at
-            }
-            return null
-          }
-
-          const checarStatusVendedorCadastro = (vendedorStr) => {
-            if (!vendedorStr || !vendedorStr.trim()) return { temCadastro: false, ativo: false }
-            const vLimpo = limparPrefixoVendedor(vendedorStr)
-            const vNorm = normalizarTextoNFD(vLimpo)
-            if (!vNorm || vNorm.length < 3) return { temCadastro: false, ativo: false }
-            for (let aIdx = 0; aIdx < listaAtivos.length; aIdx++) {
-              const atUser = listaAtivos[aIdx]
-              if (nomesSaoCompativeis(vLimpo, atUser.nome)) {
-                return { temCadastro: true, ativo: true, usuario: atUser }
-              }
-            }
-            for (let inIdx = 0; inIdx < listaInativos.length; inIdx++) {
-              const inUser = listaInativos[inIdx]
-              if (nomesSaoCompativeis(vLimpo, inUser.nome)) {
-                return { temCadastro: true, ativo: false, usuario: inUser }
-              }
-            }
-            if (vNorm.includes('KAYLANE') || vNorm.includes('FERNANDA SANTOS')) {
-              return { temCadastro: true, ativo: false, nome: vNorm }
-            }
-            return { temCadastro: false, ativo: false }
-          }
-
-          const resolverDestinoCliente = (clienteRec) => {
-            const vRaw = clienteRec.getString('vendedor') || ''
-            const tipoVendRaw = clienteRec.getString('tipo_vendedor') || ''
-            const rotaCliente = resolverRotaDoCliente(clienteRec)
-            const tipoCadeira = classificarTipoCadeiraCliente(vRaw, tipoVendRaw)
-            const statusV = checarStatusVendedorCadastro(vRaw)
-
-            if (statusV.temCadastro && statusV.ativo && statusV.usuario) {
-              const uVendedor = statusV.usuario
-              const uRegs = uVendedor.regioes || []
-              const mesmaRota = rotaCliente ? uRegs.includes(rotaCliente) : true
-              let mesmaCadeira = true
-              if (rotaCliente && matrizCadeirasPorRota[rotaCliente]) {
-                const cadRota = matrizCadeirasPorRota[rotaCliente]
-                if (tipoCadeira === 'corporativo') {
-                  mesmaCadeira = Boolean(
-                    cadRota.corporativo && nomesSaoCompativeis(cadRota.corporativo, uVendedor.nome),
-                  )
-                } else {
-                  mesmaCadeira = Boolean(
-                    (cadRota.especialista &&
-                      nomesSaoCompativeis(cadRota.especialista, uVendedor.nome)) ||
-                    (cadRota.vendedor_externo &&
-                      nomesSaoCompativeis(cadRota.vendedor_externo, uVendedor.nome)),
-                  )
-                }
-              }
-              if (mesmaRota && mesmaCadeira) {
-                return { operador_id: uVendedor.id }
-              }
-            }
-
-            if (rotaCliente && matrizCadeirasPorRota[rotaCliente]) {
-              const cadRota = matrizCadeirasPorRota[rotaCliente]
-              const titular =
-                tipoCadeira === 'corporativo'
-                  ? cadRota.corporativo
-                  : cadRota.especialista || cadRota.vendedor_externo
-              if (titular) {
-                const opTitular = buscarColaboradorAtivoPorNomeMatriz(titular)
-                if (opTitular) {
-                  return { operador_id: opTitular.id }
+            let operadorEspecialidade = 'especialista'
+            if (rotasDoOperador.length > 0) {
+              for (let rIdx = 0; rIdx < rotasDoOperador.length; rIdx++) {
+                const rNorm = normalizarTextoNFD(rotasDoOperador[rIdx])
+                const cad = matrizCadeirasPorRota[rNorm]
+                if (cad && cad.corporativo && nomesSaoCompativeis(cad.corporativo, userName)) {
+                  operadorEspecialidade = 'corporativo'
+                  break
                 }
               }
             }
 
-            return { operador_id: '' }
+            const resolverRotaDoCliente = (clienteRec) => {
+              const cidCli = extrairCidadeCliente(clienteRec)
+              if (cidCli && mapaCidadeParaRota[cidCli]) return mapaCidadeParaRota[cidCli]
+              if (cidCli) {
+                const keys = Object.keys(mapaCidadeParaRota)
+                for (let kI = 0; kI < keys.length; kI++) {
+                  const k = keys[kI]
+                  if (cidCli === k || cidCli.includes(k) || k.includes(cidCli))
+                    return mapaCidadeParaRota[k]
+                }
+              }
+              const endCli = normalizarTextoNFD(clienteRec.getString('endereco'))
+              if (endCli) {
+                const keys = Object.keys(mapaCidadeParaRota)
+                for (let kI = 0; kI < keys.length; kI++) {
+                  const k = keys[kI]
+                  if (k.length >= 4 && endCli.includes(k)) return mapaCidadeParaRota[k]
+                }
+              }
+              const regCliNorm = normalizarTextoNFD(clienteRec.getString('regiao'))
+              if (regCliNorm && matrizCadeirasPorRota[regCliNorm]) return regCliNorm
+              return ''
+            }
+
+            const rotaCli = resolverRotaDoCliente(cliente)
+            const bateuRota = rotasDoOperador.some((r) => {
+              const rNorm = normalizarTextoNFD(r)
+              return (
+                rotaCli === rNorm ||
+                (rotaCli && (rNorm.includes(rotaCli) || rotaCli.includes(rNorm)))
+              )
+            })
+
+            if (bateuRota) {
+              const vRaw = cliente.getString('vendedor') || ''
+              const tipoVendRaw = cliente.getString('tipo_vendedor') || ''
+              const tipoCadeiraCli = classificarTipoCadeiraCliente(vRaw, tipoVendRaw)
+              const bateuEspecialidade =
+                operadorEspecialidade === 'corporativo'
+                  ? tipoCadeiraCli === 'corporativo'
+                  : tipoCadeiraCli !== 'corporativo'
+              if (bateuEspecialidade) {
+                podeAbrir = true
+              }
+            }
           }
 
-          const destinoFinal = resolverDestinoCliente(cliente)
-          if (destinoFinal.operador_id !== userId) {
+          if (!podeAbrir) {
             return e.json(403, {
-              error:
-                'Este cliente pertence à cadeira de outro vendedor ou está fora da sua rota regional (Roteamento v3).',
+              error: 'Este cliente pertence à rota ou especialidade de outro operador no varejo.',
             })
           }
         }
