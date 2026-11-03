@@ -648,10 +648,13 @@ routerAdd(
         filterExpr += ` && (${parts.join(' || ')})`
       }
 
-      // Buscar registros no PocketBase ordenados por data de cadastro mais recente (-created)
+      // Buscar registros no PocketBase ordenados:
+      // - Repescagem: dias_sem_faturar ASC (+dias_sem_faturar,-created) a partir de 120 dias
+      // - Varejo / Atacado: cadastro mais recente (-created)
       let pool = []
+      const sortExpr = isRepescagem ? '+dias_sem_faturar,-created' : '-created'
       try {
-        pool = $app.findRecordsByFilter('clientes', filterExpr, '-created', 120, 0)
+        pool = $app.findRecordsByFilter('clientes', filterExpr, sortExpr, 120, 0)
       } catch (err) {
         console.log('[queue_search] Erro ao buscar: ' + err.message)
       }
@@ -660,9 +663,20 @@ routerAdd(
       let resultados = []
       if (pool && pool.length > 0) {
         if (isRepescagem) {
-          resultados = pool.filter((c) => {
+          const poolRepescagem = pool.filter((c) => {
             if (isClienteAtacado(c)) return false
             return c.getInt('dias_sem_faturar') > 120
+          })
+          resultados = poolRepescagem.slice().sort((a, b) => {
+            const diasA = a.getInt('dias_sem_faturar') || 0
+            const diasB = b.getInt('dias_sem_faturar') || 0
+            if (diasA !== diasB) return diasA - diasB
+            const cA = a.getString('created') || ''
+            const cB = b.getString('created') || ''
+            if (cB !== cA) return cB > cA ? 1 : -1
+            const codA = a.getString('codigo') || ''
+            const codB = b.getString('codigo') || ''
+            return codA < codB ? -1 : codA > codB ? 1 : 0
           })
         } else if (isAtacado && (userRole === 'operador' || userRole === 'lider')) {
           resultados = pool.filter((c) => {

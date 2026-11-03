@@ -1272,10 +1272,9 @@ routerAdd(
 
       // =========================================================================
       // ETAPA B: REPESCAGEM 120+ (Operadora Priscila Faria)
-      // "recebe clientes após 120 dias inatividade de todas as rotas e especialidade,
-      // independente do vendedor ou especialidade" — SOMENTE VAREJO
+      // "para priscila, a partir de 120 dias ate o mais antigo" — SOMENTE VAREJO
       // (NÃO incluir atacado, NÃO incluir ativo_fora_base, REMOVER jaContatadoPeloVendedorOriginal).
-      // Ordenação: -created (mais recente para mais antigo).
+      // Ordenação: dias_sem_faturar ASC (início em 121+ dias até o mais antigo). Desempate: created DESC (-created).
       // =========================================================================
       if (!cand && isRepescagem) {
         const nowIsoQueue = now.toISOString()
@@ -1284,16 +1283,31 @@ routerAdd(
           repescagemFilter += ` && segmento = '${filtroSegmento}'`
         }
 
+        const ordenarPoolRepescagemInatividade = (pool) => {
+          if (!pool || pool.length < 2) return pool
+          return pool.slice().sort((a, b) => {
+            const diasA = a.getInt('dias_sem_faturar') || 0
+            const diasB = b.getInt('dias_sem_faturar') || 0
+            if (diasA !== diasB) return diasA - diasB
+            const cA = a.getString('created') || ''
+            const cB = b.getString('created') || ''
+            if (cB !== cA) return cB > cA ? 1 : -1
+            const codA = a.getString('codigo') || ''
+            const codB = b.getString('codigo') || ''
+            return codA < codB ? -1 : codA > codB ? 1 : 0
+          })
+        }
+
         try {
           const poolRepescagem = $app.findRecordsByFilter(
             'clientes',
             repescagemFilter,
-            '-created',
+            '+dias_sem_faturar,-created',
             1000,
             0,
           )
           const poolNaoRepetido = poolRepescagem.filter((c) => !isCandidatoRepetidoRecente(c))
-          const poolOrdenadoRepescagem = ordenarPoolPorPrioridade(poolNaoRepetido)
+          const poolOrdenadoRepescagem = ordenarPoolRepescagemInatividade(poolNaoRepetido)
           let puladosPorAtacado = 0
 
           for (let m = 0; m < poolOrdenadoRepescagem.length; m++) {
