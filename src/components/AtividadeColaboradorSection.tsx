@@ -32,12 +32,17 @@ interface AtividadeColaboradorSectionProps {
   regioesList?: string[]
   operadoresList?: string[]
   selectedRegiaoDefault?: string
+  /** Janela temporal personalizada (YYYY-MM-DD) vinda do Painel Executivo — quando presente, prevalece sobre os períodos prontos */
+  dataInicial?: string
+  dataFinal?: string
 }
 
 export const AtividadeColaboradorSection: React.FC<AtividadeColaboradorSectionProps> = ({
   regioesList = [],
   operadoresList = [],
   selectedRegiaoDefault = 'todas',
+  dataInicial,
+  dataFinal,
 }) => {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -107,6 +112,7 @@ export const AtividadeColaboradorSection: React.FC<AtividadeColaboradorSectionPr
         operador: operador !== 'todos' ? operador : undefined,
         tipo: 'todas',
         limit: 250,
+        ...(dataInicial && dataFinal ? { dataInicial, dataFinal } : {}),
       })
       setDados(res)
     } catch (err: any) {
@@ -120,7 +126,7 @@ export const AtividadeColaboradorSection: React.FC<AtividadeColaboradorSectionPr
   useEffect(() => {
     carregarDados()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [regiao, operador])
+  }, [regiao, operador, dataInicial, dataFinal])
 
   const abrirFichaCliente = (clienteId: string) => {
     if (!clienteId) return
@@ -193,6 +199,14 @@ export const AtividadeColaboradorSection: React.FC<AtividadeColaboradorSectionPr
               >
                 {roleDescricao()}
               </Badge>
+              {dataInicial && dataFinal && (
+                <Badge
+                  variant="outline"
+                  className="bg-[#F18800]/10 text-[#F18800] border-[#F18800]/30 text-[10px] font-mono"
+                >
+                  {dataInicial} a {dataFinal}
+                </Badge>
+              )}
             </div>
             <CardDescription className="text-xs text-slate-500 mt-0.5">
               Listas detalhadas com acesso imediato à ficha completa do cliente. Clique em qualquer

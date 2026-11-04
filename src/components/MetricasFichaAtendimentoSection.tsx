@@ -25,6 +25,9 @@ interface MetricasFichaAtendimentoSectionProps {
   selectedRegion: string
   selectedSegmento: string
   selectedCategoria?: string
+  /** Janela temporal personalizada (YYYY-MM-DD) — quando presente, prevalece sobre 'selectedPeriodo' */
+  dataInicial?: string
+  dataFinal?: string
 }
 
 const DESFECHOS_LABEL_MAP: Record<string, { label: string; cor: string; bg: string }> = {
@@ -90,6 +93,8 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
   selectedRegion,
   selectedSegmento,
   selectedCategoria,
+  dataInicial,
+  dataFinal,
 }) => {
   const [loading, setLoading] = useState<boolean>(true)
   const [data, setData] = useState<MetricasRespostasFormularioResponse | null>(null)
@@ -100,10 +105,12 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
       setLoading(true)
       setError(null)
       const res = await fetchMetricasRespostasFormulario({
-        periodo: selectedPeriodo,
+        periodo: dataInicial ? undefined : selectedPeriodo,
         regiao: selectedRegion,
         segmento: selectedSegmento,
         baseCategoria: selectedCategoria,
+        dataInicial,
+        dataFinal,
       })
       setData(res)
     } catch (err: unknown) {
@@ -112,7 +119,7 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
     } finally {
       setLoading(false)
     }
-  }, [selectedPeriodo, selectedRegion, selectedSegmento, selectedCategoria])
+  }, [selectedPeriodo, selectedRegion, selectedSegmento, selectedCategoria, dataInicial, dataFinal])
 
   useEffect(() => {
     loadData()
@@ -164,13 +171,15 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
                 variant="outline"
                 className="bg-blue-50 text-[#253575] border-blue-200 text-[10px] font-mono uppercase"
               >
-                {selectedPeriodo === 'hoje'
-                  ? 'Hoje'
-                  : selectedPeriodo === '7dias'
-                    ? 'Últimos 7 dias'
-                    : selectedPeriodo === '30dias'
-                      ? 'Últimos 30 dias'
-                      : 'Histórico Total'}
+                {dataInicial
+                  ? `${dataInicial} a ${dataFinal || 'hoje'}`
+                  : selectedPeriodo === 'hoje'
+                    ? 'Hoje'
+                    : selectedPeriodo === '7dias'
+                      ? 'Últimos 7 dias'
+                      : selectedPeriodo === '30dias'
+                        ? 'Últimos 30 dias'
+                        : 'Histórico Total'}
               </Badge>
               {selectedRegion !== 'todas' && (
                 <Badge

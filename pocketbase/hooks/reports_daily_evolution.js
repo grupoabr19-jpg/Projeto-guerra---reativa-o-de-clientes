@@ -32,6 +32,12 @@ routerAdd(
       const periodoParam = String(q.periodo || 'este_mes').trim()
       const mesParam = String(q.mes || '').trim() // ex: '2026-10'
 
+      // Janela temporal personalizada (YYYY-MM-DD) — prevalece sobre periodo/mes
+      const dataInicialParam = String(q.data_inicial || '').trim()
+      const dataFinalParam = String(q.data_final || '').trim()
+      const dataInicialValida = /^\d{4}-\d{2}-\d{2}$/.test(dataInicialParam)
+      const dataFinalValida = /^\d{4}-\d{2}-\d{2}$/.test(dataFinalParam)
+
       // Helper inline para formatar YYYY-MM-DD
       const formatYmd = (d) => {
         const y = d.getUTCFullYear()
@@ -80,6 +86,14 @@ routerAdd(
         startDateStr = `${targetYear}-${mm}-01`
         const lastDayOfMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate()
         endDateStr = `${targetYear}-${mm}-${String(lastDayOfMonth).padStart(2, '0')}`
+      }
+
+      // Aplica a janela personalizada, quando informada (somente datas válidas)
+      if (dataInicialValida) {
+        startDateStr = dataInicialParam
+      }
+      if (dataFinalValida) {
+        endDateStr = dataFinalParam
       }
 
       // Início em UTC: YYYY-MM-DD 00:00:00 BRT = YYYY-MM-DD 03:00:00 UTC

@@ -30,12 +30,17 @@ interface ExportacaoRelatoriosSectionProps {
   regioesList: string[]
   operadoresList?: string[]
   selectedRegiaoDefault?: string
+  /** Janela temporal personalizada (YYYY-MM-DD) vinda do Painel Executivo — quando presente, prevalece sobre o seletor interno */
+  dataInicial?: string
+  dataFinal?: string
 }
 
 export const ExportacaoRelatoriosSection: React.FC<ExportacaoRelatoriosSectionProps> = ({
   regioesList,
   operadoresList = [],
   selectedRegiaoDefault = 'todas',
+  dataInicial,
+  dataFinal,
 }) => {
   const [tipo, setTipo] = useState<
     'reativados' | 'contatos' | 'reagendados' | 'followups' | 'vendas_perdidas' | 'resumo_diario'
@@ -60,11 +65,24 @@ export const ExportacaoRelatoriosSection: React.FC<ExportacaoRelatoriosSectionPr
     return `${y}-${m}-${String(lastDay).padStart(2, '0')}`
   })
 
+  // Janela vinda do Painel Executivo prevalece sobre o seletor interno de período
+  const janelaExternaAtiva = Boolean(dataInicial && dataFinal)
+  React.useEffect(() => {
+    if (dataInicial) setDataInicio(dataInicial)
+    if (dataFinal) setDataFim(dataFinal)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataInicial, dataFinal])
   const [exportando, setExportando] = useState<boolean>(false)
 
   const aplicarPredefinido = (
     opcao: 'hoje' | '7dias' | '30dias' | 'este_mes' | 'mes_anterior' | 'personalizado',
   ) => {
+    // Com janela externa ativa, os botões prontos apenas marcam a seleção
+    // (os campos De/Até continuam mostrando a janela do Painel Executivo)
+    if (janelaExternaAtiva && opcao !== 'personalizado') {
+      setPeriodoPredefinido(opcao)
+      return
+    }
     setPeriodoPredefinido(opcao)
     const now = new Date()
     const y = now.getFullYear()
@@ -113,6 +131,8 @@ export const ExportacaoRelatoriosSection: React.FC<ExportacaoRelatoriosSectionPr
         regiao: regiao !== 'todas' ? regiao : undefined,
         operador: operador !== 'todos' ? operador : undefined,
       })
+      // Observação: o CSV sai sempre com o filtro de janela (De/Até) visível nos
+      // campos do formulário — o backend reports_export.js já aplica data_inicial/data_final.
 
       // Download direto no navegador
       const blob = new Blob([res.csv], { type: 'text/csv;charset=utf-8;' })
@@ -207,6 +227,14 @@ export const ExportacaoRelatoriosSection: React.FC<ExportacaoRelatoriosSectionPr
               >
                 Compatível com Excel (BOM / sep=;)
               </Badge>
+              {janelaExternaAtiva && (
+                <Badge
+                  variant="outline"
+                  className="bg-[#F18800]/10 text-[#F18800] border-[#F18800]/30 text-[10px] font-mono"
+                >
+                  {dataInicio} a {dataFim}
+                </Badge>
+              )}
             </div>
             <CardDescription className="text-xs text-slate-500 mt-0.5">
               Exporte dados oficiais da operação para auditoria, apresentações ou cruzamentos

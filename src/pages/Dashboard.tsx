@@ -82,7 +82,17 @@ export default function Dashboard() {
   const [loadingAtendimentos, setLoadingAtendimentos] = useState(true)
   const [selectedRegion, setSelectedRegion] = useState<string>('todas')
   const [selectedCategoria, setSelectedCategoria] = useState<string>('todas')
-  const [selectedPeriodo, setSelectedPeriodo] = useState<PeriodoAtendimentoFiltro>('total')
+  // Padrão do painel: janela Personalizada do 1º dia do mês corrente até hoje
+  const ymdLocal = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const [selectedPeriodo, setSelectedPeriodo] = useState<
+    PeriodoAtendimentoFiltro | 'personalizado'
+  >('personalizado')
+  const [dataInicial, setDataInicial] = useState<string>(() => {
+    const n = new Date()
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-01`
+  })
+  const [dataFinal, setDataFinal] = useState<string>(() => ymdLocal(new Date()))
   const [selectedSegmento, setSelectedSegmento] = useState<string>('todos')
   const [metricasAtendimento, setMetricasAtendimento] =
     useState<MetricasAtendimentosDashboard | null>(null)
@@ -111,12 +121,13 @@ export default function Dashboard() {
     }
   }, [user, navigate])
 
-  // Recarregar dados de base quando a região ou a categoria mudam
+  // Recarregar dados de base quando a região, a categoria ou a janela mudam
   useEffect(() => {
     if (user && user.role !== 'operador' && user.role !== 'lider') {
       loadDataBase()
     }
-  }, [user, selectedRegion, selectedCategoria])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, selectedRegion, selectedCategoria, dataInicial, dataFinal])
 
   // Gerenciamento da aba ativa sincronizada com searchParams (?tab=visao_geral | evolucao | atividade | relatorios)
   const activeTab = searchParams.get('tab') || 'visao_geral'
@@ -141,12 +152,35 @@ export default function Dashboard() {
       .sort((a, b) => a.localeCompare(b))
   }, [metricasAtendimento])
 
+  // Janela personalizada ativa: só envia datas quando o modo é 'personalizado'
+  const janelaPersonalizadaAtiva =
+    selectedPeriodo === 'personalizado' && Boolean(dataInicial) && Boolean(dataFinal)
+
+  // Botões prontos preenchem De/Até com a janela deles; Total limpa as datas
+  const aplicarPeriodoPredefinido = (p: 'hoje' | '7dias' | '30dias' | 'total') => {
+    setSelectedPeriodo(p)
+    const n = new Date()
+    if (p === 'hoje') {
+      setDataInicial(ymdLocal(n))
+      setDataFinal(ymdLocal(n))
+    } else if (p === '7dias') {
+      setDataInicial(ymdLocal(new Date(n.getTime() - 6 * 24 * 60 * 60 * 1000)))
+      setDataFinal(ymdLocal(n))
+    } else if (p === '30dias') {
+      setDataInicial(ymdLocal(new Date(n.getTime() - 29 * 24 * 60 * 60 * 1000)))
+      setDataFinal(ymdLocal(n))
+    } else {
+      setDataInicial('')
+      setDataFinal('')
+    }
+  }
+
   // Recarregar métricas de atendimento quando filtros mudam
   useEffect(() => {
     if (user && user.role !== 'operador' && user.role !== 'lider') {
       loadMetricasAtendimento()
     }
-  }, [user, selectedRegion, selectedPeriodo])
+  }, [user, selectedRegion, selectedPeriodo, dataInicial, dataFinal])
 
   if (user?.role === 'operador' || user?.role === 'lider') {
     return (
@@ -161,7 +195,11 @@ export default function Dashboard() {
     setErroBaseKpis(null)
     try {
       const [resKpis, resImp, resRegioes] = await Promise.all([
-        fetchMetricasBaseKpis({ regiao: selectedRegion, baseCategoria: selectedCategoria }),
+        fetchMetricasBaseKpis({
+          regiao: selectedRegion,
+          baseCategoria: selectedCategoria,
+          ...(janelaPersonalizadaAtiva ? { dataInicial, dataFinal } : {}),
+        }),
         fetchImportacoes().catch(() => [] as Importacao[]),
         fetchRegioes().catch(() => [] as Regiao[]),
       ])
@@ -182,8 +220,12 @@ export default function Dashboard() {
     setLoadingAtendimentos(true)
     try {
       const dados = await fetchMetricasAtendimentosDashboard({
-        periodo: selectedPeriodo,
+        periodo:
+          selectedPeriodo === 'personalizado'
+            ? 'total'
+            : (selectedPeriodo as PeriodoAtendimentoFiltro),
         regiao: selectedRegion,
+        ...(janelaPersonalizadaAtiva ? { dataInicial, dataFinal } : {}),
       })
       setMetricasAtendimento(dados)
     } catch (err) {
@@ -342,6 +384,8 @@ export default function Dashboard() {
         <TabsContent value="evolucao" className="mt-0 space-y-6 focus-visible:outline-hidden">
           <DailyEvolutionSection
             selectedRegiao={selectedRegion !== 'todas' ? selectedRegion : undefined}
+            selectedOperador="todos"
+            {...(janelaPersonalizadaAtiva ? { dataInicial, dataFinal } : {})}
           />
         </TabsContent>
 
@@ -353,6 +397,7 @@ export default function Dashboard() {
             regioesList={regioesList}
             operadoresList={operadoresList}
             selectedRegiaoDefault={selectedRegion}
+            {...(janelaPersonalizadaAtiva ? { dataInicial, dataFinal } : {})}
           />
         </TabsContent>
 
@@ -364,6 +409,7 @@ export default function Dashboard() {
             regioesList={regioesList}
             operadoresList={operadoresList}
             selectedRegiaoDefault={selectedRegion}
+            {...(janelaPersonalizadaAtiva ? { dataInicial, dataFinal } : {})}
           />
         </TabsContent>
 
@@ -413,7 +459,7 @@ export default function Dashboard() {
                   Período:
                 </span>
                 <button
-                  onClick={() => setSelectedPeriodo('hoje')}
+                  onClick={() => aplicarPeriodoPredefinido('hoje')}
                   className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                     selectedPeriodo === 'hoje'
                       ? 'bg-[#253575] text-white shadow-xs'
@@ -423,7 +469,7 @@ export default function Dashboard() {
                   Hoje
                 </button>
                 <button
-                  onClick={() => setSelectedPeriodo('7dias')}
+                  onClick={() => aplicarPeriodoPredefinido('7dias')}
                   className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                     selectedPeriodo === '7dias'
                       ? 'bg-[#253575] text-white shadow-xs'
@@ -433,7 +479,7 @@ export default function Dashboard() {
                   7 Dias
                 </button>
                 <button
-                  onClick={() => setSelectedPeriodo('30dias')}
+                  onClick={() => aplicarPeriodoPredefinido('30dias')}
                   className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                     selectedPeriodo === '30dias'
                       ? 'bg-[#253575] text-white shadow-xs'
@@ -443,7 +489,7 @@ export default function Dashboard() {
                   30 Dias
                 </button>
                 <button
-                  onClick={() => setSelectedPeriodo('total')}
+                  onClick={() => aplicarPeriodoPredefinido('total')}
                   className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                     selectedPeriodo === 'total'
                       ? 'bg-[#253575] text-white shadow-xs'
@@ -452,6 +498,34 @@ export default function Dashboard() {
                 >
                   Total
                 </button>
+                <button
+                  onClick={() => setSelectedPeriodo('personalizado')}
+                  className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
+                    selectedPeriodo === 'personalizado'
+                      ? 'bg-[#F18800] text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  Personalizado
+                </button>
+                {selectedPeriodo === 'personalizado' && (
+                  <div className="flex items-center gap-1 px-1">
+                    <span className="text-[10px] text-slate-500 font-medium">De</span>
+                    <input
+                      type="date"
+                      value={dataInicial}
+                      onChange={(e) => setDataInicial(e.target.value)}
+                      className="h-6 rounded border border-slate-200 bg-white px-1 text-[11px] text-slate-700 focus:border-[#253575] focus:outline-hidden"
+                    />
+                    <span className="text-[10px] text-slate-500 font-medium">Até</span>
+                    <input
+                      type="date"
+                      value={dataFinal}
+                      onChange={(e) => setDataFinal(e.target.value)}
+                      className="h-6 rounded border border-slate-200 bg-white px-1 text-[11px] text-slate-700 focus:border-[#253575] focus:outline-hidden"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center space-x-2 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 shadow-sm">
@@ -545,13 +619,15 @@ export default function Dashboard() {
                       variant="outline"
                       className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] font-mono uppercase"
                     >
-                      {selectedPeriodo === 'hoje'
-                        ? 'Hoje'
-                        : selectedPeriodo === '7dias'
-                          ? 'Últimos 7 dias'
-                          : selectedPeriodo === '30dias'
-                            ? 'Últimos 30 dias'
-                            : 'Histórico Total'}
+                      {janelaPersonalizadaAtiva
+                        ? `${dataInicial} a ${dataFinal}`
+                        : selectedPeriodo === 'hoje'
+                          ? 'Hoje'
+                          : selectedPeriodo === '7dias'
+                            ? 'Últimos 7 dias'
+                            : selectedPeriodo === '30dias'
+                              ? 'Últimos 30 dias'
+                              : 'Histórico Total'}
                     </Badge>
                     {selectedRegion !== 'todas' && (
                       <Badge
@@ -1958,10 +2034,11 @@ export default function Dashboard() {
 
           {/* SEÇÃO VISUAL: MÉTRICAS DA FICHA DE ATENDIMENTO */}
           <MetricasFichaAtendimentoSection
-            selectedPeriodo={selectedPeriodo}
+            selectedPeriodo={selectedPeriodo === 'personalizado' ? 'total' : selectedPeriodo}
             selectedRegion={selectedRegion}
             selectedSegmento={selectedSegmento}
             selectedCategoria={selectedCategoria}
+            {...(janelaPersonalizadaAtiva ? { dataInicial, dataFinal } : {})}
           />
 
           {/* BLOCO DE AUDITORIA: CLIENTES ATIVOS REMOVIDOS DA BASE COM BREAKDOWN POR MOTIVO */}

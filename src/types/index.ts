@@ -544,6 +544,9 @@ export interface FiltrosRelatoriosAvancados {
   periodo: PeriodoAtendimentoFiltro
   regiao: string
   baseCategoria?: string
+  /** Janela temporal personalizada (YYYY-MM-DD) — quando presente, prevalece sobre 'periodo' */
+  dataInicial?: string
+  dataFinal?: string
   categoria?: string
   segmento?: string
   vendedor?: string

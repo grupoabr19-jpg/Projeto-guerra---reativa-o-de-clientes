@@ -1192,6 +1192,8 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
   faixaScore?: string
   faixaFaturamento?: string
   desfecho?: string
+  dataInicial?: string
+  dataFinal?: string
 }): Promise<import('@/types').MetricasAtendimentosDashboard> {
   const periodo = options?.periodo || 'hoje'
   const regiaoFiltro = options?.regiao && options.regiao !== 'todas' ? options.regiao : null
@@ -1232,6 +1234,22 @@ export async function fetchMetricasAtendimentosDashboard(options?: {
   } else if (periodo === '30dias') {
     const trintaDiasAtras = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
     pbInteracoesFilter = `created >= '${getBrasiliaDateStr(trintaDiasAtras)} 00:00:00'`
+  }
+
+  // Janela temporal personalizada (YYYY-MM-DD) prevalece sobre os períodos prontos
+  const diCustom = options?.dataInicial?.trim()
+  const dfCustom = options?.dataFinal?.trim()
+  if (
+    diCustom &&
+    dfCustom &&
+    /^\d{4}-\d{2}-\d{2}$/.test(diCustom) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(dfCustom)
+  ) {
+    pbInteracoesFilter = `created >= '${diCustom} 00:00:00' && created <= '${dfCustom} 23:59:59'`
+  } else if (diCustom && /^\d{4}-\d{2}-\d{2}$/.test(diCustom)) {
+    pbInteracoesFilter = `created >= '${diCustom} 00:00:00'`
+  } else if (dfCustom && /^\d{4}-\d{2}-\d{2}$/.test(dfCustom)) {
+    pbInteracoesFilter = `created <= '${dfCustom} 23:59:59'`
   }
 
   // Buscar em paralelo: usuários, interações do período (com expand cliente), clientes reagendados e clientes marcados como ativo_fora_base
@@ -1845,6 +1863,8 @@ export async function fetchMetricasRespostasFormulario(options?: {
   segmento?: string
   periodo?: string
   baseCategoria?: string
+  dataInicial?: string
+  dataFinal?: string
 }): Promise<import('@/types').MetricasRespostasFormularioResponse> {
   const params = new URLSearchParams()
   const regiao = options?.regiao?.trim()
@@ -1860,6 +1880,13 @@ export async function fetchMetricasRespostasFormulario(options?: {
   }
   if (options?.baseCategoria && options.baseCategoria !== 'todas') {
     params.set('baseCategoria', options.baseCategoria)
+  }
+  // Janela temporal personalizada (YYYY-MM-DD) — prevalece sobre 'periodo' no backend
+  if (options?.dataInicial) {
+    params.set('data_inicial', options.dataInicial)
+  }
+  if (options?.dataFinal) {
+    params.set('data_final', options.dataFinal)
   }
 
   const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
@@ -1898,6 +1925,8 @@ export async function fetchReportsDailyEvolution(options?: {
   operador?: string
   periodo?: string
   mes?: string
+  dataInicial?: string
+  dataFinal?: string
 }): Promise<import('@/types').ReportsDailyEvolutionResponse> {
   const params = new URLSearchParams()
   const regiao = options?.regiao?.trim()
@@ -1913,6 +1942,13 @@ export async function fetchReportsDailyEvolution(options?: {
   }
   if (options?.mes) {
     params.set('mes', options.mes)
+  }
+  // Janela temporal personalizada (YYYY-MM-DD) — prevalece sobre 'periodo' no backend
+  if (options?.dataInicial) {
+    params.set('data_inicial', options.dataInicial)
+  }
+  if (options?.dataFinal) {
+    params.set('data_final', options.dataFinal)
   }
 
   const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
@@ -1959,6 +1995,8 @@ export async function fetchReportsAnalytics(
   if (filtros?.desfecho && filtros.desfecho !== 'todos') params.set('desfecho', filtros.desfecho)
   if (filtros?.periodo) params.set('periodo', filtros.periodo)
   if (filtros?.baseCategoria) params.set('baseCategoria', filtros.baseCategoria)
+  if (filtros?.dataInicial) params.set('data_inicial', filtros.dataInicial)
+  if (filtros?.dataFinal) params.set('data_final', filtros.dataFinal)
 
   const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
   const queryStr = params.toString()
@@ -1990,6 +2028,8 @@ export async function fetchReportsAnalytics(
 export async function fetchMetricasBaseKpis(options?: {
   regiao?: string
   baseCategoria?: string
+  dataInicial?: string
+  dataFinal?: string
 }): Promise<import('@/types').MetricasBaseKpisResponse> {
   const params = new URLSearchParams()
   const regiao = options?.regiao?.trim()
@@ -1998,6 +2038,13 @@ export async function fetchMetricasBaseKpis(options?: {
   }
   if (options?.baseCategoria) {
     params.set('baseCategoria', options.baseCategoria)
+  }
+  // Janela temporal personalizada (YYYY-MM-DD) aplicada às métricas datadas (régua intacta)
+  if (options?.dataInicial) {
+    params.set('data_inicial', options.dataInicial)
+  }
+  if (options?.dataFinal) {
+    params.set('data_final', options.dataFinal)
   }
   const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
   const queryStr = params.toString()
@@ -2174,6 +2221,8 @@ export async function fetchListasColaborador(options?: {
   operador?: string
   tipo?: 'todas' | 'reativados' | 'reagendados' | 'followups'
   limit?: number
+  dataInicial?: string
+  dataFinal?: string
 }): Promise<{
   scope: { role: string; userId: string; userName: string; regioes: string[] }
   totais: { reativados: number; reagendados: number; followups: number }
@@ -2223,6 +2272,9 @@ export async function fetchListasColaborador(options?: {
   if (options?.operador && options.operador !== 'todos') params.set('operador', options.operador)
   if (options?.tipo) params.set('tipo', options.tipo)
   if (options?.limit) params.set('limit', String(options.limit))
+  // Janela temporal personalizada (YYYY-MM-DD) — aplica-se às listas datadas
+  if (options?.dataInicial) params.set('data_inicial', options.dataInicial)
+  if (options?.dataFinal) params.set('data_final', options.dataFinal)
 
   const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
   const queryStr = params.toString()

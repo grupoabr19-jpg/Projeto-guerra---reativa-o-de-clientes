@@ -15,6 +15,19 @@ routerAdd(
       const regiao = String(rawRegiao).trim()
       const baseCategoriaParam = String(q.baseCategoria || q.categoria || 'todas').trim()
 
+      // Janela temporal personalizada (YYYY-MM-DD) sobre o timestamp da interação de reativação.
+      // Aplica-se APENAS ao KPI "Reativações no período" (reativados_reais) — a régua de
+      // prova de operador fica intacta e as contagens de estado atual da base (Total de
+      // Clientes, Na fila, etc.) não são datadas.
+      const dataInicialParam = String(q.data_inicial || '').trim()
+      const dataFinalParam = String(q.data_final || '').trim()
+      const dataInicialValida = /^\d{4}-\d{2}-\d{2}$/.test(dataInicialParam)
+      const dataFinalValida = /^\d{4}-\d{2}-\d{2}$/.test(dataFinalParam)
+      let janelaAtiva = false
+      if (dataInicialValida && dataFinalValida) {
+        janelaAtiva = true
+      }
+
       // Construção da condição de categoria de base
       let categoriaSql = '1=1'
       if (baseCategoriaParam === 'cliente_final') {
@@ -190,7 +203,7 @@ routerAdd(
       const reagendadoCount = Number(kpiModel.reagendado || 0)
       const contatadoCount = Number(kpiModel.contatado || 0)
       const reativadoTotalCount = Number(kpiModel.reativado || 0)
-      const reativadosReaisCount = Number(
+      let reativadosReaisCount = Number(
         kpiModel.reativados_reais !== undefined && kpiModel.reativados_reais !== null
           ? kpiModel.reativados_reais
           : kpiModel.reativadosReais || 0,
@@ -207,6 +220,75 @@ routerAdd(
           : kpiModel.toneladasRecuperadasReal || 0,
       )
 
+      // Janela temporal ativa: recalcula "Reativações no período" usando o timestamp das
+      // interações com desfecho de reativação (interacoes.created). A régua de prova de
+      // operador permanece intacta; contagens de estado atual da base (Total de Clientes,
+      // Na fila etc.) NÃO são datadas e ficam fora da janela.
+      let clientesNoPeriodo = null
+      if (janelaAtiva) {
+        try {
+          const jStartUtc = `${dataInicialParam} 03:00:00.000Z`
+          const pFj = dataFinalParam.split('-')
+          const jEndD = new Date(
+            Date.UTC(
+              parseInt(pFj[0], 10),
+              parseInt(pFj[1], 10) - 1,
+              parseInt(pFj[2], 10) + 1,
+              2,
+              59,
+              59,
+              999,
+            ),
+          )
+          const jEndUtc = jEndD.toISOString()
+
+          const janelaRegiaoCond = regiaoCondition
+            ? regiaoCondition.replace(/\bregiao\b/g, 'c.regiao')
+            : ''
+          const janelaCategoriaCond = categoriaSql
+            .replace(/\bbase_categoria\b/g, 'c.base_categoria')
+            .replace(/\bsem_dono_equipe\b/g, 'c.sem_dono_equipe')
+            .replace(/\bregiao\b/g, 'c.regiao')
+            .replace(/\bdias_sem_faturar\b/g, 'c.dias_sem_faturar')
+
+          const reatPeriodoQuery = `
+            SELECT DISTINCT c.id as cliente_id
+            FROM clientes c
+            WHERE c.estado = 'reativado'
+              AND (c.ativo_fora_base IS NULL OR c.ativo_fora_base = 0)
+              AND (${janelaCategoriaCond})
+              AND ((c.operador IS NOT NULL AND TRIM(c.operador) != '') OR (c.operador_reativacao IS NOT NULL AND TRIM(c.operador_reativacao) != ''))
+              AND EXISTS (
+                SELECT 1 FROM interacoes i_chk
+                WHERE i_chk.cliente = c.id
+                  AND i_chk.created >= {:jStartUtc} AND i_chk.created <= {:jEndUtc}
+                  AND (i_chk.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk.numero_pedido IS NOT NULL AND TRIM(i_chk.numero_pedido) != '' AND TRIM(i_chk.numero_pedido) != '-'))
+              )
+              ${janelaRegiaoCond}
+          `
+
+          const jParams = { jStartUtc: jStartUtc, jEndUtc: jEndUtc }
+          if (params.regiaoParam) jParams.regiaoParam = params.regiaoParam
+          if (params.regiaoLike) jParams.regiaoLike = params.regiaoLike
+
+          const jRows = arrayOf(new DynamicModel({ cliente_id: '' }))
+          const jqb = $app.db().newQuery(reatPeriodoQuery)
+          jqb.bind(jParams)
+          jqb.all(jRows)
+          clientesNoPeriodo = {}
+          for (let ji = 0; ji < jRows.length; ji++) {
+            const cid = String(jRows[ji].cliente_id || '')
+            if (cid) clientesNoPeriodo[cid] = true
+          }
+          reativadosReaisCount = jRows.length
+        } catch (janelaErr) {
+          console.error(
+            '[metrics_base_kpis] Erro na janela temporal: ' +
+              (janelaErr && janelaErr.message ? janelaErr.message : String(janelaErr)),
+          )
+        }
+      }
+
       // FONTE OFICIAL DAS MÉTRICAS DE REAL EQUIPE: FICHAS DE ATENDIMENTO (respostas_formulario)
       // Agregação de valor_potencial e toneladas_potencial das fichas dos clientes reativados pela equipe,
       // com deduplicação por cliente (ficha mais recente) e exclusão de desfechos isentos.
@@ -222,6 +304,12 @@ routerAdd(
 
         const rfBaseFilterSql = `c.estado != 'ativo_fora_base' AND (c.ativo_fora_base IS NULL OR c.ativo_fora_base = 0) AND (${rfCategoryCondition})`
 
+        let rfWhereFichasExtra = ''
+        if (janelaAtiva && clientesNoPeriodo) {
+          rfWhereFichasExtra =
+            " AND EXISTS (SELECT 1 FROM interacoes i_win WHERE i_win.cliente = c.id AND i_win.created >= {:jStartUtc} AND i_win.created <= {:jEndUtc} AND (i_win.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_win.numero_pedido IS NOT NULL AND TRIM(i_win.numero_pedido) != '' AND TRIM(i_win.numero_pedido) != '-')))"
+        }
+
         const fichasQuery = `
           SELECT
             rf.id as ficha_id,
@@ -231,13 +319,29 @@ routerAdd(
             rf.toneladas_potencial as toneladas_potencial
           FROM respostas_formulario rf
           INNER JOIN clientes c ON c.id = rf.cliente
-          WHERE ${rfBaseFilterSql} ${rfClientCondition}
+          WHERE ${rfBaseFilterSql} ${rfClientCondition}${rfWhereFichasExtra}
           ORDER BY rf.created DESC
         `
 
         const fParams = {}
         if (params.regiaoParam) fParams.regiaoParam = params.regiaoParam
         if (params.regiaoLike) fParams.regiaoLike = params.regiaoLike
+        if (janelaAtiva && clientesNoPeriodo) {
+          fParams.jStartUtc = `${dataInicialParam} 03:00:00.000Z`
+          const pFf = dataFinalParam.split('-')
+          const fEndD = new Date(
+            Date.UTC(
+              parseInt(pFf[0], 10),
+              parseInt(pFf[1], 10) - 1,
+              parseInt(pFf[2], 10) + 1,
+              2,
+              59,
+              59,
+              999,
+            ),
+          )
+          fParams.jEndUtc = fEndD.toISOString()
+        }
 
         const fRows = arrayOf(
           new DynamicModel({
@@ -272,6 +376,7 @@ routerAdd(
           const fr = fRows[fi]
           const cId = fr.cliente_id
           if (!cId || clientesProcessados[cId]) continue
+          if (clientesNoPeriodo && !clientesNoPeriodo[String(cId)]) continue
           clientesProcessados[cId] = true
 
           const desfecho = String(fr.desfecho || '').trim()

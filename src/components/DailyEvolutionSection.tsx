@@ -38,6 +38,9 @@ import type { DailyEvolutionItem, ReportsDailyEvolutionResponse } from '@/types'
 interface DailyEvolutionChartProps {
   selectedRegiao?: string
   selectedOperador?: string
+  /** Janela temporal personalizada (YYYY-MM-DD) vinda do Painel Executivo — quando presente, prevalece sobre o seletor interno */
+  dataInicial?: string
+  dataFinal?: string
 }
 
 interface SerieToggle {
@@ -92,6 +95,8 @@ const SERIES_CONFIG_PADRAO: SerieToggle[] = [
 export const DailyEvolutionSection: React.FC<DailyEvolutionChartProps> = ({
   selectedRegiao,
   selectedOperador,
+  dataInicial,
+  dataFinal,
 }) => {
   // Seletor de período do gráfico
   const [periodo, setPeriodo] = useState<
@@ -126,6 +131,14 @@ export const DailyEvolutionSection: React.FC<DailyEvolutionChartProps> = ({
     return list
   }, [])
 
+  // Janela personalizada ativa: datas vindas do Painel Executivo prevalecem sobre o seletor interno
+  const janelaExternaAtiva = Boolean(
+    dataInicial &&
+    dataFinal &&
+    /^\d{4}-\d{2}-\d{2}$/.test(dataInicial) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(dataFinal),
+  )
+
   // Carregar dados da evolução
   const carregarDados = async () => {
     setLoading(true)
@@ -134,8 +147,18 @@ export const DailyEvolutionSection: React.FC<DailyEvolutionChartProps> = ({
       const res = await fetchReportsDailyEvolution({
         regiao: selectedRegiao,
         operador: selectedOperador,
-        periodo: periodo === 'mes_especifico' ? undefined : periodo,
-        mes: periodo === 'mes_especifico' ? mesSelecionado : undefined,
+        periodo: janelaExternaAtiva
+          ? undefined
+          : periodo === 'mes_especifico'
+            ? undefined
+            : periodo,
+        mes: janelaExternaAtiva
+          ? undefined
+          : periodo === 'mes_especifico'
+            ? mesSelecionado
+            : undefined,
+        dataInicial: janelaExternaAtiva ? dataInicial : undefined,
+        dataFinal: janelaExternaAtiva ? dataFinal : undefined,
       })
       setDados(res)
     } catch (err: any) {
@@ -149,7 +172,7 @@ export const DailyEvolutionSection: React.FC<DailyEvolutionChartProps> = ({
   useEffect(() => {
     carregarDados()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRegiao, selectedOperador, periodo, mesSelecionado])
+  }, [selectedRegiao, selectedOperador, periodo, mesSelecionado, dataInicial, dataFinal])
 
   // Alternar visibilidade de uma série individual
   const toggleSerie = (id: string) => {
@@ -242,6 +265,14 @@ export const DailyEvolutionSection: React.FC<DailyEvolutionChartProps> = ({
                 >
                   Série Temporal Multi-Linha
                 </Badge>
+                {janelaExternaAtiva && (
+                  <Badge
+                    variant="outline"
+                    className="bg-[#F18800]/10 text-[#F18800] border-[#F18800]/30 text-[10px] font-mono uppercase"
+                  >
+                    Período Personalizado
+                  </Badge>
+                )}
                 {labelPeriodo && (
                   <Badge
                     variant="outline"
@@ -259,7 +290,9 @@ export const DailyEvolutionSection: React.FC<DailyEvolutionChartProps> = ({
           </div>
 
           {/* Controles de Período e Recarregar */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div
+            className={`flex flex-wrap items-center gap-2 ${janelaExternaAtiva ? 'opacity-50 pointer-events-none' : ''}`}
+          >
             {/* Seletor de Período Rápido */}
             <div className="flex items-center rounded-lg bg-slate-100 p-0.5 border border-slate-200">
               <button

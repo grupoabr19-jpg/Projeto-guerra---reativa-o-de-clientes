@@ -32,6 +32,10 @@ routerAdd(
       const filtroOperador = String(q.operador || '').trim()
       const tipoLista = String(q.tipo || 'todas').trim() // reativados | reagendados | followups | todas
       const limit = Math.min(Math.max(parseInt(q.limit || '100', 10), 10), 500)
+      const dataInicialParam = String(q.data_inicial || '').trim()
+      const dataFinalParam = String(q.data_final || '').trim()
+      const dataInicialValida = /^\d{4}-\d{2}-\d{2}$/.test(dataInicialParam)
+      const dataFinalValida = /^\d{4}-\d{2}-\d{2}$/.test(dataFinalParam)
 
       // Helpers inline
       function normalizarTextoNFD(s) {
@@ -193,6 +197,39 @@ routerAdd(
       const baseCliFilter =
         "c.estado != 'ativo_fora_base' AND (c.ativo_fora_base IS NULL OR c.ativo_fora_base = 0)"
 
+      // Janela temporal personalizada sobre o timestamp da interação (i.created)
+      let janelaInteracaoCond = ''
+      if (dataInicialValida) {
+        janelaInteracaoCond += ' AND i.created >= {:janelaStartUtc}'
+        bindParams.janelaStartUtc = `${dataInicialParam} 03:00:00.000Z`
+      }
+      if (dataFinalValida) {
+        const pF = dataFinalParam.split('-')
+        const fimD = new Date(
+          Date.UTC(
+            parseInt(pF[0], 10),
+            parseInt(pF[1], 10) - 1,
+            parseInt(pF[2], 10) + 1,
+            2,
+            59,
+            59,
+            999,
+          ),
+        )
+        janelaInteracaoCond += ' AND i.created <= {:janelaEndUtc}'
+        bindParams.janelaEndUtc = fimD.toISOString()
+      }
+      // Follow-ups são por data futura de retorno (reagendado_para) — janela em dias
+      let janelaFollowupCond = ''
+      if (dataInicialValida) {
+        janelaFollowupCond += ' AND c.reagendado_para >= {:janelaFuInicio}'
+        bindParams.janelaFuInicio = `${dataInicialParam} 00:00:00.000Z`
+      }
+      if (dataFinalValida) {
+        janelaFollowupCond += ' AND c.reagendado_para <= {:janelaFuFim}'
+        bindParams.janelaFuFim = `${dataFinalParam} 23:59:59.999Z`
+      }
+
       // 1. LISTA 1: CLIENTES REATIVADOS
       // Apenas reativações reais com operador preenchido e interação confirmada
       let reativadosList = []
@@ -219,6 +256,7 @@ routerAdd(
                  OR (i.numero_pedido IS NOT NULL AND TRIM(i.numero_pedido) != '' AND TRIM(i.numero_pedido) != '-'))
             AND ${scopeClienteCond}
             AND ${scopeInteracaoCond}
+            ${janelaInteracaoCond}
           ORDER BY data_reativacao DESC
           LIMIT ${limit}
         `
@@ -285,8 +323,9 @@ routerAdd(
             AND (i.desfecho = 'reagendado' OR (i.reagendado_para IS NOT NULL AND TRIM(i.reagendado_para) != ''))
             AND ${scopeClienteCond}
             AND ${scopeInteracaoCond}
+            ${janelaInteracaoCond}
           ORDER BY i.created DESC
-          LIMIT ${limit}
+            LIMIT ${limit}
         `
 
         const reagRows = arrayOf(
@@ -351,6 +390,7 @@ routerAdd(
           WHERE ${baseCliFilter}
             AND c.reagendado_para IS NOT NULL AND TRIM(c.reagendado_para) != ''
             AND ${scopeClienteCond}
+            ${janelaFollowupCond}
           ORDER BY c.reagendado_para ASC
           LIMIT ${limit}
         `

@@ -75,6 +75,30 @@ routerAdd(
         bindParams.periodoInicio = midnight30diasIso
       }
 
+      // Janela temporal personalizada (YYYY-MM-DD) — prevalece sobre periodo
+      const dataInicialParam = String(q.data_inicial || '').trim()
+      const dataFinalParam = String(q.data_final || '').trim()
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dataInicialParam)) {
+        conditions.push('updated >= {:janelaInicio}')
+        bindParams.janelaInicio = `${dataInicialParam} 03:00:00.000Z`
+      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dataFinalParam)) {
+        const pF = dataFinalParam.split('-')
+        const fimD = new Date(
+          Date.UTC(
+            parseInt(pF[0], 10),
+            parseInt(pF[1], 10) - 1,
+            parseInt(pF[2], 10) + 1,
+            2,
+            59,
+            59,
+            999,
+          ),
+        )
+        conditions.push('updated <= {:janelaFim}')
+        bindParams.janelaFim = fimD.toISOString()
+      }
+
       // Filtro de Bases Especiais / Categorias (Item 6)
       if (baseCategoriaParam === 'cliente_final') {
         conditions.push("base_categoria = 'cliente_final'")
@@ -316,7 +340,7 @@ routerAdd(
       const contatadoCount = Number(kpiModel.contatado || 0)
       const reativadoTotalCount = Number(kpiModel.reativado || 0)
 
-      const reativadosReaisCount = Number(
+      let reativadosReaisCount = Number(
         kpiModel.reativados_reais !== undefined
           ? kpiModel.reativados_reais
           : kpiModel.reativadosReais || 0,
@@ -331,6 +355,80 @@ routerAdd(
           ? kpiModel.toneladas_recuperadas_real
           : kpiModel.toneladasRecuperadasReal || 0,
       )
+
+      // Janela temporal ativa: recalcula "Reativações no período" pelo timestamp das interações
+      // de reativação (interacoes.created). Régua de prova de operador intacta; estados atuais
+      // da base (totalBase etc.) não são datados.
+      let clientesNoPeriodo = null
+      if (janelaAtiva) {
+        try {
+          const janelaRegiaoSegmentoConds = []
+          for (let jc = 0; jc < conditions.length; jc++) {
+            const condJ = conditions[jc]
+            // Excluir as condições de janela 'updated' — a janela vale para interacoes.created
+            if (condJ.indexOf('janela') !== -1) continue
+            const prefixedJ = condJ
+              .replace(/\bbase_categoria\b/g, 'c.base_categoria')
+              .replace(/\bsem_dono_equipe\b/g, 'c.sem_dono_equipe')
+              .replace(/\bregiao\b/g, 'c.regiao')
+              .replace(/\bdias_sem_faturar\b/g, 'c.dias_sem_faturar')
+              .replace(/\bsegmento\b/g, 'c.segmento')
+              .replace(/\bvendedor\b/g, 'c.vendedor')
+              .replace(/\boperador\b/g, 'c.operador')
+              .replace(/\bscore\b/g, 'c.score')
+              .replace(/\bfat_12m_reais\b/g, 'c.fat_12m_reais')
+              .replace(/\bestado\b/g, 'c.estado')
+              .replace(/\bativo_fora_base\b/g, 'c.ativo_fora_base')
+            janelaRegiaoSegmentoConds.push(prefixedJ)
+          }
+          // Reaplica apenas a condição de período padrão (sem janela personalizada)
+          let periodoCondJ = ''
+          if (periodoParam === 'hoje') {
+            periodoCondJ = 'c.updated >= {:periodoInicio}'
+          } else if (periodoParam === '7dias') {
+            periodoCondJ = 'c.updated >= {:periodoInicio}'
+          } else if (periodoParam === '30dias') {
+            periodoCondJ = 'c.updated >= {:periodoInicio}'
+          }
+
+          const janelaCondsFinais = janelaRegiaoSegmentoConds.slice()
+          if (periodoCondJ) {
+            janelaCondsFinais.push(periodoCondJ)
+          }
+          const janelaWhereExtra =
+            janelaCondsFinais.length > 0 ? ' AND ' + janelaCondsFinais.join(' AND ') : ''
+
+          const reatPeriodoQuery = `
+            SELECT DISTINCT c.id as cliente_id
+            FROM clientes c
+            WHERE c.estado = 'reativado'
+              AND (c.ativo_fora_base IS NULL OR c.ativo_fora_base = 0)
+              AND ((c.operador IS NOT NULL AND TRIM(c.operador) != '') OR (c.operador_reativacao IS NOT NULL AND TRIM(c.operador_reativacao) != ''))
+              AND EXISTS (
+                SELECT 1 FROM interacoes i_chk
+                WHERE i_chk.cliente = c.id
+                  AND i_chk.created >= {:janelaInicio} AND i_chk.created <= {:janelaFim}
+                  AND (i_chk.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk.numero_pedido IS NOT NULL AND TRIM(i_chk.numero_pedido) != '' AND TRIM(i_chk.numero_pedido) != '-'))
+              )${janelaWhereExtra}
+          `
+
+          const jRowsP = arrayOf(new DynamicModel({ cliente_id: '' }))
+          const jqbP = $app.db().newQuery(reatPeriodoQuery)
+          jqbP.bind(bindParams)
+          jqbP.all(jRowsP)
+          clientesNoPeriodo = {}
+          for (let jpi = 0; jpi < jRowsP.length; jpi++) {
+            const cidP = String(jRowsP[jpi].cliente_id || '')
+            if (cidP) clientesNoPeriodo[cidP] = true
+          }
+          reativadosReaisCount = jRowsP.length
+        } catch (janelaErr) {
+          console.error(
+            '[reports_analytics] Erro na janela temporal: ' +
+              (janelaErr && janelaErr.message ? janelaErr.message : String(janelaErr)),
+          )
+        }
+      }
 
       // FONTE OFICIAL DAS MÉTRICAS DE REAL EQUIPE: FICHAS DE ATENDIMENTO (respostas_formulario)
       const fichasPorCliente = {}
@@ -352,10 +450,21 @@ routerAdd(
             .replace(/\bestado\b/g, 'c.estado')
             .replace(/\bativo_fora_base\b/g, 'c.ativo_fora_base')
             .replace(/\bupdated\b/g, 'c.updated')
+          // Janela temporal: exclui as condições 'updated' da janela (a janela vale para
+          // interacoes.created). A condição de período padrão (updated >= ...) NÃO é
+          // reaplicada nas fichas — o recorte oficial aqui é a janela em si.
+          if (janelaAtiva && cond.indexOf('{:janela') !== -1) continue
           rfWhereConditions.push(prefixedCond)
         }
 
         const rfWhereClause = rfWhereConditions.length > 0 ? rfWhereConditions.join(' AND ') : '1=1'
+
+        // Janela: clientes reativados no período (via interacoes.created)
+        let fichasJanelaCond = ''
+        if (janelaAtiva) {
+          fichasJanelaCond =
+            " AND EXISTS (SELECT 1 FROM interacoes i_win WHERE i_win.cliente = c.id AND i_win.created >= {:janelaInicio} AND i_win.created <= {:janelaFim} AND (i_win.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_win.numero_pedido IS NOT NULL AND TRIM(i_win.numero_pedido) != '' AND TRIM(i_win.numero_pedido) != '-')))"
+        }
 
         const fichasQuery = `
           SELECT
@@ -366,7 +475,7 @@ routerAdd(
             rf.toneladas_potencial as toneladas_potencial
           FROM respostas_formulario rf
           INNER JOIN clientes c ON c.id = rf.cliente
-          WHERE ${rfWhereClause}
+          WHERE ${rfWhereClause}${fichasJanelaCond}
           ORDER BY rf.created DESC
         `
 
@@ -535,7 +644,7 @@ routerAdd(
           COALESCE(valor_ultima_compra, 0) as valor_cliente,
           COALESCE(toneladas_historico, 0) as ton_cliente
         FROM clientes
-        WHERE ${whereClause} AND ${isReativacaoRealCond}
+        WHERE ${whereClause} AND ${isReativacaoRealCond}${janelaAtiva ? " AND EXISTS (SELECT 1 FROM interacoes i_w2 WHERE i_w2.cliente = clientes.id AND i_w2.created >= {:janelaInicio} AND i_w2.created <= {:janelaFim} AND (i_w2.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_w2.numero_pedido IS NOT NULL AND TRIM(i_w2.numero_pedido) != '' AND TRIM(i_w2.numero_pedido) != '-')))" : ''}
       `
 
       const reatRows = arrayOf(
@@ -617,7 +726,7 @@ routerAdd(
           SUM(CASE WHEN estado = 'compra_terceiros' OR estado = 'nao_quer_negociar' OR estado = 'restricao_financeira' OR estado = 'sem_contato' THEN 1 ELSE 0 END) as perdidos,
           SUM(CASE WHEN estado = 'reagendado' THEN 1 ELSE 0 END) as reagendados
         FROM clientes
-        WHERE ${whereClause}
+        WHERE ${whereClause}${janelaAtiva ? " AND EXISTS (SELECT 1 FROM interacoes i_w3 WHERE i_w3.cliente = clientes.id AND i_w3.created >= {:janelaInicio} AND i_w3.created <= {:janelaFim} AND (i_w3.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_w3.numero_pedido IS NOT NULL AND TRIM(i_w3.numero_pedido) != '' AND TRIM(i_w3.numero_pedido) != '-')))" : ''}
         GROUP BY segmento_nome
         ORDER BY total_clientes DESC
       `
