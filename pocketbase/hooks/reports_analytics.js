@@ -241,7 +241,7 @@ routerAdd(
       // Condição que define uma REATIVAÇÃO REAL DA EQUIPE:
       // Cliente com estado 'reativado' QUE teve atendimento por operador e atendimento correspondente em interacoes
       const isReativacaoRealCond =
-        "(clientes.estado = 'reativado' AND clientes.operador IS NOT NULL AND TRIM(clientes.operador) != '' AND EXISTS (SELECT 1 FROM interacoes i_chk WHERE i_chk.cliente = clientes.id AND (i_chk.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk.numero_pedido IS NOT NULL AND TRIM(i_chk.numero_pedido) != '' AND TRIM(i_chk.numero_pedido) != '-'))))"
+        "(clientes.estado = 'reativado' AND ((clientes.operador IS NOT NULL AND TRIM(clientes.operador) != '') OR (clientes.operador_reativacao IS NOT NULL AND TRIM(clientes.operador_reativacao) != '')) AND EXISTS (SELECT 1 FROM interacoes i_chk WHERE i_chk.cliente = clientes.id AND (i_chk.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk.numero_pedido IS NOT NULL AND TRIM(i_chk.numero_pedido) != '' AND TRIM(i_chk.numero_pedido) != '-'))))"
 
       // Condição que define CLIENTES COM FATURAMENTO RECENTE DETECTADOS NO CRUZAMENTO (sem atendimento de operador)
       const isFaturamentoCruzamentoCond =

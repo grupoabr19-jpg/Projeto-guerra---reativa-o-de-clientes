@@ -204,7 +204,7 @@ var DESFECHOS_ISENTOS = {
  * Exige operador preenchido E atendimento real na tabela interacoes.
  */
 var SQL_IS_REATIVACAO_REAL =
-  "(estado = 'reativado' AND operador IS NOT NULL AND TRIM(operador) != '' AND EXISTS (SELECT 1 FROM interacoes i_chk WHERE i_chk.cliente = clientes.id AND (i_chk.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk.numero_pedido IS NOT NULL AND TRIM(i_chk.numero_pedido) != '' AND TRIM(i_chk.numero_pedido) != '-'))))"
+  "(estado = 'reativado' AND ((operador IS NOT NULL AND TRIM(operador) != '') OR (operador_reativacao IS NOT NULL AND TRIM(operador_reativacao) != '')) AND EXISTS (SELECT 1 FROM interacoes i_chk WHERE i_chk.cliente = clientes.id AND (i_chk.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk.numero_pedido IS NOT NULL AND TRIM(i_chk.numero_pedido) != '' AND TRIM(i_chk.numero_pedido) != '-'))))"
 
 /**
  * Condição SQL para definir Faturamento Recente do Cruzamento (sem atendimento da equipe).

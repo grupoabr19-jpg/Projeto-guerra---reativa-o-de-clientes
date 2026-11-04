@@ -205,7 +205,7 @@ routerAdd(
             c.endereco as endereco,
             c.regiao as regiao,
             c.vendedor as vendedor_origem,
-            COALESCE(u.name, c.operador, '') as operador_nome,
+            COALESCE(u.name, c.operador, c.operador_reativacao, '') as operador_nome,
             COALESCE(i.numero_pedido, c.pedido_reativacao, '') as pedido,
             COALESCE(c.valor_ultima_compra, 0) as valor,
             COALESCE(i.created, c.reativado_em, c.updated) as data_reativacao
@@ -213,7 +213,7 @@ routerAdd(
           INNER JOIN interacoes i ON i.cliente = c.id
           LEFT JOIN users u ON u.id = i.operador
           WHERE c.estado = 'reativado'
-            AND c.operador IS NOT NULL AND TRIM(c.operador) != ''
+            AND ((c.operador IS NOT NULL AND TRIM(c.operador) != '') OR (c.operador_reativacao IS NOT NULL AND TRIM(c.operador_reativacao) != ''))
             AND ${baseCliFilter}
             AND (i.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido')
                  OR (i.numero_pedido IS NOT NULL AND TRIM(i.numero_pedido) != '' AND TRIM(i.numero_pedido) != '-'))

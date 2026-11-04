@@ -28,8 +28,14 @@ migrate(
     const DESFECHOS_REATIVACAO = "('reativado', 'reativado_com_pedido', 'fechou_pedido')"
 
     // 1. Candidatos: ainda ativo_fora_base com o motivo falso gravado por 0132–0135
+    // COALESCE em todo campo de texto: driver do PocketBase não aceita NULL em DynamicModel string
     const sqlCandidatos = `
-      SELECT id, codigo, nome, operador_reativacao, reativado_em, pedido_reativacao
+      SELECT id,
+             COALESCE(codigo, '') as codigo,
+             COALESCE(nome, '') as nome,
+             COALESCE(operador_reativacao, '') as operador_reativacao,
+             COALESCE(reativado_em, '') as reativado_em,
+             COALESCE(pedido_reativacao, '') as pedido_reativacao
       FROM clientes
       WHERE estado = 'ativo_fora_base'
         AND motivo_ativo_fora_base LIKE '%cruzamento ERP sem operador%'
@@ -54,9 +60,12 @@ migrate(
       const c = candidatos[i]
 
       // Evidência 1: ficha de atendimento (Forms/ficha) com desfecho de reativação por operador real
+      // COALESCE em todo campo de texto (numero_pedido pode ser NULL — erro de Scan do driver)
       const sqlFicha = `
-        SELECT rf.operador as operador, rf.desfecho as desfecho, rf.created as created,
-               i.numero_pedido as numero_pedido
+        SELECT COALESCE(rf.operador, '') as operador,
+               COALESCE(rf.desfecho, '') as desfecho,
+               COALESCE(rf.created, '') as created,
+               COALESCE(i.numero_pedido, '') as numero_pedido
         FROM respostas_formulario rf
         LEFT JOIN interacoes i ON i.id = rf.interacao
         WHERE rf.cliente = {:cid}
@@ -90,14 +99,17 @@ migrate(
         evOrigem = 'operador_reativacao'
       } else {
         // Evidência 3: interação com desfecho de reativação/pedido por operador real
+        // COALESCE em todo campo de texto (numero_pedido pode ser NULL — erro de Scan do driver)
         const sqlInt = `
-          SELECT i.operador as operador, i.desfecho as desfecho, i.created as created,
-                 i.numero_pedido as numero_pedido
+          SELECT COALESCE(i.operador, '') as operador,
+                 COALESCE(i.desfecho, '') as desfecho,
+                 COALESCE(i.created, '') as created,
+                 COALESCE(i.numero_pedido, '') as numero_pedido
           FROM interacoes i
           WHERE i.cliente = {:cid}
             AND i.operador IS NOT NULL AND TRIM(i.operador) != ''
-            AND (i.desfecho IN ${DESFECHOS_REATIVACAO}
-                 OR (i.numero_pedido IS NOT NULL AND TRIM(i.numero_pedido) != '' AND TRIM(i.numero_pedido) != '-'))
+           AND (i.desfecho IN ${DESFECHOS_REATIVACAO}
+                OR (i.numero_pedido IS NOT NULL AND TRIM(i.numero_pedido) != '' AND TRIM(i.numero_pedido) != '-'))
           ORDER BY i.created DESC
           LIMIT 1
         `

@@ -101,7 +101,7 @@ routerAdd(
       // correspondente na coleção interações (desfecho de reativação ou pedido preenchido)
       // Clientes de importação sem operador ou sem atendimento real (ex: C023347 Nelson, C023355 Maria Cecilia) não contam.
       const isReativacaoRealCond =
-        "(estado = 'reativado' AND operador IS NOT NULL AND TRIM(operador) != '' AND EXISTS (SELECT 1 FROM interacoes i_chk WHERE i_chk.cliente = clientes.id AND (i_chk.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk.numero_pedido IS NOT NULL AND TRIM(i_chk.numero_pedido) != '' AND TRIM(i_chk.numero_pedido) != '-'))))"
+        "(estado = 'reativado' AND ((operador IS NOT NULL AND TRIM(operador) != '') OR (operador_reativacao IS NOT NULL AND TRIM(operador_reativacao) != '')) AND EXISTS (SELECT 1 FROM interacoes i_chk WHERE i_chk.cliente = clientes.id AND (i_chk.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk.numero_pedido IS NOT NULL AND TRIM(i_chk.numero_pedido) != '' AND TRIM(i_chk.numero_pedido) != '-'))))"
 
       const isFaturamentoCruzamentoCond =
         "(estado = 'reativado' AND (operador IS NULL OR TRIM(operador) = '' OR NOT EXISTS (SELECT 1 FROM interacoes i_chk2 WHERE i_chk2.cliente = clientes.id AND (i_chk2.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk2.numero_pedido IS NOT NULL AND TRIM(i_chk2.numero_pedido) != '' AND TRIM(i_chk2.numero_pedido) != '-')))))"
