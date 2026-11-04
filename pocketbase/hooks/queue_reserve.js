@@ -1164,6 +1164,8 @@ routerAdd(
       // ETAPA A: REAGENDADOS VENCIDOS (Follow-ups do próprio operador)
       // =========================================================================
       let reagFilter = `estado = 'reagendado' && reagendado_para != '' && reagendado_para <= '${endOfToday}' && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'`
+      // Blindagem: encerrados como "não quer negociar" e em quarentena vigente nunca são candidatos
+      reagFilter += ` && estado != 'nao_quer_negociar' && (quarentena_ate = '' || quarentena_ate = null || quarentena_ate <= '${endOfToday}')`
       if (isRepescagem) {
         reagFilter += " && (faixa = '90_plus' || dias_sem_faturar >= 90)"
       }
@@ -1182,6 +1184,15 @@ routerAdd(
         if (reagendados && reagendados.length > 0) {
           const myReags = reagendados.filter((r) => {
             if (r.getString('reagendado_operador') !== userId) return false
+            if (r.getString('estado') === 'nao_quer_negociar') return false
+            const qAteReag = r.getString('quarentena_ate')
+            if (
+              qAteReag &&
+              !isNaN(new Date(qAteReag).getTime()) &&
+              new Date(qAteReag).getTime() > now.getTime()
+            ) {
+              return false
+            }
             if (!isAtacado && isClienteAtacado(r)) {
               console.log(
                 `[queue_reserve] Reagendado ignorado (perfil atacado não elegível para operador ${userName}): ${r.id} (${r.getString('codigo')})`,
@@ -1391,6 +1402,11 @@ routerAdd(
           return f
         }
 
+        // Blindagem de não-atendíveis no motor: encerrados como "não quer negociar" (blacklist
+        // de venda perdida) e clientes em quarentena NUNCA entram na oferta da fila.
+        const nowIsoBlind = now.toISOString()
+        const blindNaoAtendivel = ` && estado != 'nao_quer_negociar' && (quarentena_ate = '' || quarentena_ate = null || quarentena_ate <= '${nowIsoBlind}')`
+
         // NÍVEL 1: CLIENTES PRÓPRIOS NOMINAIS ATÉ 90 DIAS
         const maxNivel1 = maxDiasInatividade !== null ? Math.min(maxDiasInatividade, 90) : 90
         let poolNivel1 = []
@@ -1404,6 +1420,10 @@ routerAdd(
         const poolNivel1Valida = poolNivel1.filter((c) => {
           if (isCandidatoRepetidoRecente(c)) return false
           if (isClienteAtacado(c)) return false
+          if (c.getString('estado') === 'nao_quer_negociar') return false
+          const qAte = c.getString('quarentena_ate')
+          if (qAte && !isNaN(new Date(qAte).getTime()) && new Date(qAte).getTime() > now.getTime())
+            return false
           if (!matchesCarteiraVendedorTolerante(c, userName)) return false
           const dias = c.getInt('dias_sem_faturar')
           return dias <= maxNivel1
@@ -1428,6 +1448,14 @@ routerAdd(
           const poolNivel2Valida = poolNivel2.filter((c) => {
             if (isCandidatoRepetidoRecente(c)) return false
             if (isClienteAtacado(c)) return false
+            if (c.getString('estado') === 'nao_quer_negociar') return false
+            const qAte = c.getString('quarentena_ate')
+            if (
+              qAte &&
+              !isNaN(new Date(qAte).getTime()) &&
+              new Date(qAte).getTime() > now.getTime()
+            )
+              return false
             if (!matchesCarteiraVendedorTolerante(c, userName)) return false
             const dias = c.getInt('dias_sem_faturar')
             return dias <= maxNivel2
@@ -1442,7 +1470,7 @@ routerAdd(
         // NÍVEL 3: TODOS OS ANTIGOS DA ROTA DESSE OPERADOR E DA ESPECIALIDADE DELE
         // independente de ser de vendedor anterior na mesma rota
         if (!cand && rotasDoOperador.length > 0) {
-          let fNivel3 = `estado = 'na_base' && regiao != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
+          let fNivel3 = `estado = 'na_base' && regiao != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'${blindNaoAtendivel} && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
           if (filtroSegmento && filtroSegmento !== 'todos') {
             fNivel3 += ` && segmento = '${filtroSegmento}'`
           }
@@ -1511,7 +1539,7 @@ routerAdd(
 
         if (!cand) {
           try {
-            let fBaseSemCorte = `estado = 'na_base' && regiao != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa' && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
+            let fBaseSemCorte = `estado = 'na_base' && regiao != 'ATACADO' && telefone_invalido != true && ativo_fora_base != true && base_categoria != 'cliente_final' && base_categoria != 'atacado_fora_mapa'${blindNaoAtendivel} && (standby_ate = '' || standby_ate = null || standby_ate <= '${nowIsoQueue}')`
             if (filtroSegmento && filtroSegmento !== 'todos') {
               fBaseSemCorte += ` && segmento = '${filtroSegmento}'`
             }

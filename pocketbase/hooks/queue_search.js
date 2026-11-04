@@ -632,6 +632,8 @@ routerAdd(
         const nowIso = new Date().toISOString()
         // Clientes com pedido_em_aberto=true podem ser buscados (serão filtrados para o dono/admin abaixo)
         filterExpr += ` && (pedido_em_aberto = true || estado != 'reativado' || standby_ate = '' || standby_ate = null || standby_ate <= '${nowIso}')`
+        // Blindagem: clientes não atendíveis NUNCA aparecem na oferta de busca da carteira
+        filterExpr += ` && estado != 'nao_quer_negociar' && (quarentena_ate = '' || quarentena_ate = null || quarentena_ate <= '${nowIso}')`
       }
 
       // Restrições de perfil/região
@@ -1377,6 +1379,21 @@ routerAdd(
         return e.json(401, { error: 'Autenticação obrigatória' })
       }
 
+      // Helper INLINE obrigatório neste callback (Goja/pb_hooks: helpers não vazam entre routerAdd's).
+      // Sem esta definição, todo operador de varejo tomava "matchesCarteiraVendedorTolerante is not defined"
+      // ao abrir qualquer cliente via busca da carteira (erro idêntico para clientes diferentes).
+      function matchesCarteiraVendedorTolerante(clienteRecTol, userNameTol) {
+        if (!userNameTol) return true
+        const vRawTol = clienteRecTol.getString('vendedor') || ''
+        const tipoVendTol = clienteRecTol.getString('tipo_vendedor') || ''
+        if (!vRawTol && !tipoVendTol) return false
+
+        const vLimpoTol = limparPrefixoVendedor(vRawTol)
+        const userNormTol = normalizarTextoNFD(userNameTol)
+
+        return nomesSaoCompativeis(vLimpoTol, userNormTol)
+      }
+
       const userId = authRecord.id
       const userName = (authRecord.getString('name') || '').trim()
       const userRole = authRecord.getString('role')
@@ -1404,6 +1421,57 @@ routerAdd(
         return e.json(400, {
           error: 'Este cliente já foi retirado da base como Ativo Fora da Base.',
         })
+      }
+
+      // Blindagens de clientes NÃO atendíveis (não-admin): mensagem humana e específica, nunca erro técnico
+      const formatarDataBrBloqueio = (isoStr) => {
+        try {
+          if (!isoStr) return ''
+          const dBlq = new Date(isoStr)
+          if (isNaN(dBlq.getTime())) return ''
+          return dBlq.toISOString().slice(0, 10).split('-').reverse().join('/')
+        } catch (_) {
+          return ''
+        }
+      }
+      const quarentenaBloqueio = cliente.getString('quarentena_ate') || ''
+      const estadoBloqueio = cliente.getString('estado') || ''
+      if (userRole !== 'admin') {
+        const baseCategoriaCli = cliente.getString('base_categoria') || ''
+        if (baseCategoriaCli === 'cliente_final') {
+          return e.json(403, {
+            error:
+              'Este cliente é CLIENTE FINAL e não participa da fila de reativação (a fila atende apenas clientes que já compraram com a ABR).',
+          })
+        }
+        if (baseCategoriaCli === 'atacado_fora_mapa') {
+          return e.json(403, {
+            error:
+              'Este cliente de ATACADO está fora do mapa de DDDs atendidos e não pode ser oferecido na fila.',
+          })
+        }
+        if (
+          quarentenaBloqueio &&
+          !isNaN(new Date(quarentenaBloqueio).getTime()) &&
+          new Date(quarentenaBloqueio).getTime() > Date.now()
+        ) {
+          return e.json(403, {
+            error:
+              'Cliente em quarentena até ' +
+              formatarDataBrBloqueio(quarentenaBloqueio) +
+              ' — ele volta automaticamente para a fila nessa data.',
+          })
+        }
+        if (estadoBloqueio === 'nao_quer_negociar') {
+          return e.json(403, {
+            error:
+              'Cliente fora da fila: encerrado como "Não quer negociar" (venda perdida)' +
+              (quarentenaBloqueio
+                ? ' e em quarentena até ' + formatarDataBrBloqueio(quarentenaBloqueio)
+                : '') +
+              '. Se necessário, solicite ao administrador a revisão desse bloqueio.',
+          })
+        }
       }
 
       // Blindagem de Standby estrita: 60 dias
