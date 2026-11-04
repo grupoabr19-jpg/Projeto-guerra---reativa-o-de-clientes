@@ -585,6 +585,40 @@ export async function destravarClienteStandby(
   return res.json()
 }
 
+/**
+ * Superpoder Admin: destrava um cliente fechado como "não quer negociar"
+ * (venda perdida) ou outro desfecho fechado, devolvendo-o à fila/carteira
+ * para novo trabalho de reativação/follow-up. Opcionalmente reatribui o
+ * cliente a qualquer vendedor. Exclusivo do perfil admin (backend retorna 403
+ * para operador/líder/supervisor). Histórico e blindagens preservados.
+ */
+export async function adminDestravarCliente(
+  clienteId: string,
+  novoVendedor?: string,
+  motivo?: string,
+): Promise<{ ok: boolean; message: string; cliente: Cliente }> {
+  const res = await fetch(
+    `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/queue/admin-destravar-cliente`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: pb.authStore.token,
+      },
+      body: JSON.stringify({
+        cliente_id: clienteId,
+        novo_vendedor: novoVendedor || undefined,
+        motivo: motivo || 'Destrava manual autorizada pelo Administrador',
+      }),
+    },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || err.message || 'Falha ao destravar cliente')
+  }
+  return res.json()
+}
+
 export interface EditarAtendimentoFechadoAdminData {
   cliente_id: string
   respostas: Record<string, unknown>

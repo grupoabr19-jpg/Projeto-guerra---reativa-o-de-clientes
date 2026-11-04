@@ -15,6 +15,7 @@ import {
   ArrowRight,
   Loader2,
   FileText,
+  Unlock,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -41,6 +42,7 @@ import {
   fetchRegioes,
   destravarClienteStandby,
   concluirFaturamentoPedido,
+  adminDestravarCliente,
 } from '@/services/api'
 import {
   Dialog,
@@ -95,6 +97,12 @@ export default function ClientesPage() {
   // Diálogo de Destrave de Standby (Admin Only)
   const [clienteParaDestravar, setClienteParaDestravar] = useState<Cliente | null>(null)
   const [destravandoStandby, setDestravandoStandby] = useState(false)
+
+  // Superpoder Admin: Destrave de venda perdida / "não quer negociar" (Admin Only)
+  const [clienteParaDestravarVendaPerdida, setClienteParaDestravarVendaPerdida] =
+    useState<Cliente | null>(null)
+  const [destravandoVendaPerdida, setDestravandoVendaPerdida] = useState(false)
+  const [novoVendedorDestrave, setNovoVendedorDestrave] = useState('')
 
   // Modal de Complementação de Faturamento
   const [modalFaturamentoAberto, setModalFaturamentoAberto] = useState(false)
@@ -312,6 +320,57 @@ export default function ClientesPage() {
       })
     } finally {
       setSalvandoFaturamento(false)
+    }
+  }
+
+  // Superpoder Admin: destravar cliente fechado como "não quer negociar" (venda perdida)
+  const ehDesfechoVendaPerdida = (c: Cliente) => {
+    const desfechoRaw = String(
+      (c as unknown as Record<string, unknown>).desfecho || '',
+    ).toLowerCase()
+    const desfechoFechado =
+      desfechoRaw.includes('nao quer negociar') ||
+      desfechoRaw.includes('não quer negociar') ||
+      c.estado === 'nao_quer_negociar'
+    return desfechoFechado && c.estado !== 'em_atendimento' && c.estado !== 'reservado'
+  }
+
+  const handleConfirmDestravarVendaPerdida = async () => {
+    if (!clienteParaDestravarVendaPerdida) return
+    setDestravandoVendaPerdida(true)
+    try {
+      const res = await adminDestravarCliente(
+        clienteParaDestravarVendaPerdida.id,
+        novoVendedorDestrave.trim() || undefined,
+        `Destrave de venda perdida realizado pelo admin ${user?.name || user?.email || 'admin'} via tela de Clientes`,
+      )
+      toast({
+        title: 'Cliente destravado!',
+        description:
+          res.message || `${clienteParaDestravarVendaPerdida.nome} liberado com sucesso.`,
+      })
+      const idDestravado = clienteParaDestravarVendaPerdida.id
+      setClienteParaDestravarVendaPerdida(null)
+      setNovoVendedorDestrave('')
+      if (selectedClient && selectedClient.id === idDestravado) {
+        setSelectedClient({
+          ...selectedClient,
+          estado: 'na_base',
+          quarentena_ate: undefined,
+          standby_ate: undefined,
+          reativado_em: undefined,
+        })
+      }
+      loadClientesServer()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao destravar cliente'
+      toast({
+        variant: 'destructive',
+        title: 'Erro no destrave',
+        description: msg,
+      })
+    } finally {
+      setDestravandoVendaPerdida(false)
     }
   }
 
@@ -558,6 +617,21 @@ export default function ClientesPage() {
                               Destravar
                             </Button>
                           )}
+                        {user?.role === 'admin' && ehDesfechoVendaPerdida(item) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setNovoVendedorDestrave('')
+                              setClienteParaDestravarVendaPerdida(item)
+                            }}
+                            className="h-7 text-[11px] text-orange-700 border-orange-300 hover:bg-orange-50 px-2 font-medium"
+                            title="Destravar venda perdida (exclusivo admin)"
+                          >
+                            <Unlock className="h-3 w-3 mr-1 text-orange-600" />
+                            Destravar
+                          </Button>
+                        )}
                         {item.pedido_em_aberto && (
                           <Button
                             variant="outline"
@@ -876,6 +950,37 @@ export default function ClientesPage() {
                   </div>
                 )}
 
+              {/* Superpoder Admin: Destravar cliente fechado como "não quer negociar" (venda perdida) */}
+              {user?.role === 'admin' && ehDesfechoVendaPerdida(selectedClient) && (
+                <div className="p-3 bg-orange-500/10 border border-orange-400/80 rounded-lg space-y-2">
+                  <div className="text-xs font-bold text-orange-950 flex items-center justify-between">
+                    <div className="flex items-center space-x-1">
+                      <Unlock className="h-3.5 w-3.5 mr-1 text-orange-700" />
+                      <span>Controle Admin: Cliente Fechado como Venda Perdida</span>
+                    </div>
+                    <Badge className="bg-orange-600 text-white text-[10px]">Exclusivo Admin</Badge>
+                  </div>
+                  <p className="text-[11px] text-orange-900">
+                    Este cliente está travado com desfecho <strong>"não quer negociar"</strong>{' '}
+                    (venda perdida). Como Administrador, você pode destravá-lo: ele volta para "Na
+                    Base", fica disponível para atribuição/atendimento e o histórico anterior
+                    permanece preservado na ficha. A blindagem de reativação recente (30 dias) não é
+                    burlada.
+                  </p>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setNovoVendedorDestrave('')
+                      setClienteParaDestravarVendaPerdida(selectedClient)
+                    }}
+                    className="bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold h-8 w-full shadow-xs"
+                  >
+                    <Unlock className="h-3.5 w-3.5 mr-1.5" />
+                    Destravar Cliente (Venda Perdida)
+                  </Button>
+                </div>
+              )}
+
               {/* Ações de Supervisor: Reverter Status */}
               {hasRole(['supervisor', 'admin']) && (
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
@@ -1006,6 +1111,83 @@ export default function ClientesPage() {
               ) : (
                 <>
                   <LockOpen className="h-3.5 w-3.5 mr-1.5" />
+                  Confirmar Destrave
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AlertDialog de Destrave de Venda Perdida (Admin Only) */}
+      <AlertDialog
+        open={Boolean(clienteParaDestravarVendaPerdida)}
+        onOpenChange={(open) => !open && setClienteParaDestravarVendaPerdida(null)}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <div className="flex items-center space-x-2 text-orange-600">
+              <Unlock className="h-5 w-5" />
+              <AlertDialogTitle>Destravar Cliente Fechado como Venda Perdida?</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="text-xs text-slate-600 space-y-2 pt-2">
+              <p>
+                O cliente{' '}
+                <strong className="text-slate-900">{clienteParaDestravarVendaPerdida?.nome}</strong>{' '}
+                (<span className="font-mono">{clienteParaDestravarVendaPerdida?.codigo}</span>) está
+                travado com desfecho <strong>"não quer negociar"</strong> (venda perdida).
+              </p>
+              <p className="bg-orange-50 border border-orange-200 text-orange-800 p-2.5 rounded-md">
+                Como <strong>Administrador</strong>, você pode devolvê-lo ao trabalho: o cliente
+                volta para "Na Base", fica disponível para atribuição/atendimento e o histórico
+                anterior (fichas, desfechos, interações) permanece preservado. A blindagem de
+                reativação recente (30 dias) continua valendo.
+              </p>
+              <p className="text-[11px] text-slate-400">
+                Esta ação de destrave é exclusiva do perfil Admin e será auditada nos logs do
+                sistema.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-1.5 pt-1">
+            <Label htmlFor="vendedor-destrave" className="text-xs font-semibold text-slate-700">
+              Reatribuir a vendedor (opcional)
+            </Label>
+            <Input
+              id="vendedor-destrave"
+              type="text"
+              placeholder="Nome do vendedor (ex: Leiz Torso) — vazio mantém o atual"
+              value={novoVendedorDestrave}
+              onChange={(e) => setNovoVendedorDestrave(e.target.value)}
+              className="h-9 text-xs"
+            />
+            <p className="text-[10px] text-slate-400">
+              Use o nome exato do vendedor como cadastrado na equipe (ex.: "Leiz Torso"). Em branco,
+              o cliente mantém o vendedor atual.
+            </p>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={destravandoVendaPerdida} className="text-xs">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleConfirmDestravarVendaPerdida()
+              }}
+              disabled={destravandoVendaPerdida}
+              className="bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs"
+            >
+              {destravandoVendaPerdida ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  Destravando...
+                </>
+              ) : (
+                <>
+                  <Unlock className="h-3.5 w-3.5 mr-1.5" />
                   Confirmar Destrave
                 </>
               )}
