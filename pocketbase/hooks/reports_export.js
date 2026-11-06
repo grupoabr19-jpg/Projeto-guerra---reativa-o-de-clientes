@@ -1,10 +1,20 @@
 /// <reference path="../pb_data/types.d.ts" />
 
+// reports_export.js — /backend/v1/reports/export (CSV)
+// FÓRMULAS E FILTROS VÊM DO MÓDULO ÚNICO regua_metricas.js (M1):
+// - Janela temporal (De/Até) via REGUA.parseJanela (mesma do Dashboard);
+// - Normalização de região via REGUA.sqlRegiao;
+// - Régua oficial de reativação via REGUA.sqlReativacaoReal (prova de operador
+//   + EXISTS de interação com desfecho/pedido) — mesmo número do Dashboard.
+// Nenhuma fórmula de régua ou parsing de período é definida aqui.
+
 routerAdd(
   'POST',
   '/backend/v1/reports/export',
   (e) => {
     try {
+      const REGUA = require(`${__hooks}/regua_metricas.js`)
+
       const authRecord = e.auth
       if (!authRecord || !authRecord.id) {
         return e.json(401, { error: 'Autenticação obrigatória' })
@@ -17,8 +27,10 @@ routerAdd(
 
       const body = e.requestInfo().body || {}
       const tipo = String(body.tipo || 'reativados').trim()
-      const periodoInicio = String(body.periodo_inicio || body.periodoInicio || '').trim()
-      const periodoFim = String(body.periodo_fim || body.periodoFim || '').trim()
+      const periodoInicio = String(
+        body.periodo_inicio || body.periodoInicio || body.data_inicial || '',
+      ).trim()
+      const periodoFim = String(body.periodo_fim || body.periodoFim || body.data_final || '').trim()
       const regiao = String(body.regiao || '').trim()
       const operador = String(body.operador || '').trim()
 
@@ -49,75 +61,14 @@ routerAdd(
         return s
       }
 
-      // Converte YYYY-MM-DD em timestamps UTC com Fuso de Brasília
-      let startUtcIso = ''
-      let endUtcIso = ''
-      if (periodoInicio) {
-        startUtcIso = `${periodoInicio.slice(0, 10)} 03:00:00.000Z`
-      }
-      if (periodoFim) {
-        const pF = periodoFim.slice(0, 10)
-        const parts = pF.split('-')
-        const y = parseInt(parts[0], 10)
-        const m = parseInt(parts[1], 10) - 1
-        const d = parseInt(parts[2], 10)
-        const nextD = new Date(Date.UTC(y, m, d + 1, 2, 59, 59, 999))
-        endUtcIso = nextD.toISOString()
-      }
+      // Janela temporal — MESMA função do Dashboard (regua_metricas.js):
+      // ativa somente com data_inicial E data_final em YYYY-MM-DD; 00:00 BRT = 03:00 UTC.
+      const janela = REGUA.parseJanela(periodoInicio, periodoFim)
 
-      let regiaoCondition = ''
       const bindParams = {}
-      if (regiao && regiao.toLowerCase() !== 'todas') {
-        const upper = regiao.toUpperCase().trim()
-        if (upper === 'SEM REGIÃO' || upper === 'SEM REGIAO') {
-          regiaoCondition =
-            " AND (c.regiao = '' OR c.regiao IS NULL OR UPPER(TRIM(c.regiao)) = 'SEM REGIÃO' OR UPPER(TRIM(c.regiao)) = 'SEM REGIAO')"
-        } else if (
-          upper === 'BRAGANÇA' ||
-          upper === 'BRAGANCA' ||
-          upper === 'BRAGANÇA PAULISTA' ||
-          upper === 'BRAGANCA PAULISTA'
-        ) {
-          regiaoCondition =
-            " AND (UPPER(TRIM(c.regiao)) = 'BRAGANÇA' OR UPPER(TRIM(c.regiao)) = 'BRAGANCA' OR UPPER(TRIM(c.regiao)) = 'BRAGANÇA PAULISTA' OR UPPER(TRIM(c.regiao)) = 'BRAGANCA PAULISTA')"
-        } else if (
-          upper === 'CAMBUÍ' ||
-          upper === 'CAMBUI' ||
-          upper === 'MICRO-REGIÃO' ||
-          upper === 'MICRO REGIAO' ||
-          upper === 'MICROREGIAO'
-        ) {
-          regiaoCondition =
-            " AND (UPPER(TRIM(c.regiao)) = 'CAMBUÍ' OR UPPER(TRIM(c.regiao)) = 'CAMBUI' OR UPPER(TRIM(c.regiao)) = 'MICRO-REGIÃO' OR UPPER(TRIM(c.regiao)) = 'MICRO REGIAO' OR UPPER(TRIM(c.regiao)) = 'MICROREGIAO')"
-        } else if (
-          upper === 'POÇOS DE CALDAS' ||
-          upper === 'POCOS DE CALDAS' ||
-          upper === 'POÇOS CALDAS' ||
-          upper === 'POCOS CALDAS'
-        ) {
-          regiaoCondition =
-            " AND (UPPER(TRIM(c.regiao)) = 'POÇOS DE CALDAS' OR UPPER(TRIM(c.regiao)) = 'POCOS DE CALDAS' OR UPPER(TRIM(c.regiao)) = 'POÇOS CALDAS' OR UPPER(TRIM(c.regiao)) = 'POCOS CALDAS')"
-        } else if (upper === 'JUNDIAÍ' || upper === 'JUNDIAI') {
-          regiaoCondition =
-            " AND (UPPER(TRIM(c.regiao)) = 'JUNDIAÍ' OR UPPER(TRIM(c.regiao)) = 'JUNDIAI')"
-        } else if (upper === 'ITAJUBÁ' || upper === 'ITAJUBA') {
-          regiaoCondition =
-            " AND (UPPER(TRIM(c.regiao)) = 'ITAJUBÁ' OR UPPER(TRIM(c.regiao)) = 'ITAJUBA')"
-        } else if (
-          upper === 'VARGINHA' ||
-          upper === 'POUSO ALEGRE' ||
-          upper === 'EXTREMA' ||
-          upper === 'ATACADO' ||
-          upper === 'REPESCAGEM'
-        ) {
-          regiaoCondition = " AND UPPER(TRIM(c.regiao)) = '" + upper + "'"
-        } else {
-          regiaoCondition =
-            ' AND (UPPER(TRIM(c.regiao)) = {:regiaoParam} OR UPPER(TRIM(c.regiao)) LIKE {:regiaoLike})'
-          bindParams.regiaoParam = upper
-          bindParams.regiaoLike = '%' + upper + '%'
-        }
-      }
+
+      // Normalização de região — MESMA função do Dashboard
+      const regiaoCondition = REGUA.sqlRegiao(regiao, 'c.', bindParams)
 
       let operadorCondition = ''
       if (operador && operador.toLowerCase() !== 'todos') {
@@ -126,15 +77,19 @@ routerAdd(
         bindParams.opParam = operador
       }
 
+      // Período aplicado NO SERVIDOR sobre i.created (mesma janela do Dashboard)
       let dateConditionI = ''
-      if (startUtcIso) {
-        dateConditionI += ' AND i.created >= {:startUtc}'
-        bindParams.startUtc = startUtcIso
+      if (janela.ativa) {
+        dateConditionI += ' AND i.created >= {:janelaInicio} AND i.created <= {:janelaFim}'
+        bindParams.janelaInicio = janela.inicioIso
+        bindParams.janelaFim = janela.fimIso
       }
-      if (endUtcIso) {
-        dateConditionI += ' AND i.created <= {:endUtc}'
-        bindParams.endUtc = endUtcIso
-      }
+
+      // Desfecho/interação que qualifica reativação — lista ÚNICA do módulo da régua
+      const interacaoReativacaoCond =
+        '(i.desfecho IN ' +
+        REGUA.DESFECHOS_REATIVACAO +
+        " OR (i.numero_pedido IS NOT NULL AND TRIM(i.numero_pedido) != '' AND TRIM(i.numero_pedido) != '-'))"
 
       const BOM = '\uFEFF'
       let csvContent = 'sep=;\r\n'
@@ -145,7 +100,8 @@ routerAdd(
         csvContent +=
           'Código;Nome do Cliente;Cidade/UF;Região;Segmento;Operador;Pedido;Valor Recuperado;Data Reativação\r\n'
 
-        // Regra única: reativação real com operador preenchido e interação confirmada
+        // Régua oficial do Dashboard: sqlReativacaoReal('c') + interação qualificadora
+        // na janela (INNER JOIN restrito = mesmo conjunto do EXISTS do Dashboard).
         const sql = `
           SELECT
             c.codigo as codigo,
@@ -158,16 +114,12 @@ routerAdd(
             COALESCE(c.valor_ultima_compra, 0) as valor,
             COALESCE(i.created, c.reativado_em, c.updated) as data_reativacao
           FROM clientes c
-          INNER JOIN interacoes i ON i.cliente = c.id
+          INNER JOIN interacoes i ON i.cliente = c.id AND ${interacaoReativacaoCond}${janela.ativa ? ' AND i.created >= {:janelaInicio} AND i.created <= {:janelaFim}' : ''}
           LEFT JOIN users u ON u.id = i.operador
-          WHERE c.estado = 'reativado'
-            AND ((c.operador IS NOT NULL AND TRIM(c.operador) != '') OR (c.operador_reativacao IS NOT NULL AND TRIM(c.operador_reativacao) != ''))
+          WHERE ${REGUA.sqlReativacaoReal('c')}
             AND (c.ativo_fora_base IS NULL OR c.ativo_fora_base = 0)
-            AND (i.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido')
-                 OR (i.numero_pedido IS NOT NULL AND TRIM(i.numero_pedido) != '' AND TRIM(i.numero_pedido) != '-'))
             ${regiaoCondition}
             ${operadorCondition}
-            ${dateConditionI}
           ORDER BY data_reativacao DESC
         `
 
@@ -327,11 +279,9 @@ routerAdd(
           'Data Agendada;Código;Nome do Cliente;Telefone;Região;Operador Responsável;Status\r\n'
 
         let followUpDateCond = ''
-        if (startUtcIso) {
-          followUpDateCond += ' AND c.reagendado_para >= {:startUtc}'
-        }
-        if (endUtcIso) {
-          followUpDateCond += ' AND c.reagendado_para <= {:endUtc}'
+        if (janela.ativa) {
+          followUpDateCond +=
+            ' AND c.reagendado_para >= {:janelaInicio} AND c.reagendado_para <= {:janelaFim}'
         }
 
         const sql = `

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-06T16:46:01.788Z",
+  "generatedAt": "2026-11-06T19:44:09.386Z",
   "collections": [
     {
       "name": "users",
@@ -499,6 +499,18 @@
           "type": "date",
           "required": false,
           "system": false
+        },
+        {
+          "name": "merge_em",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "merge_motivo",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -518,7 +530,8 @@
         "CREATE INDEX `idx_clientes_ddd_telefone` ON `clientes` (ddd_telefone)",
         "CREATE INDEX `idx_clientes_standby_ate` ON `clientes` (standby_ate)",
         "CREATE INDEX `idx_clientes_pedido_em_aberto` ON `clientes` (pedido_em_aberto)",
-        "CREATE INDEX `idx_clientes_status_faturamento` ON `clientes` (status_faturamento)"
+        "CREATE INDEX `idx_clientes_status_faturamento` ON `clientes` (status_faturamento)",
+        "CREATE INDEX `idx_clientes_merge_em` ON `clientes` (merge_em)"
       ]
     },
     {
