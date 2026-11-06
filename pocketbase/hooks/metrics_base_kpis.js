@@ -1,123 +1,43 @@
 /// <reference path="../pb_data/types.d.ts" />
 
+// metrics_base_kpis.js — /backend/v1/metrics/base-kpis
+// ROTA MANTIDA. TODAS as fórmulas vêm do módulo único regua_metricas.js (M1).
+// Nenhuma fórmula de régua é definida aqui — somente leitura dos filtros,
+// montagem das queries com os helpers do módulo e resposta.
+
 routerAdd(
   'GET',
   '/backend/v1/metrics/base-kpis',
   (e) => {
     try {
+      const REGUA = require(`${__hooks}/regua_metricas.js`)
+
       const authRecord = e.auth
       if (!authRecord || !authRecord.id) {
         return e.json(401, { error: 'Autenticação obrigatória' })
       }
 
       const q = e.requestInfo().query || {}
-      const rawRegiao = q.regiao || ''
-      const regiao = String(rawRegiao).trim()
+      const regiao = String(q.regiao || '').trim()
       const baseCategoriaParam = String(q.baseCategoria || q.categoria || 'todas').trim()
 
-      // Janela temporal personalizada (YYYY-MM-DD) sobre o timestamp da interação de reativação.
-      // Aplica-se APENAS ao KPI "Reativações no período" (reativados_reais) — a régua de
-      // prova de operador fica intacta e as contagens de estado atual da base (Total de
-      // Clientes, Na fila, etc.) não são datadas.
-      const dataInicialParam = String(q.data_inicial || '').trim()
-      const dataFinalParam = String(q.data_final || '').trim()
-      const dataInicialValida = /^\d{4}-\d{2}-\d{2}$/.test(dataInicialParam)
-      const dataFinalValida = /^\d{4}-\d{2}-\d{2}$/.test(dataFinalParam)
-      let janelaAtiva = false
-      if (dataInicialValida && dataFinalValida) {
-        janelaAtiva = true
-      }
+      // Janela temporal personalizada (YYYY-MM-DD) sobre interacoes.created —
+      // vale APENAS para "Reativações no período" (régua de prova de operador intacta).
+      // Estados atuais da base (Total de Clientes, Na fila etc.) NÃO são datados.
+      const janela = REGUA.parseJanela(q.data_inicial, q.data_final)
 
-      // Construção da condição de categoria de base
-      let categoriaSql = '1=1'
-      if (baseCategoriaParam === 'cliente_final') {
-        categoriaSql = "base_categoria = 'cliente_final'"
-      } else if (baseCategoriaParam === 'atacado_fora_mapa') {
-        categoriaSql = "base_categoria = 'atacado_fora_mapa'"
-      } else if (baseCategoriaParam === 'sem_dono' || baseCategoriaParam === 'sem_dono_equipe') {
-        categoriaSql = '(sem_dono_equipe = 1 OR sem_dono_equipe = true)'
-      } else if (baseCategoriaParam === 'repescagem') {
-        categoriaSql = "(regiao = 'REPESCAGEM' OR dias_sem_faturar >= 90)"
-      } else if (baseCategoriaParam === 'normal') {
-        categoriaSql =
-          "(base_categoria IS NULL OR base_categoria = '' OR base_categoria = 'normal')"
-      } else if (baseCategoriaParam === 'todas') {
-        categoriaSql = '1=1'
-      }
-
-      // Construção da condição de região segura para SQLite
-      // Trata todas as variações de grafia e "Sem Região"
-      let regiaoCondition = ''
       const params = {}
 
-      if (regiao && regiao.toLowerCase() !== 'todas') {
-        const upper = regiao.toUpperCase().trim()
-        if (upper === 'SEM REGIÃO' || upper === 'SEM REGIAO') {
-          regiaoCondition =
-            " AND (regiao = '' OR regiao IS NULL OR UPPER(TRIM(regiao)) = 'SEM REGIÃO' OR UPPER(TRIM(regiao)) = 'SEM REGIAO')"
-        } else if (
-          upper === 'BRAGANÇA' ||
-          upper === 'BRAGANCA' ||
-          upper === 'BRAGANÇA PAULISTA' ||
-          upper === 'BRAGANCA PAULISTA'
-        ) {
-          regiaoCondition =
-            " AND (UPPER(TRIM(regiao)) = 'BRAGANÇA' OR UPPER(TRIM(regiao)) = 'BRAGANCA' OR UPPER(TRIM(regiao)) = 'BRAGANÇA PAULISTA' OR UPPER(TRIM(regiao)) = 'BRAGANCA PAULISTA')"
-        } else if (
-          upper === 'CAMBUÍ' ||
-          upper === 'CAMBUI' ||
-          upper === 'MICRO-REGIÃO' ||
-          upper === 'MICRO REGIAO' ||
-          upper === 'MICROREGIAO'
-        ) {
-          regiaoCondition =
-            " AND (UPPER(TRIM(regiao)) = 'CAMBUÍ' OR UPPER(TRIM(regiao)) = 'CAMBUI' OR UPPER(TRIM(regiao)) = 'MICRO-REGIÃO' OR UPPER(TRIM(regiao)) = 'MICRO REGIAO' OR UPPER(TRIM(regiao)) = 'MICROREGIAO')"
-        } else if (
-          upper === 'POÇOS DE CALDAS' ||
-          upper === 'POCOS DE CALDAS' ||
-          upper === 'POÇOS CALDAS' ||
-          upper === 'POCOS CALDAS' ||
-          upper === 'POÇOS' ||
-          upper === 'POCOS'
-        ) {
-          regiaoCondition =
-            " AND (UPPER(TRIM(regiao)) = 'POÇOS DE CALDAS' OR UPPER(TRIM(regiao)) = 'POCOS DE CALDAS' OR UPPER(TRIM(regiao)) = 'POÇOS CALDAS' OR UPPER(TRIM(regiao)) = 'POCOS CALDAS' OR UPPER(TRIM(regiao)) = 'POÇOS' OR UPPER(TRIM(regiao)) = 'POCOS')"
-        } else if (upper === 'JUNDIAÍ' || upper === 'JUNDIAI') {
-          regiaoCondition =
-            " AND (UPPER(TRIM(regiao)) = 'JUNDIAÍ' OR UPPER(TRIM(regiao)) = 'JUNDIAI')"
-        } else if (upper === 'ITAJUBÁ' || upper === 'ITAJUBA') {
-          regiaoCondition =
-            " AND (UPPER(TRIM(regiao)) = 'ITAJUBÁ' OR UPPER(TRIM(regiao)) = 'ITAJUBA')"
-        } else if (upper === 'VARGINHA') {
-          regiaoCondition = " AND UPPER(TRIM(regiao)) = 'VARGINHA'"
-        } else if (upper === 'POUSO ALEGRE') {
-          regiaoCondition = " AND UPPER(TRIM(regiao)) = 'POUSO ALEGRE'"
-        } else if (upper === 'EXTREMA') {
-          regiaoCondition = " AND UPPER(TRIM(regiao)) = 'EXTREMA'"
-        } else if (upper === 'ATACADO') {
-          regiaoCondition = " AND UPPER(TRIM(regiao)) = 'ATACADO'"
-        } else if (upper === 'REPESCAGEM') {
-          regiaoCondition = " AND UPPER(TRIM(regiao)) = 'REPESCAGEM'"
-        } else {
-          regiaoCondition =
-            ' AND (UPPER(TRIM(regiao)) = {:regiaoParam} OR UPPER(TRIM(regiao)) LIKE {:regiaoLike})'
-          params.regiaoParam = upper
-          params.regiaoLike = '%' + upper + '%'
-        }
-      }
+      // Condições de região e categoria — helpers ÚNICOS do módulo da régua
+      const categoriaSql = REGUA.sqlCategoria(baseCategoriaParam, '')
+      const regiaoCondition = REGUA.sqlRegiao(regiao, '', params)
 
-      // Regra fundamental: clientes marcados com ativo_fora_base (flag ou estado) ficam fora
-      const baseFilterSql = `estado != 'ativo_fora_base' AND (ativo_fora_base IS NULL OR ativo_fora_base = 0) AND (${categoriaSql})`
+      // Regra fundamental: ativo_fora_base fora (estado + flag) + categoria
+      const baseFilterSql = REGUA.sqlBaseFilter(baseCategoriaParam, '')
 
-      // Regra unificada de Reativação Real:
-      // O cliente deve estar como 'reativado', com operador preenchido e com atendimento real
-      // correspondente na coleção interações (desfecho de reativação ou pedido preenchido)
-      // Clientes de importação sem operador ou sem atendimento real (ex: C023347 Nelson, C023355 Maria Cecilia) não contam.
-      const isReativacaoRealCond =
-        "(estado = 'reativado' AND ((operador IS NOT NULL AND TRIM(operador) != '') OR (operador_reativacao IS NOT NULL AND TRIM(operador_reativacao) != '')) AND EXISTS (SELECT 1 FROM interacoes i_chk WHERE i_chk.cliente = clientes.id AND (i_chk.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk.numero_pedido IS NOT NULL AND TRIM(i_chk.numero_pedido) != '' AND TRIM(i_chk.numero_pedido) != '-'))))"
-
-      const isFaturamentoCruzamentoCond =
-        "(estado = 'reativado' AND (operador IS NULL OR TRIM(operador) = '' OR NOT EXISTS (SELECT 1 FROM interacoes i_chk2 WHERE i_chk2.cliente = clientes.id AND (i_chk2.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk2.numero_pedido IS NOT NULL AND TRIM(i_chk2.numero_pedido) != '' AND TRIM(i_chk2.numero_pedido) != '-')))))"
+      // Fórmulas oficiais da régua (reativação oficial / faturamento do cruzamento ERP)
+      const isReativacaoRealCond = REGUA.sqlReativacaoReal('')
+      const isFaturamentoCruzamentoCond = REGUA.sqlFaturamentoCruzamento('')
 
       const kpisQuery = `
         SELECT
@@ -184,90 +104,36 @@ routerAdd(
         })
       }
 
-      const totalBase = Number(
-        kpiModel.total_base !== undefined && kpiModel.total_base !== null
-          ? kpiModel.total_base
-          : kpiModel.totalBase || 0,
-      )
-      const naBaseCount = Number(
-        kpiModel.na_base !== undefined && kpiModel.na_base !== null
-          ? kpiModel.na_base
-          : kpiModel.naBase || 0,
-      )
+      const totalBase = Number(kpiModel.total_base || 0)
+      const naBaseCount = Number(kpiModel.na_base || 0)
       const reservadoCount = Number(kpiModel.reservado || 0)
-      const emAtendimentoCount = Number(
-        kpiModel.em_atendimento !== undefined && kpiModel.em_atendimento !== null
-          ? kpiModel.em_atendimento
-          : kpiModel.emAtendimento || 0,
-      )
+      const emAtendimentoCount = Number(kpiModel.em_atendimento || 0)
       const reagendadoCount = Number(kpiModel.reagendado || 0)
       const contatadoCount = Number(kpiModel.contatado || 0)
       const reativadoTotalCount = Number(kpiModel.reativado || 0)
-      let reativadosReaisCount = Number(
-        kpiModel.reativados_reais !== undefined && kpiModel.reativados_reais !== null
-          ? kpiModel.reativados_reais
-          : kpiModel.reativadosReais || 0,
-      )
-      let valorRecuperadoReal = Number(
-        kpiModel.valor_recuperado_real !== undefined && kpiModel.valor_recuperado_real !== null
-          ? kpiModel.valor_recuperado_real
-          : kpiModel.valorRecuperadoReal || 0,
-      )
-      let toneladasRecuperadasReal = Number(
-        kpiModel.toneladas_recuperadas_real !== undefined &&
-          kpiModel.toneladas_recuperadas_real !== null
-          ? kpiModel.toneladas_recuperadas_real
-          : kpiModel.toneladasRecuperadasReal || 0,
-      )
+      let reativadosReaisCount = Number(kpiModel.reativados_reais || 0)
+      let valorRecuperadoReal = Number(kpiModel.valor_recuperado_real || 0)
+      let toneladasRecuperadasReal = Number(kpiModel.toneladas_recuperadas_real || 0)
 
-      // Janela temporal ativa: recalcula "Reativações no período" usando o timestamp das
-      // interações com desfecho de reativação (interacoes.created). A régua de prova de
-      // operador permanece intacta; contagens de estado atual da base (Total de Clientes,
-      // Na fila etc.) NÃO são datadas e ficam fora da janela.
+      // Janela temporal ativa: recalcula "Reativações no período" — clientes reativados
+      // (régua de prova de operador intacta) cuja interação de reativação caiu no período.
       let clientesNoPeriodo = null
-      if (janelaAtiva) {
+      if (janela.ativa) {
         try {
-          const jStartUtc = `${dataInicialParam} 03:00:00.000Z`
-          const pFj = dataFinalParam.split('-')
-          const jEndD = new Date(
-            Date.UTC(
-              parseInt(pFj[0], 10),
-              parseInt(pFj[1], 10) - 1,
-              parseInt(pFj[2], 10) + 1,
-              2,
-              59,
-              59,
-              999,
-            ),
-          )
-          const jEndUtc = jEndD.toISOString()
-
-          const janelaRegiaoCond = regiaoCondition
-            ? regiaoCondition.replace(/\bregiao\b/g, 'c.regiao')
-            : ''
-          const janelaCategoriaCond = categoriaSql
-            .replace(/\bbase_categoria\b/g, 'c.base_categoria')
-            .replace(/\bsem_dono_equipe\b/g, 'c.sem_dono_equipe')
-            .replace(/\bregiao\b/g, 'c.regiao')
-            .replace(/\bdias_sem_faturar\b/g, 'c.dias_sem_faturar')
-
+          const janelaCond = REGUA.sqlJanelaInteracoes('c.id', janela, 'i_win')
           const reatPeriodoQuery = `
             SELECT DISTINCT c.id as cliente_id
             FROM clientes c
             WHERE c.estado = 'reativado'
               AND (c.ativo_fora_base IS NULL OR c.ativo_fora_base = 0)
-              AND (${janelaCategoriaCond})
               AND ((c.operador IS NOT NULL AND TRIM(c.operador) != '') OR (c.operador_reativacao IS NOT NULL AND TRIM(c.operador_reativacao) != ''))
-              AND EXISTS (
-                SELECT 1 FROM interacoes i_chk
-                WHERE i_chk.cliente = c.id
-                  AND i_chk.created >= {:jStartUtc} AND i_chk.created <= {:jEndUtc}
-                  AND (i_chk.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_chk.numero_pedido IS NOT NULL AND TRIM(i_chk.numero_pedido) != '' AND TRIM(i_chk.numero_pedido) != '-'))
-              )
-              ${janelaRegiaoCond}
+              AND ${janelaCond}
+              ${regiaoCondition.replace(/\bregiao\b/g, 'c.regiao')}
           `
-
-          const jParams = { jStartUtc: jStartUtc, jEndUtc: jEndUtc }
+          const jParams = {
+            janelaInicio: janela.inicioIso,
+            janelaFim: janela.fimIso,
+          }
           if (params.regiaoParam) jParams.regiaoParam = params.regiaoParam
           if (params.regiaoLike) jParams.regiaoLike = params.regiaoLike
 
@@ -289,25 +155,14 @@ routerAdd(
         }
       }
 
-      // FONTE OFICIAL DAS MÉTRICAS DE REAL EQUIPE: FICHAS DE ATENDIMENTO (respostas_formulario)
-      // Agregação de valor_potencial e toneladas_potencial das fichas dos clientes reativados pela equipe,
-      // com deduplicação por cliente (ficha mais recente) e exclusão de desfechos isentos.
+      // FONTE OFICIAL DO VALOR/TON DA REAL EQUIPE: FICHAS DE ATENDIMENTO
+      // (respostas_formulario) — agregação deduplicada pelo módulo da régua.
       try {
-        const rfClientCondition = regiaoCondition
-          ? regiaoCondition.replace(/\bregiao\b/g, 'c.regiao')
-          : ''
-        const rfCategoryCondition = categoriaSql
-          .replace(/\bbase_categoria\b/g, 'c.base_categoria')
-          .replace(/\bsem_dono_equipe\b/g, 'c.sem_dono_equipe')
-          .replace(/\bregiao\b/g, 'c.regiao')
-          .replace(/\bdias_sem_faturar\b/g, 'c.dias_sem_faturar')
-
-        const rfBaseFilterSql = `c.estado != 'ativo_fora_base' AND (c.ativo_fora_base IS NULL OR c.ativo_fora_base = 0) AND (${rfCategoryCondition})`
-
+        const rfBaseFilterSql = REGUA.sqlBaseFilter(baseCategoriaParam, 'c.')
+        const rfClientCondition = REGUA.sqlRegiao(regiao, 'c.', {})
         let rfWhereFichasExtra = ''
-        if (janelaAtiva && clientesNoPeriodo) {
-          rfWhereFichasExtra =
-            " AND EXISTS (SELECT 1 FROM interacoes i_win WHERE i_win.cliente = c.id AND i_win.created >= {:jStartUtc} AND i_win.created <= {:jEndUtc} AND (i_win.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido') OR (i_win.numero_pedido IS NOT NULL AND TRIM(i_win.numero_pedido) != '' AND TRIM(i_win.numero_pedido) != '-')))"
+        if (janela.ativa && clientesNoPeriodo) {
+          rfWhereFichasExtra = ' AND ' + REGUA.sqlJanelaInteracoes('c.id', janela, 'i_win')
         }
 
         const fichasQuery = `
@@ -326,21 +181,9 @@ routerAdd(
         const fParams = {}
         if (params.regiaoParam) fParams.regiaoParam = params.regiaoParam
         if (params.regiaoLike) fParams.regiaoLike = params.regiaoLike
-        if (janelaAtiva && clientesNoPeriodo) {
-          fParams.jStartUtc = `${dataInicialParam} 03:00:00.000Z`
-          const pFf = dataFinalParam.split('-')
-          const fEndD = new Date(
-            Date.UTC(
-              parseInt(pFf[0], 10),
-              parseInt(pFf[1], 10) - 1,
-              parseInt(pFf[2], 10) + 1,
-              2,
-              59,
-              59,
-              999,
-            ),
-          )
-          fParams.jEndUtc = fEndD.toISOString()
+        if (janela.ativa && clientesNoPeriodo) {
+          fParams.janelaInicio = janela.inicioIso
+          fParams.janelaFim = janela.fimIso
         }
 
         const fRows = arrayOf(
@@ -359,66 +202,27 @@ routerAdd(
         }
         fQueryBuilder.all(fRows)
 
-        const desfechosIsentos = {
-          duplicado: true,
-          sem_contato: true,
-          ativo_fora_base: true,
-          compra_terceiros: true,
-          cliente_final: true,
-          restricao_financeira: true,
-        }
+        const fichasAgg = REGUA.agregarFichas(fRows, '[metrics_base_kpis]')
+        let somaValorFichas = fichasAgg.somaValor
+        let somaTonFichas = fichasAgg.somaTon
 
-        const clientesProcessados = {}
-        let somaValorFichas = 0
-        let somaTonFichas = 0
-
-        for (let fi = 0; fi < fRows.length; fi++) {
-          const fr = fRows[fi]
-          const cId = fr.cliente_id
-          if (!cId || clientesProcessados[cId]) continue
-          if (clientesNoPeriodo && !clientesNoPeriodo[String(cId)]) continue
-          clientesProcessados[cId] = true
-
-          const desfecho = String(fr.desfecho || '').trim()
-          if (desfecho === 'reativado' && !desfechosIsentos[desfecho]) {
-            const vPot = Number(fr.valor_potencial || 0)
-            let tPot = Number(fr.toneladas_potencial || 0)
-
-            // Padronização rigorosa de unidades de massa: 1 ton = 1000 kg.
-            // Se a ficha registrou peso em kg (tPot > 500) ou a razão vPot / tPot for < 100 R$/ton,
-            // normaliza dividindo por 1000 se tPot > 500 para obter toneladas reais.
-            if (tPot > 500) {
-              tPot = tPot / 1000.0
-            }
-
-            // Cinto de segurança nos agregadores:
-            // Se mesmo após normalização a razão vPot / tPot for < 100 R$/ton (valor de sucata/abaixo do mercado), descarta.
-            if (vPot > 0 && tPot > 0 && vPot / tPot < 100) {
-              console.log(
-                '[metrics_base_kpis] Cinto de segurança ativado: ficha corrupta descartada id=' +
-                  fr.ficha_id +
-                  ' (cliente=' +
-                  cId +
-                  ', v=' +
-                  vPot +
-                  ', ton=' +
-                  tPot +
-                  ', razão=' +
-                  (vPot / tPot).toFixed(2) +
-                  ' R$/ton)',
-              )
-              continue
-            }
-
-            if (vPot > 0) somaValorFichas += vPot
-            if (tPot > 0) somaTonFichas += tPot
+        // Com janela ativa, filtra pelo conjunto de clientes do período
+        if (janela.ativa && clientesNoPeriodo) {
+          let somaValorJanela = 0
+          let somaTonJanela = 0
+          for (const cid in fichasAgg.fichasPorCliente) {
+            if (!clientesNoPeriodo[String(cid)]) continue
+            somaValorJanela += Number(fichasAgg.fichasPorCliente[cid].valor || 0)
+            somaTonJanela += Number(fichasAgg.fichasPorCliente[cid].ton || 0)
           }
+          somaValorFichas = Number(somaValorJanela.toFixed(2))
+          somaTonFichas = Number(somaTonJanela.toFixed(4))
         }
 
-        // Se houver fichas apuradas na esteira, utilizar essa soma como fonte da verdade de Real Equipe
+        // Se houver fichas apuradas na esteira, essa é a fonte da verdade de Real Equipe
         if (somaValorFichas > 0 || somaTonFichas > 0) {
-          valorRecuperadoReal = Number(somaValorFichas.toFixed(2))
-          toneladasRecuperadasReal = Number(somaTonFichas.toFixed(4))
+          valorRecuperadoReal = somaValorFichas
+          toneladasRecuperadasReal = somaTonFichas
         }
       } catch (fichasErr) {
         console.error(
@@ -427,61 +231,18 @@ routerAdd(
         )
       }
 
-      const faturamentoCruzamentoCount = Number(
-        kpiModel.faturamento_recente_cruzamento !== undefined &&
-          kpiModel.faturamento_recente_cruzamento !== null
-          ? kpiModel.faturamento_recente_cruzamento
-          : kpiModel.faturamentoRecenteCruzamento || 0,
-      )
-      const valorFaturamentoCruzamento = Number(
-        kpiModel.valor_faturamento_recente_cruzamento !== undefined &&
-          kpiModel.valor_faturamento_recente_cruzamento !== null
-          ? kpiModel.valor_faturamento_recente_cruzamento
-          : kpiModel.valorFaturamentoRecenteCruzamento || 0,
-      )
+      const faturamentoCruzamentoCount = Number(kpiModel.faturamento_recente_cruzamento || 0)
+      const valorFaturamentoCruzamento = Number(kpiModel.valor_faturamento_recente_cruzamento || 0)
       const toneladasFaturamentoCruzamento = Number(
-        kpiModel.toneladas_faturamento_recente_cruzamento !== undefined &&
-          kpiModel.toneladas_faturamento_recente_cruzamento !== null
-          ? kpiModel.toneladas_faturamento_recente_cruzamento
-          : kpiModel.toneladasFaturamentoRecenteCruzamento || 0,
+        kpiModel.toneladas_faturamento_recente_cruzamento || 0,
       )
-
-      const pedidosEmAbertoCount = Number(
-        kpiModel.pedidos_em_aberto !== undefined && kpiModel.pedidos_em_aberto !== null
-          ? kpiModel.pedidos_em_aberto
-          : kpiModel.pedidosEmAberto || 0,
-      )
-      const valorPedidosEmAberto = Number(
-        kpiModel.valor_pedidos_em_aberto !== undefined && kpiModel.valor_pedidos_em_aberto !== null
-          ? kpiModel.valor_pedidos_em_aberto
-          : kpiModel.valorPedidosEmAberto || 0,
-      )
-
-      const compraTerceirosCount = Number(
-        kpiModel.compra_terceiros !== undefined && kpiModel.compra_terceiros !== null
-          ? kpiModel.compra_terceiros
-          : kpiModel.compraTerceiros || 0,
-      )
-      const naoQuerNegociarCount = Number(
-        kpiModel.nao_quer_negociar !== undefined && kpiModel.nao_quer_negociar !== null
-          ? kpiModel.nao_quer_negociar
-          : kpiModel.naoQuerNegociar || 0,
-      )
-      const restricaoFinanceiraCount = Number(
-        kpiModel.restricao_financeira !== undefined && kpiModel.restricao_financeira !== null
-          ? kpiModel.restricao_financeira
-          : kpiModel.restricaoFinanceira || 0,
-      )
-      const semContatoCount = Number(
-        kpiModel.sem_contato !== undefined && kpiModel.sem_contato !== null
-          ? kpiModel.sem_contato
-          : kpiModel.semContato || 0,
-      )
-      const valorRecuperadoTotal = Number(
-        kpiModel.valor_recuperado_total !== undefined && kpiModel.valor_recuperado_total !== null
-          ? kpiModel.valor_recuperado_total
-          : kpiModel.valorRecuperadoTotal || 0,
-      )
+      const pedidosEmAbertoCount = Number(kpiModel.pedidos_em_aberto || 0)
+      const valorPedidosEmAberto = Number(kpiModel.valor_pedidos_em_aberto || 0)
+      const compraTerceirosCount = Number(kpiModel.compra_terceiros || 0)
+      const naoQuerNegociarCount = Number(kpiModel.nao_quer_negociar || 0)
+      const restricaoFinanceiraCount = Number(kpiModel.restricao_financeira || 0)
+      const semContatoCount = Number(kpiModel.sem_contato || 0)
+      const valorRecuperadoTotal = Number(kpiModel.valor_recuperado_total || 0)
 
       const naFila = naBaseCount + reservadoCount
       const emAtendimentoTotal = emAtendimentoCount + reservadoCount
@@ -495,23 +256,32 @@ routerAdd(
           : 0
       const taxaReativacaoInt = Math.round(taxaReativacao)
 
-      // 2. Agrupamento por região com normalização completa das 8 rotas Varejo + ATACADO + REPESCAGEM
+      // Follow-ups e reagendados — fórmulas ÚNICAS do módulo da régua
+      let followupsReagendados = { followupsProgramados: 0, reagendadosPeriodo: 0 }
+      try {
+        const filtrosClientes =
+          '(' + categoriaSql + ')' + regiaoCondition.replace(/\bregiao\b/g, 'regiao')
+        const frBind = {}
+        if (params.regiaoParam) frBind.regiaoParam = params.regiaoParam
+        if (params.regiaoLike) frBind.regiaoLike = params.regiaoLike
+        followupsReagendados = REGUA.contarFollowupsReagendados(
+          $app,
+          janela,
+          filtrosClientes,
+          frBind,
+          '[metrics_base_kpis]',
+        )
+      } catch (frErr) {
+        console.error(
+          '[metrics_base_kpis] Erro followups/reagendados: ' +
+            (frErr && frErr.message ? frErr.message : String(frErr)),
+        )
+      }
+
+      // Agrupamento por região — CASE de normalização ÚNICO do módulo da régua
       const regioesQuery = `
         SELECT
-          CASE
-            WHEN regiao IS NULL OR TRIM(regiao) = '' THEN 'Sem Região'
-            WHEN UPPER(TRIM(regiao)) = 'BRAGANÇA' OR UPPER(TRIM(regiao)) = 'BRAGANCA' OR UPPER(TRIM(regiao)) = 'BRAGANÇA PAULISTA' OR UPPER(TRIM(regiao)) = 'BRAGANCA PAULISTA' THEN 'BRAGANÇA'
-            WHEN UPPER(TRIM(regiao)) = 'CAMBUÍ' OR UPPER(TRIM(regiao)) = 'CAMBUI' OR UPPER(TRIM(regiao)) = 'MICRO-REGIÃO' OR UPPER(TRIM(regiao)) = 'MICRO REGIAO' OR UPPER(TRIM(regiao)) = 'MICROREGIAO' THEN 'CAMBUÍ'
-            WHEN UPPER(TRIM(regiao)) = 'POÇOS DE CALDAS' OR UPPER(TRIM(regiao)) = 'POCOS DE CALDAS' OR UPPER(TRIM(regiao)) = 'POÇOS CALDAS' OR UPPER(TRIM(regiao)) = 'POCOS CALDAS' OR UPPER(TRIM(regiao)) = 'POÇOS' OR UPPER(TRIM(regiao)) = 'POCOS' THEN 'POÇOS DE CALDAS'
-            WHEN UPPER(TRIM(regiao)) = 'JUNDIAÍ' OR UPPER(TRIM(regiao)) = 'JUNDIAI' THEN 'JUNDIAÍ'
-            WHEN UPPER(TRIM(regiao)) = 'ITAJUBÁ' OR UPPER(TRIM(regiao)) = 'ITAJUBA' THEN 'ITAJUBÁ'
-            WHEN UPPER(TRIM(regiao)) = 'VARGINHA' THEN 'VARGINHA'
-            WHEN UPPER(TRIM(regiao)) = 'POUSO ALEGRE' THEN 'POUSO ALEGRE'
-            WHEN UPPER(TRIM(regiao)) = 'EXTREMA' THEN 'EXTREMA'
-            WHEN UPPER(TRIM(regiao)) = 'ATACADO' THEN 'ATACADO'
-            WHEN UPPER(TRIM(regiao)) = 'REPESCAGEM' THEN 'REPESCAGEM'
-            ELSE UPPER(TRIM(regiao))
-          END as regiao_nome,
+          ${REGUA.sqlCaseRegiao('regiao')} as regiao_nome,
           COUNT(*) as total,
           SUM(COALESCE(score, 0)) as score_sum
         FROM clientes
@@ -535,9 +305,7 @@ routerAdd(
             const r = rows[i]
             const rName = String(r.regiao_nome || r.regiaoNome || 'Sem Região')
             const rTotal = Number(r.total || 0)
-            const rScoreSum = Number(
-              r.score_sum !== undefined && r.score_sum !== null ? r.score_sum : r.scoreSum || 0,
-            )
+            const rScoreSum = Number(r.score_sum || 0)
             regioesMap[rName] = {
               total: rTotal,
               scoreSum: rScoreSum,
@@ -573,6 +341,10 @@ routerAdd(
           valor_pedidos_em_aberto: valorPedidosEmAberto,
           reativadosTotalBruto: reativadoTotalCount,
           valorRecuperadoTotalBruto: valorRecuperadoTotal,
+          // Métricas novas da régua centralizada
+          followupsProgramados: followupsReagendados.followupsProgramados,
+          reagendadosPeriodo: followupsReagendados.reagendadosPeriodo,
+          realEquipeComPedido: 0,
         },
         estadosContagem: {
           na_base: naBaseCount,
@@ -588,6 +360,7 @@ routerAdd(
           sem_contato: semContatoCount,
         },
         regioesMap: regioesMap,
+        regua: { versao: 'M1', janelaTemporal: janela.ativa },
       })
     } catch (err) {
       const errMsg = err && err.message ? err.message : String(err)
