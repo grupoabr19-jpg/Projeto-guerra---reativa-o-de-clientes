@@ -297,6 +297,11 @@ export default function Dashboard() {
       (baseKpisData?.kpis as any)?.valor_pedidos_em_aberto ??
       0,
   )
+  const toneladasPedidosEmAberto = Number(
+    baseKpisData?.kpis?.toneladasPedidosEmAberto ??
+      (baseKpisData?.kpis as any)?.toneladas_pedidos_em_aberto ??
+      0,
+  )
 
   // Distribuição por estado via agregação real no servidor
   const estadosContagem = baseKpisData?.estadosContagem || {
@@ -339,6 +344,11 @@ export default function Dashboard() {
 
   const formatFullCurrency = (valor: number): string => {
     return `R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
+
+  const formatarToneladas = (pesoEmKg: number): string => {
+    const t = (pesoEmKg || 0) / 1000
+    return `${t.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t`
   }
 
   return (
@@ -1822,14 +1832,22 @@ export default function Dashboard() {
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <p className="mt-1 text-[11px] font-semibold text-slate-700 cursor-pointer hover:text-slate-900 truncate">
-                            {formatCompactCurrency(valorPedidosEmAberto)}
-                          </p>
+                          <div className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-slate-700 cursor-pointer hover:text-slate-900">
+                            <span className="truncate">
+                              {formatCompactCurrency(valorPedidosEmAberto)}
+                            </span>
+                            <span className="text-slate-500 font-normal shrink-0">
+                              ({formatarToneladas(toneladasPedidosEmAberto)})
+                            </span>
+                          </div>
                         </TooltipTrigger>
                         <TooltipContent className="bg-[#142758] text-white border-blue-900 text-xs p-2.5 max-w-xs shadow-xl rounded-lg">
                           <p className="font-bold text-amber-300">Valor em Aberto:</p>
                           <p className="font-mono text-amber-400 font-bold text-sm mt-0.5">
                             {formatFullCurrency(valorPedidosEmAberto)}
+                          </p>
+                          <p className="text-slate-200 text-[11px] mt-0.5">
+                            Volume: {formatarToneladas(toneladasPedidosEmAberto)}
                           </p>
                           <p className="text-slate-200 text-[11px] mt-0.5">
                             {pedidosEmAbertoCount}{' '}
@@ -1917,7 +1935,7 @@ export default function Dashboard() {
                               {formatCompactCurrency(valorFaturamentoCruzamento)}
                             </span>
                             <span className="text-slate-500 font-normal shrink-0">
-                              ({toneladasFaturamentoCruzamento.toLocaleString('pt-BR')} ton)
+                              ({formatarToneladas(toneladasFaturamentoCruzamento)})
                             </span>
                           </div>
                         </TooltipTrigger>
@@ -1929,8 +1947,7 @@ export default function Dashboard() {
                             {formatFullCurrency(valorFaturamentoCruzamento)}
                           </p>
                           <p className="text-slate-200 text-[11px] mt-0.5">
-                            Volume: {toneladasFaturamentoCruzamento.toLocaleString('pt-BR')}{' '}
-                            toneladas
+                            Volume: {formatarToneladas(toneladasFaturamentoCruzamento)}
                           </p>
                           <p className="text-blue-200 text-[10px] mt-1 border-t border-blue-900/60 pt-1">
                             Insumo do ERP para exclusão/limpeza de base
