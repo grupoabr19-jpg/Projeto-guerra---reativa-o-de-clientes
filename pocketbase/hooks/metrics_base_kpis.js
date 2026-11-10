@@ -345,22 +345,11 @@ routerAdd(
             const desfecho = String(fr.desfecho || '').trim()
             if (desfecho !== 'reativado') continue
             const vPot = Number(fr.valor_potencial || 0)
-            let tPot = Number(fr.toneladas_potencial || 0)
-            if (tPot > 500) tPot = tPot / 1000.0
-            if (vPot > 0 && tPot > 0 && vPot / tPot < 100) {
-              console.log(
-                t +
-                  ' Cinto de segurança: ficha descartada id=' +
-                  fr.ficha_id +
-                  ' (cliente=' +
-                  cId +
-                  ')',
-              )
-              continue
-            }
+            const kgPot = Number(fr.toneladas_potencial || 0)
+            const tPot = Number((kgPot / 1000).toFixed(4))
             if (vPot > 0) somaValor += vPot
             if (tPot > 0) somaTon += tPot
-            fichasPorCliente[cId] = { valor: vPot > 0 ? vPot : 0, ton: tPot > 0 ? tPot : 0 }
+            fichasPorCliente[cId] = { valor: vPot > 0 ? vPot : 0, ton: tPot > 0 ? tPot : 0, kg: kgPot > 0 ? kgPot : 0 }
           }
           return {
             somaValor: Number(somaValor.toFixed(2)),

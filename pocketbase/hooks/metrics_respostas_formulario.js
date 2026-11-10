@@ -296,13 +296,13 @@ routerAdd(
               countValorPotencial++
             }
 
-            const tPot = Number(
+            const kgPot = Number(
               r.toneladas_potencial !== undefined && r.toneladas_potencial !== null
                 ? r.toneladas_potencial
                 : r.toneladasPotencial || 0,
             )
-            if (tPot > 0) {
-              somaToneladas += tPot
+            if (kgPot > 0) {
+              somaToneladas += kgPot
               countToneladas++
             }
           }

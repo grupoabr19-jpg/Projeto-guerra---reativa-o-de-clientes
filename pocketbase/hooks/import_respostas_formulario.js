@@ -308,7 +308,8 @@ routerAdd(
             item.respostasPayload || {},
           )
 
-          // Heurística de normalização de unidade (kg vs ton) para importação com helper centralizado
+          // Normalização com unidade canônica QUILOGRAMAS (kg)
+          var uDeclarada = item.unidadePeso || item.unidadeDeclarada || ''
           var normRes =
             typeof normalizarPesoEUnidade === 'function'
               ? normalizarPesoEUnidade(
@@ -316,34 +317,19 @@ routerAdd(
                   item.toneladasPotencial,
                   item.valorPotencial,
                   item.toneladasPotencial,
+                  uDeclarada,
                 )
               : null
 
+          var pesoKgNormalizado = normRes
+            ? normRes.kg
+            : item.toneladasPotencial > 0
+              ? Number(item.toneladasPotencial)
+              : 0
           var pesoTonNormalizado = normRes
             ? normRes.toneladas
-            : item.toneladasPotencial > 0
-              ? item.toneladasPotencial
-              : 0
-          var unidadeDetectada = normRes ? normRes.unidade_detectada : 'ton'
-
-          if (!normRes) {
-            if (item.valorPotencial > 0 && item.toneladasPotencial > 0) {
-              var ratio = item.valorPotencial / item.toneladasPotencial
-              if (ratio >= 2 && ratio <= 60) {
-                unidadeDetectada = 'kg'
-                pesoTonNormalizado = Number((item.toneladasPotencial / 1000).toFixed(6))
-              } else if (ratio < 2 && item.toneladasPotencial >= 50) {
-                unidadeDetectada = 'kg'
-                pesoTonNormalizado = Number((item.toneladasPotencial / 1000).toFixed(6))
-              } else if (item.toneladasPotencial >= 50) {
-                unidadeDetectada = 'kg'
-                pesoTonNormalizado = Number((item.toneladasPotencial / 1000).toFixed(6))
-              }
-            } else if (item.toneladasPotencial >= 50) {
-              unidadeDetectada = 'kg'
-              pesoTonNormalizado = Number((item.toneladasPotencial / 1000).toFixed(6))
-            }
-          }
+            : Number((pesoKgNormalizado / 1000).toFixed(6))
+          var unidadeDetectada = normRes ? normRes.unidade_detectada : 'kg'
 
           if (item.valorPotencial > 0) {
             jsonRespostas.q15 = item.valorPotencial
@@ -352,16 +338,17 @@ routerAdd(
             jsonRespostas.q16 = item.toneladasPotencial // raw digitado mantido em q16
             jsonRespostas.q16_unidade_detectada = unidadeDetectada
             jsonRespostas.q16_toneladas_normalizadas = pesoTonNormalizado
+            jsonRespostas.q16_kg_normalizados = pesoKgNormalizado
           }
 
-          // 1. Criar respostas_formulario
+          // 1. Criar respostas_formulario (toneladas_potencial armazena o valor canônico em kg)
           const recResp = new Record(colRespTx)
           recResp.set('cliente', cRec.id)
           recResp.set('operador', item.operadorId)
           recResp.set('respostas', jsonRespostas)
           recResp.set('desfecho', item.desfechoNormalizado || 'contatado')
           recResp.set('valor_potencial', item.valorPotencial > 0 ? item.valorPotencial : 0)
-          recResp.set('toneladas_potencial', pesoTonNormalizado)
+          recResp.set('toneladas_potencial', pesoKgNormalizado)
           if (item.anexoUrl) {
             recResp.set('q3_arquivo', item.anexoUrl)
           }
@@ -401,7 +388,9 @@ routerAdd(
             item.valorPotencial > 0
               ? 'Valor Cotação: R$ ' + formatarMoedaBrlSeguro(item.valorPotencial)
               : '',
-            item.toneladasPotencial > 0 ? `Peso/Toneladas: ${item.toneladasPotencial} t` : '',
+            pesoKgNormalizado > 0
+              ? `Peso: ${pesoKgNormalizado.toLocaleString ? pesoKgNormalizado.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : pesoKgNormalizado} kg`
+              : '',
             item.anexoUrl ? `Anexo Comprobatório: ${item.anexoUrl}` : '',
             item.observacaoGeral ? `Observações Adicionais: ${item.observacaoGeral}` : '',
           ].filter(Boolean)
@@ -443,8 +432,8 @@ routerAdd(
             if (item.valorPotencial > 0) {
               cRec.set('valor_ultima_compra', item.valorPotencial)
             }
-            if (pesoTonNormalizado > 0) {
-              cRec.set('toneladas_historico', pesoTonNormalizado)
+            if (pesoKgNormalizado > 0) {
+              cRec.set('toneladas_historico', pesoKgNormalizado)
             }
 
             txApp.save(cRec)

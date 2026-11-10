@@ -423,28 +423,11 @@ function agregarFichas(fRows, tag) {
     var desfecho = String(fr.desfecho || '').trim()
     if (desfecho !== 'reativado') continue
     var vPot = Number(fr.valor_potencial || 0)
-    var tPot = Number(fr.toneladas_potencial || 0)
-    if (tPot > 500) tPot = tPot / 1000.0
-    if (vPot > 0 && tPot > 0 && vPot / tPot < 100) {
-      console.log(
-        t +
-          ' Cinto de segurança: ficha descartada id=' +
-          fr.ficha_id +
-          ' (cliente=' +
-          cId +
-          ', v=' +
-          vPot +
-          ', ton=' +
-          tPot +
-          ', razão=' +
-          (vPot / tPot).toFixed(2) +
-          ' R$/ton)',
-      )
-      continue
-    }
+    var kgPot = Number(fr.toneladas_potencial || 0) // campo armazena kg
+    var tPot = Number((kgPot / 1000).toFixed(4))
     if (vPot > 0) somaValor += vPot
     if (tPot > 0) somaTon += tPot
-    fichasPorCliente[cId] = { valor: vPot > 0 ? vPot : 0, ton: tPot > 0 ? tPot : 0 }
+    fichasPorCliente[cId] = { valor: vPot > 0 ? vPot : 0, ton: tPot > 0 ? tPot : 0, kg: kgPot > 0 ? kgPot : 0 }
   }
   return {
     somaValor: Number(somaValor.toFixed(2)),

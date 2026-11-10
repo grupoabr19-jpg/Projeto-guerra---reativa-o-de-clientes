@@ -1894,86 +1894,83 @@ routerAdd(
   'POST',
   '/backend/v1/queue/editar-atendimento-fechado',
   (e) => {
-    function normalizarPesoEUnidadeLocal(valorInput, pesoInput, rawValorStr, rawPesoStr) {
-      const vNum = Number(valorInput) || 0
-      let rawPStr = String(
-        rawPesoStr !== undefined && rawPesoStr !== null ? rawPesoStr : pesoInput || '',
-      ).trim()
+    // Normalizador de peso e unidade alinhado com unit_normalizer.js (unidade canônica: kg)
+    function normalizarPesoEUnidadeLocal(valorInput, pesoInput, rawValorStr, rawPesoStr, unidadeForcada) {
+      function parseNumeroLimpoPtBr(val, rawStr) {
+        var str = ''
+        if (rawStr !== undefined && rawStr !== null && String(rawStr).trim() !== '') {
+          str = String(rawStr).trim()
+        } else if (val !== undefined && val !== null) {
+          str = String(val).trim()
+        }
+        if (!str) return 0
 
-      const matchKg = rawPStr.match(/(\d+([.,]\d+)?)\s*(?:kg|quilos?|kilos?)/i)
-      const matchTon = rawPStr.match(/(\d+([.,]\d+)?)\s*(?:t|ton|tons|toneladas?)/i)
+        if (str.indexOf('.') !== -1 && str.indexOf(',') !== -1) {
+          if (str.indexOf('.') < str.indexOf(',')) {
+            str = str.replace(/\./g, '').replace(',', '.')
+          } else {
+            str = str.replace(/,/g, '')
+          }
+        } else if (str.indexOf(',') !== -1) {
+          str = str.replace(',', '.')
+        } else if (str.indexOf('.') !== -1) {
+          var partes = str.split('.')
+          if (partes.length === 2 && partes[1].length === 3 && partes[0].length >= 1 && partes[0].length <= 3) {
+            str = partes[0] + partes[1]
+          }
+        }
 
-      const numLimpoP = Number(rawPStr.replace(/[^\d.,]/g, '').replace(',', '.'))
-      const pNum = !isNaN(numLimpoP) && numLimpoP > 0 ? numLimpoP : Number(pesoInput) || 0
+        str = str.replace(/[^\d.]/g, '')
+        var n = parseFloat(str)
+        return isNaN(n) ? 0 : Number(n.toFixed(6))
+      }
 
-      if (matchKg) {
-        const vKg = Number(matchKg[1].replace(',', '.'))
-        return {
-          peso_bruto: vKg,
-          toneladas: Number((vKg / 1000).toFixed(6)),
-          unidade_detectada: 'kg',
-          preco_por_kg: vNum > 0 && vKg > 0 ? Number((vNum / vKg).toFixed(4)) : 0,
-          preco_por_ton: vNum > 0 && vKg > 0 ? Number(((vNum / vKg) * 1000).toFixed(2)) : 0,
+      var v = parseNumeroLimpoPtBr(valorInput, rawValorStr)
+      var rawPStr = String(rawPesoStr !== undefined && rawPesoStr !== null ? rawPesoStr : (pesoInput || '')).trim()
+
+      var matchKg = rawPStr.match(/(\d+([.,]\d+)?)\s*(?:kg|quilos?|kilos?)/i)
+      var matchTon = rawPStr.match(/(\d+([.,]\d+)?)\s*(?:t|ton|tons|toneladas?)/i)
+
+      var p = parseNumeroLimpoPtBr(pesoInput, rawPesoStr)
+      var unidade = 'kg' // Canônica: kg
+
+      var uForcada = String(unidadeForcada || '').toLowerCase().trim()
+      if (uForcada === 'ton' || uForcada === 'tonelada' || uForcada === 'toneladas' || uForcada === 't') {
+        unidade = 'ton'
+      } else if (uForcada === 'kg' || uForcada === 'quilo' || uForcada === 'quilos') {
+        unidade = 'kg'
+      } else if (matchTon) {
+        unidade = 'ton'
+        if (matchTon[1]) p = parseNumeroLimpoPtBr(null, matchTon[1])
+      } else if (matchKg) {
+        unidade = 'kg'
+        if (matchKg[1]) p = parseNumeroLimpoPtBr(null, matchKg[1])
+      }
+
+      var pesoKg = 0
+      var pesoTon = 0
+
+      if (p > 0) {
+        if (unidade === 'ton') {
+          pesoTon = Number(p.toFixed(6))
+          pesoKg = Number((p * 1000).toFixed(6))
+        } else {
+          pesoKg = Number(p.toFixed(6))
+          pesoTon = Number((p / 1000).toFixed(6))
         }
       }
 
-      if (matchTon) {
-        const vTon = Number(matchTon[1].replace(',', '.'))
-        return {
-          peso_bruto: vTon,
-          toneladas: vTon,
-          unidade_detectada: 'ton',
-          preco_por_kg: vNum > 0 && vTon > 0 ? Number((vNum / (vTon * 1000)).toFixed(4)) : 0,
-          preco_por_ton: vNum > 0 && vTon > 0 ? Number((vNum / vTon).toFixed(2)) : 0,
-        }
-      }
-
-      if (pNum > 0) {
-        if (vNum > 0) {
-          const ratio = vNum / pNum
-          if (ratio >= 2 && ratio <= 60) {
-            return {
-              peso_bruto: pNum,
-              toneladas: Number((pNum / 1000).toFixed(6)),
-              unidade_detectada: 'kg',
-              preco_por_kg: Number(ratio.toFixed(4)),
-              preco_por_ton: Number((ratio * 1000).toFixed(2)),
-            }
-          }
-          if (ratio < 2 && pNum >= 50) {
-            return {
-              peso_bruto: pNum,
-              toneladas: Number((pNum / 1000).toFixed(6)),
-              unidade_detectada: 'kg',
-              preco_por_kg: Number(ratio.toFixed(4)),
-              preco_por_ton: Number((ratio * 1000).toFixed(2)),
-            }
-          }
-        }
-        if (pNum >= 50) {
-          return {
-            peso_bruto: pNum,
-            toneladas: Number((pNum / 1000).toFixed(6)),
-            unidade_detectada: 'kg',
-            preco_por_kg: vNum > 0 ? Number((vNum / pNum).toFixed(4)) : 0,
-            preco_por_ton: vNum > 0 ? Number(((vNum / pNum) * 1000).toFixed(2)) : 0,
-          }
-        }
-        return {
-          peso_bruto: pNum,
-          toneladas: pNum,
-          unidade_detectada: 'ton',
-          preco_por_kg: vNum > 0 ? Number((vNum / (pNum * 1000)).toFixed(4)) : 0,
-          preco_por_ton: vNum > 0 ? Number((vNum / pNum).toFixed(2)) : 0,
-        }
-      }
+      var precoKg = v > 0 && pesoKg > 0 ? Number((v / pesoKg).toFixed(4)) : 0
+      var precoTon = v > 0 && pesoTon > 0 ? Number((v / pesoTon).toFixed(2)) : 0
 
       return {
-        peso_bruto: 0,
-        toneladas: 0,
-        unidade_detectada: 'ton',
-        preco_por_kg: 0,
-        preco_por_ton: 0,
+        kg: pesoKg,
+        toneladas: pesoTon,
+        unidade_detectada: unidade,
+        valor_bruto: v,
+        peso_bruto: p,
+        preco_por_kg: precoKg,
+        preco_por_ton: precoTon,
       }
     }
 
@@ -2050,44 +2047,19 @@ routerAdd(
         const valRef = valorPotencial !== undefined && valorPotencial !== null ? valorPotencial : 0
         const rawPesoInput = body.toneladas_potencial
         const rawValorInput = body.valor_potencial !== undefined ? body.valor_potencial : valRef
+        const uForcada = body.unidade_peso || body.q16_unidade || ''
 
         const normRes =
           typeof normalizarPesoEUnidade === 'function'
-            ? normalizarPesoEUnidade(valRef, rawPesoInput, rawValorInput, rawPesoInput)
-            : normalizarPesoEUnidadeLocal(valRef, rawPesoInput, rawValorInput, rawPesoInput)
+            ? normalizarPesoEUnidade(valRef, rawPesoInput, rawValorInput, rawPesoInput, uForcada)
+            : normalizarPesoEUnidadeLocal(valRef, rawPesoInput, rawValorInput, rawPesoInput, uForcada)
 
         if (normRes) {
           respostas.q16 = normRes.peso_bruto // mantém raw em q16
           respostas.q16_unidade_detectada = normRes.unidade_detectada
           respostas.q16_toneladas_normalizadas = normRes.toneladas
-          toneladasPotencial = normRes.toneladas
-        } else {
-          const num = Number(rawPesoInput)
-          if (!isNaN(num)) {
-            toneladasPotencial = num
-            let unidadeDetectada = 'ton'
-            let tonNormalizada = num
-            if (valRef > 0 && num > 0) {
-              const ratio = valRef / num
-              if (ratio >= 2 && ratio <= 60) {
-                unidadeDetectada = 'kg'
-                tonNormalizada = Number((num / 1000).toFixed(6))
-              } else if (ratio < 2 && num >= 50) {
-                unidadeDetectada = 'kg'
-                tonNormalizada = Number((num / 1000).toFixed(6))
-              } else if (num >= 50) {
-                unidadeDetectada = 'kg'
-                tonNormalizada = Number((num / 1000).toFixed(6))
-              }
-            } else if (num >= 50) {
-              unidadeDetectada = 'kg'
-              tonNormalizada = Number((num / 1000).toFixed(6))
-            }
-            respostas.q16 = num
-            respostas.q16_unidade_detectada = unidadeDetectada
-            respostas.q16_toneladas_normalizadas = tonNormalizada
-            toneladasPotencial = tonNormalizada
-          }
+          // Unidade canônica: kg
+          toneladasPotencial = normRes.kg
         }
       }
 
