@@ -1,6 +1,10 @@
 /// <reference path="../pb_data/types.d.ts" />
 
 // metrics_base_kpis.js — /backend/v1/metrics/base-kpis
+// REGRA DO USUÁRIO (KPIs): em modo "Total" (sem janela personalizada), TODOS os
+// contadores de atendimento varrem TODO o histórico desde o primeiro cadastro
+// puxado — sem caps de data implícitos. As janelas Hoje/7/30 (frontend) chegam
+// aqui como janela personalizada (data_inicial/data_final) e continuam valendo.
 // Fórmulas da régua (M1) embutidas INLINE dentro do callback (padrão obrigatório no
 // runtime Goja: require() de módulo local falha com "Invalid module"). A cópia
 // é idêntica à de reports_analytics.js e reports_export.js — manter as três iguais.

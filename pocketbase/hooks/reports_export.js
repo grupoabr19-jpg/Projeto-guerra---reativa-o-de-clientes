@@ -419,7 +419,6 @@ routerAdd(
             ${operadorCondition}
             ${dateConditionI}
           ORDER BY i.created DESC
-          LIMIT 5000
         `
 
         const rows = arrayOf(
