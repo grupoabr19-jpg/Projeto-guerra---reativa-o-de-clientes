@@ -627,6 +627,7 @@ export interface EditarAtendimentoFechadoAdminData {
   motivo_edicao: string
   valor_potencial?: number
   toneladas_potencial?: number
+  unidade_peso?: string
 }
 
 /**

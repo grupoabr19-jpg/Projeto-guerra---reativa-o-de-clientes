@@ -146,33 +146,30 @@ onRecordCreateRequest((e) => {
             ? normalizarPesoEUnidade(numValor, numPeso, rawValor, rawPeso)
             : null
 
-        var unidadeDetectada = normRes ? normRes.unidade_detectada : 'ton'
-        var pesoNormalizadoTon = normRes ? normRes.toneladas : numPeso
-
-        if (!normRes) {
-          if (numValor > 0 && numPeso > 0) {
-            var ratio = numValor / numPeso
-            if (ratio >= 2 && ratio <= 60) {
-              unidadeDetectada = 'kg'
-              pesoNormalizadoTon = Number((numPeso / 1000).toFixed(6))
-            } else if (ratio < 2 && numPeso >= 50) {
-              unidadeDetectada = 'kg'
-              pesoNormalizadoTon = Number((numPeso / 1000).toFixed(6))
-            } else if (numPeso >= 50) {
-              unidadeDetectada = 'kg'
-              pesoNormalizadoTon = Number((numPeso / 1000).toFixed(6))
-            }
-          } else if (numPeso >= 50) {
-            unidadeDetectada = 'kg'
-            pesoNormalizadoTon = Number((numPeso / 1000).toFixed(6))
-          }
+        var uForcada = respostas.q16_unidade || respostas.unidade_peso || ''
+        if (typeof normalizarPesoEUnidade === 'function') {
+          normRes = normalizarPesoEUnidade(numValor, numPeso, rawValor, rawPeso, uForcada)
         }
 
-        record.set('toneladas_potencial', pesoNormalizadoTon)
+        var unidadeDetectada = normRes
+          ? normRes.unidade_detectada
+          : uForcada === 'ton'
+            ? 'ton'
+            : 'kg'
+        // Unidade canônica: QUILOGRAMAS (kg)
+        var pesoCanonicoKg = normRes
+          ? normRes.kg
+          : unidadeDetectada === 'ton'
+            ? numPeso * 1000
+            : numPeso
+        var pesoTon = normRes ? normRes.toneladas : pesoCanonicoKg / 1000
+
+        record.set('toneladas_potencial', pesoCanonicoKg)
         const novasResp = Object.assign({}, respostas)
         novasResp.q16 = rawPeso !== undefined ? rawPeso : numPeso
+        novasResp.q16_unidade = unidadeDetectada
         novasResp.q16_unidade_detectada = unidadeDetectada
-        novasResp.q16_toneladas_normalizadas = pesoNormalizadoTon
+        novasResp.q16_toneladas_normalizadas = pesoTon
         record.set('respostas', novasResp)
       } else if (q3Val.toLowerCase() === 'não' || q3Val.toLowerCase() === 'nao') {
         // Se Q3 = "Não", garante que valor e peso não fiquem gravados (limpa dados órfãos)
@@ -216,15 +213,18 @@ onRecordUpdateRequest((e) => {
     const pCur = record.getFloat('toneladas_potencial')
 
     if (fezOrcamento || pCur > 0 || rawPeso) {
+      var uForcada = respostas.q16_unidade || respostas.unidade_peso || ''
       var normRes =
         typeof normalizarPesoEUnidade === 'function'
-          ? normalizarPesoEUnidade(vCur, pCur, rawValor, rawPeso)
+          ? normalizarPesoEUnidade(vCur, pCur, rawValor, rawPeso, uForcada)
           : null
 
       if (normRes) {
-        record.set('toneladas_potencial', normRes.toneladas)
+        // Unidade canônica: kg
+        record.set('toneladas_potencial', normRes.kg)
         const novasResp = Object.assign({}, respostas)
         novasResp.q16 = rawPeso !== undefined ? rawPeso : normRes.peso_bruto
+        novasResp.q16_unidade = normRes.unidade_detectada
         novasResp.q16_unidade_detectada = normRes.unidade_detectada
         novasResp.q16_toneladas_normalizadas = normRes.toneladas
         record.set('respostas', novasResp)
@@ -327,12 +327,15 @@ onRecordAfterCreateSuccess((e) => {
       const respostasFallback = record.get('respostas') || {}
       const rawQ16 = respostasFallback.q16
       const rawQ15 = respostasFallback.q15
+      const uForcada = respostasFallback.q16_unidade || respostasFallback.unidade_peso || ''
       const vCur = record.getFloat('valor_potencial')
       const pCur = record.getFloat('toneladas_potencial')
       if (typeof normalizarPesoEUnidade === 'function') {
-        const fallbackNorm = normalizarPesoEUnidade(vCur, pCur, rawQ15, rawQ16)
-        record.set('toneladas_potencial', fallbackNorm.toneladas)
+        const fallbackNorm = normalizarPesoEUnidade(vCur, pCur, rawQ15, rawQ16, uForcada)
+        // Unidade canônica: kg
+        record.set('toneladas_potencial', fallbackNorm.kg)
         const nResp = Object.assign({}, respostasFallback)
+        nResp.q16_unidade = fallbackNorm.unidade_detectada
         nResp.q16_unidade_detectada = fallbackNorm.unidade_detectada
         nResp.q16_toneladas_normalizadas = fallbackNorm.toneladas
         record.set('respostas', nResp)

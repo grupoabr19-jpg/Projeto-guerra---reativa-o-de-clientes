@@ -195,7 +195,7 @@ routerAdd(
 
         // Filtro de base: exclui ativo_fora_base (estado e flag) + categoria.
         function sqlBaseFilter(catParam, a) {
-          const p = a ? a + '.' : ''
+          const p = a ? (a.endsWith('.') ? a : a + '.') : ''
           return (
             p +
             "estado != 'ativo_fora_base' AND (" +
@@ -203,7 +203,7 @@ routerAdd(
             'ativo_fora_base IS NULL OR ' +
             p +
             'ativo_fora_base = 0) AND (' +
-            sqlCategoria(catParam, a ? a + '.' : '') +
+            sqlCategoria(catParam, p) +
             ')'
           )
         }
@@ -349,7 +349,11 @@ routerAdd(
             const tPot = Number((kgPot / 1000).toFixed(4))
             if (vPot > 0) somaValor += vPot
             if (tPot > 0) somaTon += tPot
-            fichasPorCliente[cId] = { valor: vPot > 0 ? vPot : 0, ton: tPot > 0 ? tPot : 0, kg: kgPot > 0 ? kgPot : 0 }
+            fichasPorCliente[cId] = {
+              valor: vPot > 0 ? vPot : 0,
+              ton: tPot > 0 ? tPot : 0,
+              kg: kgPot > 0 ? kgPot : 0,
+            }
           }
           return {
             somaValor: Number(somaValor.toFixed(2)),

@@ -427,7 +427,11 @@ function agregarFichas(fRows, tag) {
     var tPot = Number((kgPot / 1000).toFixed(4))
     if (vPot > 0) somaValor += vPot
     if (tPot > 0) somaTon += tPot
-    fichasPorCliente[cId] = { valor: vPot > 0 ? vPot : 0, ton: tPot > 0 ? tPot : 0, kg: kgPot > 0 ? kgPot : 0 }
+    fichasPorCliente[cId] = {
+      valor: vPot > 0 ? vPot : 0,
+      ton: tPot > 0 ? tPot : 0,
+      kg: kgPot > 0 ? kgPot : 0,
+    }
   }
   return {
     somaValor: Number(somaValor.toFixed(2)),

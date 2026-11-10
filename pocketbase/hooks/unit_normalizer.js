@@ -46,7 +46,12 @@ function normalizarPesoEUnidade(valorInput, pesoInput, rawValorStr, rawPesoStr, 
       // Somente ponto: ex: 1.200 (se 3 dígitos após ponto e sem outro ponto, pode ser milhar pt-BR)
       // Se for decimal direto (ex 253.08)
       var partes = str.split('.')
-      if (partes.length === 2 && partes[1].length === 3 && partes[0].length >= 1 && partes[0].length <= 3) {
+      if (
+        partes.length === 2 &&
+        partes[1].length === 3 &&
+        partes[0].length >= 1 &&
+        partes[0].length <= 3
+      ) {
         // Milhar pt-BR sem vírgula decimal: ex "1.200" => 1200
         str = partes[0] + partes[1]
       }
@@ -58,7 +63,9 @@ function normalizarPesoEUnidade(valorInput, pesoInput, rawValorStr, rawPesoStr, 
   }
 
   var v = parseNumeroLimpoPtBr(valorInput, rawValorStr)
-  var rawPStr = String(rawPesoStr !== undefined && rawPesoStr !== null ? rawPesoStr : (pesoInput || '')).trim()
+  var rawPStr = String(
+    rawPesoStr !== undefined && rawPesoStr !== null ? rawPesoStr : pesoInput || '',
+  ).trim()
 
   var matchKg = rawPStr.match(/(\d+([.,]\d+)?)\s*(?:kg|quilos?|kilos?)/i)
   var matchTon = rawPStr.match(/(\d+([.,]\d+)?)\s*(?:t|ton|tons|toneladas?)/i)
@@ -67,8 +74,15 @@ function normalizarPesoEUnidade(valorInput, pesoInput, rawValorStr, rawPesoStr, 
 
   var unidade = 'kg' // Unidade canônica padrão agora é kg
 
-  var uForcada = String(unidadeForcada || '').toLowerCase().trim()
-  if (uForcada === 'ton' || uForcada === 'tonelada' || uForcada === 'toneladas' || uForcada === 't') {
+  var uForcada = String(unidadeForcada || '')
+    .toLowerCase()
+    .trim()
+  if (
+    uForcada === 'ton' ||
+    uForcada === 'tonelada' ||
+    uForcada === 'toneladas' ||
+    uForcada === 't'
+  ) {
     unidade = 'ton'
   } else if (uForcada === 'kg' || uForcada === 'quilo' || uForcada === 'quilos') {
     unidade = 'kg'

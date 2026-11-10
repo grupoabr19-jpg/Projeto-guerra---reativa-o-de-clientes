@@ -1895,7 +1895,13 @@ routerAdd(
   '/backend/v1/queue/editar-atendimento-fechado',
   (e) => {
     // Normalizador de peso e unidade alinhado com unit_normalizer.js (unidade canônica: kg)
-    function normalizarPesoEUnidadeLocal(valorInput, pesoInput, rawValorStr, rawPesoStr, unidadeForcada) {
+    function normalizarPesoEUnidadeLocal(
+      valorInput,
+      pesoInput,
+      rawValorStr,
+      rawPesoStr,
+      unidadeForcada,
+    ) {
       function parseNumeroLimpoPtBr(val, rawStr) {
         var str = ''
         if (rawStr !== undefined && rawStr !== null && String(rawStr).trim() !== '') {
@@ -1915,7 +1921,12 @@ routerAdd(
           str = str.replace(',', '.')
         } else if (str.indexOf('.') !== -1) {
           var partes = str.split('.')
-          if (partes.length === 2 && partes[1].length === 3 && partes[0].length >= 1 && partes[0].length <= 3) {
+          if (
+            partes.length === 2 &&
+            partes[1].length === 3 &&
+            partes[0].length >= 1 &&
+            partes[0].length <= 3
+          ) {
             str = partes[0] + partes[1]
           }
         }
@@ -1926,7 +1937,9 @@ routerAdd(
       }
 
       var v = parseNumeroLimpoPtBr(valorInput, rawValorStr)
-      var rawPStr = String(rawPesoStr !== undefined && rawPesoStr !== null ? rawPesoStr : (pesoInput || '')).trim()
+      var rawPStr = String(
+        rawPesoStr !== undefined && rawPesoStr !== null ? rawPesoStr : pesoInput || '',
+      ).trim()
 
       var matchKg = rawPStr.match(/(\d+([.,]\d+)?)\s*(?:kg|quilos?|kilos?)/i)
       var matchTon = rawPStr.match(/(\d+([.,]\d+)?)\s*(?:t|ton|tons|toneladas?)/i)
@@ -1934,8 +1947,15 @@ routerAdd(
       var p = parseNumeroLimpoPtBr(pesoInput, rawPesoStr)
       var unidade = 'kg' // Canônica: kg
 
-      var uForcada = String(unidadeForcada || '').toLowerCase().trim()
-      if (uForcada === 'ton' || uForcada === 'tonelada' || uForcada === 'toneladas' || uForcada === 't') {
+      var uForcada = String(unidadeForcada || '')
+        .toLowerCase()
+        .trim()
+      if (
+        uForcada === 'ton' ||
+        uForcada === 'tonelada' ||
+        uForcada === 'toneladas' ||
+        uForcada === 't'
+      ) {
         unidade = 'ton'
       } else if (uForcada === 'kg' || uForcada === 'quilo' || uForcada === 'quilos') {
         unidade = 'kg'
@@ -2052,7 +2072,13 @@ routerAdd(
         const normRes =
           typeof normalizarPesoEUnidade === 'function'
             ? normalizarPesoEUnidade(valRef, rawPesoInput, rawValorInput, rawPesoInput, uForcada)
-            : normalizarPesoEUnidadeLocal(valRef, rawPesoInput, rawValorInput, rawPesoInput, uForcada)
+            : normalizarPesoEUnidadeLocal(
+                valRef,
+                rawPesoInput,
+                rawValorInput,
+                rawPesoInput,
+                uForcada,
+              )
 
         if (normRes) {
           respostas.q16 = normRes.peso_bruto // mantém raw em q16
