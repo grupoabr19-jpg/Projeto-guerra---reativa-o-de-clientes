@@ -72,7 +72,9 @@ routerAdd(
           )
         }
 
-        // RÉGUA OFICIAL DE REATIVAÇÃO: prova de operador + atendimento real em interacoes.
+        // RÉGUA OFICIAL DE REATIVAÇÃO (critério do usuário, v2): prova de operador é
+        // operador_reativacao preenchido OU interação com desfecho de reativação por
+        // operador real — NUNCA o campo clientes.operador sozinho.
         function sqlReativacaoReal(a) {
           const p = a ? a + '.' : ''
           const ref = a ? a + '.id' : 'clientes.id'
@@ -81,33 +83,43 @@ routerAdd(
             p +
             "estado = 'reativado' AND ((" +
             p +
-            'operador IS NOT NULL AND TRIM(' +
-            p +
-            "operador) != '') OR (" +
-            p +
             'operador_reativacao IS NOT NULL AND TRIM(' +
             p +
-            "operador_reativacao) != '')) AND " +
+            "operador_reativacao) != '') OR " +
+            sqlExisteInteracaoReativacaoComOperador(ref) +
+            ') AND ' +
             sqlExisteInteracaoReativacao(ref) +
             ')'
           )
         }
 
-        // FATURAMENTO DO CRUZAMENTO ERP: 'reativado' SEM atendimento da equipe.
+        // Prova de operador via interação: desfecho de reativação por operador real.
+        function sqlExisteInteracaoReativacaoComOperador(refCliente, iAlias) {
+          const I = iAlias || 'i_chk2'
+          return (
+            'EXISTS (SELECT 1 FROM interacoes ' +
+            I +
+            ' WHERE ' +
+            I +
+            '.cliente = ' +
+            refCliente +
+            ' AND ' +
+            I +
+            '.desfecho IN ' +
+            DESFECHOS_REATIVACAO +
+            ' AND ' +
+            I +
+            '.operador IS NOT NULL AND TRIM(' +
+            I +
+            ".operador) != '')"
+          )
+        }
+
+        // FATURAMENTO DO CRUZAMENTO ERP: 'reativado' SEM atendimento da equipe
+        // (complemento exato da régua Real Equipe).
         function sqlFaturamentoCruzamento(a) {
           const p = a ? a + '.' : ''
-          const ref = a ? a + '.id' : 'clientes.id'
-          return (
-            '(' +
-            p +
-            "estado = 'reativado' AND ((" +
-            p +
-            'operador IS NULL OR TRIM(' +
-            p +
-            "operador) = '') OR NOT " +
-            sqlExisteInteracaoReativacao(ref, 'i_chk2') +
-            '))'
-          )
+          return '(' + p + "estado = 'reativado' AND NOT " + sqlReativacaoReal(a) + ')'
         }
 
         // Janela: EXISTS de interação de reativação dentro de [janelaInicio, janelaFim].
