@@ -9,7 +9,367 @@ routerAdd(
   '/backend/v1/metrics/reports-analytics',
   (e) => {
     try {
-      const REGUA = require(`${__hooks}/regua_metricas.js`)
+      // fonte: regua_metricas.js (padrão inline obrigatório neste runtime)
+      const REGUA = (function () {
+        const DESFECHOS_REATIVACAO = "('reativado', 'reativado_com_pedido', 'fechou_pedido')"
+
+        const REGIAO_GRUPOS = [
+          ['BRAGANÇA', ['BRAGANÇA', 'BRAGANCA', 'BRAGANÇA PAULISTA', 'BRAGANCA PAULISTA']],
+          ['CAMBUÍ', ['CAMBUÍ', 'CAMBUI', 'MICRO-REGIÃO', 'MICRO REGIAO', 'MICROREGIAO']],
+          [
+            'POÇOS DE CALDAS',
+            [
+              'POÇOS DE CALDAS',
+              'POCOS DE CALDAS',
+              'POÇOS CALDAS',
+              'POCOS CALDAS',
+              'POÇOS',
+              'POCOS',
+            ],
+          ],
+          ['JUNDIAÍ', ['JUNDIAÍ', 'JUNDIAI']],
+          ['ITAJUBÁ', ['ITAJUBÁ', 'ITAJUBA']],
+          ['VARGINHA', ['VARGINHA']],
+          ['POUSO ALEGRE', ['POUSO ALEGRE']],
+          ['EXTREMA', ['EXTREMA']],
+          ['ATACADO', ['ATACADO']],
+          ['REPESCAGEM', ['REPESCAGEM']],
+        ]
+
+        function grupoDeRegiao(upper) {
+          for (let g = 0; g < REGIAO_GRUPOS.length; g++) {
+            if (REGIAO_GRUPOS[g][1].indexOf(upper) !== -1) return REGIAO_GRUPOS[g]
+          }
+          return null
+        }
+
+        function sqlExisteInteracaoReativacao(refCliente, iAlias) {
+          const I = iAlias || 'i_chk'
+          return (
+            'EXISTS (SELECT 1 FROM interacoes ' +
+            I +
+            ' WHERE ' +
+            I +
+            '.cliente = ' +
+            refCliente +
+            ' AND (' +
+            I +
+            '.desfecho IN ' +
+            DESFECHOS_REATIVACAO +
+            ' OR (' +
+            I +
+            '.numero_pedido IS NOT NULL AND TRIM(' +
+            I +
+            ".numero_pedido) != '' AND TRIM(" +
+            I +
+            ".numero_pedido) != '-')))"
+          )
+        }
+
+        // RÉGUA OFICIAL DE REATIVAÇÃO: prova de operador + atendimento real em interacoes.
+        function sqlReativacaoReal(a) {
+          const p = a ? a + '.' : ''
+          const ref = a ? a + '.id' : 'clientes.id'
+          return (
+            '(' +
+            p +
+            "estado = 'reativado' AND ((" +
+            p +
+            'operador IS NOT NULL AND TRIM(' +
+            p +
+            "operador) != '') OR (" +
+            p +
+            'operador_reativacao IS NOT NULL AND TRIM(' +
+            p +
+            "operador_reativacao) != '')) AND " +
+            sqlExisteInteracaoReativacao(ref) +
+            ')'
+          )
+        }
+
+        // FATURAMENTO DO CRUZAMENTO ERP: 'reativado' SEM atendimento da equipe.
+        function sqlFaturamentoCruzamento(a) {
+          const p = a ? a + '.' : ''
+          const ref = a ? a + '.id' : 'clientes.id'
+          return (
+            '(' +
+            p +
+            "estado = 'reativado' AND ((" +
+            p +
+            'operador IS NULL OR TRIM(' +
+            p +
+            "operador) = '') OR NOT " +
+            sqlExisteInteracaoReativacao(ref, 'i_chk2') +
+            '))'
+          )
+        }
+
+        // Janela: EXISTS de interação de reativação dentro de [janelaInicio, janelaFim].
+        function sqlJanelaInteracoes(refCliente, janela, iAlias) {
+          if (!janela || !janela.ativa) return '1=1'
+          const I = iAlias || 'i_win'
+          return (
+            'EXISTS (SELECT 1 FROM interacoes ' +
+            I +
+            ' WHERE ' +
+            I +
+            '.cliente = ' +
+            refCliente +
+            ' AND ' +
+            I +
+            '.created >= {:janelaInicio} AND ' +
+            I +
+            '.created <= {:janelaFim} AND (' +
+            I +
+            '.desfecho IN ' +
+            DESFECHOS_REATIVACAO +
+            ' OR (' +
+            I +
+            '.numero_pedido IS NOT NULL AND TRIM(' +
+            I +
+            ".numero_pedido) != '' AND TRIM(" +
+            I +
+            ".numero_pedido) != '-')))"
+          )
+        }
+
+        // Janela temporal: ativa somente com data_inicial E data_final em YYYY-MM-DD. 00:00 BRT = 03:00 UTC.
+        function parseJanela(dataInicial, dataFinal) {
+          const di = String(dataInicial || '').trim()
+          const df = String(dataFinal || '').trim()
+          const res = { ativa: false, inicioIso: '', fimIso: '', dataInicial: di, dataFinal: df }
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(di) || !/^\d{4}-\d{2}-\d{2}$/.test(df)) return res
+          const pF = df.split('-')
+          res.ativa = true
+          res.inicioIso = di + ' 03:00:00.000Z'
+          res.fimIso = new Date(
+            Date.UTC(
+              parseInt(pF[0], 10),
+              parseInt(pF[1], 10) - 1,
+              parseInt(pF[2], 10) + 1,
+              2,
+              59,
+              59,
+              999,
+            ),
+          ).toISOString()
+          return res
+        }
+
+        // Categoria de base ('todas'|'normal'|'cliente_final'|'atacado_fora_mapa'|'sem_dono'|'repescagem').
+        function sqlCategoria(baseCategoriaParam, pfx) {
+          const p = pfx || ''
+          const cat = String(baseCategoriaParam || 'todas').trim()
+          const colCat = p + 'base_categoria'
+          const colSemDono = p + 'sem_dono_equipe'
+          const colRegiao = p + 'regiao'
+          const colDias = p + 'dias_sem_faturar'
+          if (cat === 'cliente_final') return colCat + " = 'cliente_final'"
+          if (cat === 'atacado_fora_mapa') return colCat + " = 'atacado_fora_mapa'"
+          if (cat === 'sem_dono' || cat === 'sem_dono_equipe')
+            return '(' + colSemDono + ' = 1 OR ' + colSemDono + ' = true)'
+          if (cat === 'repescagem')
+            return '(' + colRegiao + " = 'REPESCAGEM' OR " + colDias + ' >= 90)'
+          if (cat === 'normal')
+            return '(' + colCat + ' IS NULL OR ' + colCat + " = '' OR " + colCat + " = 'normal')"
+          return '1=1'
+        }
+
+        // Filtro de base: exclui ativo_fora_base (estado e flag) + categoria.
+        function sqlBaseFilter(catParam, a) {
+          const p = a ? a + '.' : ''
+          return (
+            p +
+            "estado != 'ativo_fora_base' AND (" +
+            p +
+            'ativo_fora_base IS NULL OR ' +
+            p +
+            'ativo_fora_base = 0) AND (' +
+            sqlCategoria(catParam, a ? a + '.' : '') +
+            ')'
+          )
+        }
+
+        // Região com todas as grafias; preenche bindParams.regiaoParam/regiaoLike quando livre.
+        function sqlRegiao(regiaoParam, pfx, bindParams) {
+          const p = pfx || ''
+          const reg = String(regiaoParam || '').trim()
+          if (!reg || reg.toLowerCase() === 'todas') return ''
+          const col = p + 'regiao'
+          const upper = reg.toUpperCase().trim()
+          if (upper === 'SEM REGIÃO' || upper === 'SEM REGIAO') {
+            return (
+              ' AND (' +
+              col +
+              " = '' OR " +
+              col +
+              ' IS NULL OR UPPER(TRIM(' +
+              col +
+              ")) = 'SEM REGIÃO' OR UPPER(TRIM(" +
+              col +
+              ")) = 'SEM REGIAO')"
+            )
+          }
+          const grupo = grupoDeRegiao(upper)
+          if (grupo) {
+            const u = 'UPPER(TRIM(' + col + '))'
+            return (
+              ' AND (' +
+              grupo[1]
+                .map(function (v) {
+                  return u + " = '" + v + "'"
+                })
+                .join(' OR ') +
+              ')'
+            )
+          }
+          if (bindParams) {
+            bindParams.regiaoParam = upper
+            bindParams.regiaoLike = '%' + upper + '%'
+          }
+          return (
+            ' AND (UPPER(TRIM(' +
+            col +
+            ')) = {:regiaoParam} OR UPPER(TRIM(' +
+            col +
+            ')) LIKE {:regiaoLike})'
+          )
+        }
+
+        // CASE de normalização de região para GROUP BY.
+        function sqlCaseRegiao(col) {
+          const c = col || 'regiao'
+          const u = 'UPPER(TRIM(' + c + '))'
+          let sql = 'CASE WHEN ' + c + ' IS NULL OR TRIM(' + c + ") = '' THEN 'Sem Região' "
+          for (let g = 0; g < REGIAO_GRUPOS.length; g++) {
+            const grupo = REGIAO_GRUPOS[g]
+            sql +=
+              'WHEN ' +
+              u +
+              ' IN (' +
+              grupo[1]
+                .map(function (v) {
+                  return "'" + v + "'"
+                })
+                .join(', ') +
+              ") THEN '" +
+              grupo[0] +
+              "' "
+          }
+          return sql + 'ELSE ' + u + ' END'
+        }
+
+        // CASE de faixa de inatividade (dias_sem_faturar) para GROUP BY.
+        function sqlCaseFaixaInatividade(col) {
+          const c = col || 'dias_sem_faturar'
+          return (
+            'CASE WHEN ' +
+            c +
+            " IS NULL THEN 'Indefinida' WHEN " +
+            c +
+            " < 60 THEN 'Menos de 60 dias' WHEN " +
+            c +
+            " <= 89 THEN '60-89 dias' WHEN " +
+            c +
+            " <= 179 THEN '90-179 dias' WHEN " +
+            c +
+            " <= 365 THEN '180-365 dias' ELSE 'Mais de 365 dias' END"
+          )
+        }
+
+        // CASE de faixa de score para GROUP BY.
+        function sqlCaseScore(col) {
+          const c = col || 'score'
+          return (
+            'CASE WHEN ' +
+            c +
+            " IS NULL THEN 'Indefinido' WHEN " +
+            c +
+            " < 30 THEN 'Baixo' WHEN " +
+            c +
+            " <= 60 THEN 'Médio' ELSE 'Alto' END"
+          )
+        }
+
+        // Início de hoje (meia-noite BRT) menos N dias, no formato de interacoes/clientes.
+        function midnightBrasiliaIso(diasAtras) {
+          const brt = new Date(Date.now() - 3 * 60 * 60 * 1000)
+          const meiaNoiteUtc =
+            Date.UTC(brt.getUTCFullYear(), brt.getUTCMonth(), brt.getUTCDate(), 3) -
+            (diasAtras || 0) * 86400000
+          return new Date(meiaNoiteUtc).toISOString().replace('T', ' ')
+        }
+
+        function pushCondCategoria(conditions, cat) {
+          const c = sqlCategoria(cat, '')
+          if (c && c !== '1=1') conditions.push(c)
+        }
+
+        function pushCondRegiao(conditions, regiao, bindParams, pfx) {
+          const c = sqlRegiao(regiao, pfx, bindParams)
+          const t = c.replace(/^\s*AND\s+/, '')
+          if (t) conditions.push(t)
+          return c
+        }
+
+        // Cinto de segurança + dedupe das fichas (FONTE OFICIAL de valor/ton da Real Equipe).
+        function agregarFichas(fRows, tag) {
+          const t = tag || '[regua]'
+          let somaValor = 0
+          let somaTon = 0
+          const fichasPorCliente = {}
+          const clientesProcessados = {}
+          for (let fi = 0; fi < fRows.length; fi++) {
+            const fr = fRows[fi]
+            const cId = fr.cliente_id
+            if (!cId || clientesProcessados[cId]) continue
+            clientesProcessados[cId] = true
+            const desfecho = String(fr.desfecho || '').trim()
+            if (desfecho !== 'reativado') continue
+            const vPot = Number(fr.valor_potencial || 0)
+            let tPot = Number(fr.toneladas_potencial || 0)
+            if (tPot > 500) tPot = tPot / 1000.0
+            if (vPot > 0 && tPot > 0 && vPot / tPot < 100) {
+              console.log(
+                t +
+                  ' Cinto de segurança: ficha descartada id=' +
+                  fr.ficha_id +
+                  ' (cliente=' +
+                  cId +
+                  ')',
+              )
+              continue
+            }
+            if (vPot > 0) somaValor += vPot
+            if (tPot > 0) somaTon += tPot
+            fichasPorCliente[cId] = { valor: vPot > 0 ? vPot : 0, ton: tPot > 0 ? tPot : 0 }
+          }
+          return {
+            somaValor: Number(somaValor.toFixed(2)),
+            somaTon: Number(somaTon.toFixed(4)),
+            fichasPorCliente: fichasPorCliente,
+          }
+        }
+
+        return {
+          DESFECHOS_REATIVACAO: DESFECHOS_REATIVACAO,
+          parseJanela: parseJanela,
+          sqlCategoria: sqlCategoria,
+          sqlBaseFilter: sqlBaseFilter,
+          sqlRegiao: sqlRegiao,
+          sqlCaseRegiao: sqlCaseRegiao,
+          sqlCaseFaixaInatividade: sqlCaseFaixaInatividade,
+          sqlCaseScore: sqlCaseScore,
+          sqlReativacaoReal: sqlReativacaoReal,
+          sqlFaturamentoCruzamento: sqlFaturamentoCruzamento,
+          sqlJanelaInteracoes: sqlJanelaInteracoes,
+          sqlExisteInteracaoReativacao: sqlExisteInteracaoReativacao,
+          midnightBrasiliaIso: midnightBrasiliaIso,
+          pushCondCategoria: pushCondCategoria,
+          pushCondRegiao: pushCondRegiao,
+          agregarFichas: agregarFichas,
+        }
+      })()
 
       const authRecord = e.auth
       if (!authRecord || !authRecord.id) {
@@ -55,6 +415,11 @@ routerAdd(
       const baseFilterSql = REGUA.sqlBaseFilter(baseCategoriaParam, '')
       const conditions = [baseFilterSql]
       const bindParams = {}
+      // Janela temporal: parâmetros usados pelas subconsultas sqlJanelaInteracoes
+      if (janela.ativa) {
+        bindParams.janelaInicio = janela.inicioIso
+        bindParams.janelaFim = janela.fimIso
+      }
 
       // Filtro de Período (calculado na meia-noite de Brasília)
       if (periodoParam === 'hoje') {
@@ -234,24 +599,9 @@ routerAdd(
       let clientesNoPeriodo = null
       if (janela.ativa) {
         try {
-          const janelaRegiaoSegmentoConds = []
-          for (let jc = 0; jc < conditions.length; jc++) {
-            const condJ = conditions[jc]
-            if (condJ.indexOf('{:janela') !== -1) continue
-            const prefixedJ = REGUA.prefixarClientes(condJ)
-            janelaRegiaoSegmentoConds.push(prefixedJ)
-          }
-          let periodoCondJ = ''
-          if (periodoParam === 'hoje' || periodoParam === '7dias' || periodoParam === '30dias') {
-            periodoCondJ = 'c.updated >= {:periodoInicio}'
-          }
-
-          const janelaCondsFinais = janelaRegiaoSegmentoConds.slice()
-          if (periodoCondJ) {
-            janelaCondsFinais.push(periodoCondJ)
-          }
+          // Filtros da base (região, segmento, período, categoria) via subconsulta em clientes
           const janelaWhereExtra =
-            janelaCondsFinais.length > 0 ? ' AND ' + janelaCondsFinais.join(' AND ') : ''
+            ' AND c.id IN (SELECT id FROM clientes WHERE ' + whereClause + ')'
 
           const reatPeriodoQuery = `
             SELECT DISTINCT c.id as cliente_id
@@ -284,14 +634,7 @@ routerAdd(
       // (respostas_formulario) — agregação/cinto de segurança ÚNICOS da régua.
       const fichasPorCliente = {}
       try {
-        const rfWhereConditions = []
-        for (let ci = 0; ci < conditions.length; ci++) {
-          const cond = conditions[ci]
-          if (janela.ativa && cond.indexOf('{:janela') !== -1) continue
-          rfWhereConditions.push(REGUA.prefixarClientes(cond))
-        }
-
-        const rfWhereClause = rfWhereConditions.length > 0 ? rfWhereConditions.join(' AND ') : '1=1'
+        const rfWhereClause = 'rf.cliente IN (SELECT id FROM clientes WHERE ' + whereClause + ')'
 
         let fichasJanelaCond = ''
         if (janela.ativa) {

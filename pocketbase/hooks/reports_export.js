@@ -1,19 +1,255 @@
 /// <reference path="../pb_data/types.d.ts" />
 
 // reports_export.js — /backend/v1/reports/export (CSV)
-// FÓRMULAS E FILTROS VÊM DO MÓDULO ÚNICO regua_metricas.js (M1):
-// - Janela temporal (De/Até) via REGUA.parseJanela (mesma do Dashboard);
-// - Normalização de região via REGUA.sqlRegiao;
-// - Régua oficial de reativação via REGUA.sqlReativacaoReal (prova de operador
-//   + EXISTS de interação com desfecho/pedido) — mesmo número do Dashboard.
-// Nenhuma fórmula de régua ou parsing de período é definida aqui.
+// Fórmulas da régua (M1) embutidas INLINE dentro do callback (padrão obrigatório no
+// runtime Goja: require() de módulo local falha com "Invalid module"). A cópia
+// é idêntica à de metrics_base_kpis.js e reports_analytics.js — manter as três iguais.
+// Documento de referência: regua_metricas.js.
 
 routerAdd(
   'POST',
   '/backend/v1/reports/export',
   (e) => {
     try {
-      const REGUA = require(`${__hooks}/regua_metricas.js`)
+      // fonte: regua_metricas.js (padrão inline obrigatório neste runtime)
+      const REGUA = (function () {
+        const DESFECHOS_REATIVACAO = "('reativado', 'reativado_com_pedido', 'fechou_pedido')"
+
+        const REGIAO_GRUPOS = [
+          ['BRAGANÇA', ['BRAGANÇA', 'BRAGANCA', 'BRAGANÇA PAULISTA', 'BRAGANCA PAULISTA']],
+          ['CAMBUÍ', ['CAMBUÍ', 'CAMBUI', 'MICRO-REGIÃO', 'MICRO REGIAO', 'MICROREGIAO']],
+          [
+            'POÇOS DE CALDAS',
+            [
+              'POÇOS DE CALDAS',
+              'POCOS DE CALDAS',
+              'POÇOS CALDAS',
+              'POCOS CALDAS',
+              'POÇOS',
+              'POCOS',
+            ],
+          ],
+          ['JUNDIAÍ', ['JUNDIAÍ', 'JUNDIAI']],
+          ['ITAJUBÁ', ['ITAJUBÁ', 'ITAJUBA']],
+          ['VARGINHA', ['VARGINHA']],
+          ['POUSO ALEGRE', ['POUSO ALEGRE']],
+          ['EXTREMA', ['EXTREMA']],
+          ['ATACADO', ['ATACADO']],
+          ['REPESCAGEM', ['REPESCAGEM']],
+        ]
+
+        function grupoDeRegiao(upper) {
+          for (let g = 0; g < REGIAO_GRUPOS.length; g++) {
+            if (REGIAO_GRUPOS[g][1].indexOf(upper) !== -1) return REGIAO_GRUPOS[g]
+          }
+          return null
+        }
+
+        function sqlExisteInteracaoReativacao(refCliente, iAlias) {
+          const I = iAlias || 'i_chk'
+          return (
+            'EXISTS (SELECT 1 FROM interacoes ' +
+            I +
+            ' WHERE ' +
+            I +
+            '.cliente = ' +
+            refCliente +
+            ' AND (' +
+            I +
+            '.desfecho IN ' +
+            DESFECHOS_REATIVACAO +
+            ' OR (' +
+            I +
+            '.numero_pedido IS NOT NULL AND TRIM(' +
+            I +
+            ".numero_pedido) != '' AND TRIM(" +
+            I +
+            ".numero_pedido) != '-')))"
+          )
+        }
+
+        // RÉGUA OFICIAL DE REATIVAÇÃO: prova de operador + atendimento real em interacoes.
+        function sqlReativacaoReal(a) {
+          const p = a ? a + '.' : ''
+          const ref = a ? a + '.id' : 'clientes.id'
+          return (
+            '(' +
+            p +
+            "estado = 'reativado' AND ((" +
+            p +
+            'operador IS NOT NULL AND TRIM(' +
+            p +
+            "operador) != '') OR (" +
+            p +
+            'operador_reativacao IS NOT NULL AND TRIM(' +
+            p +
+            "operador_reativacao) != '')) AND " +
+            sqlExisteInteracaoReativacao(ref) +
+            ')'
+          )
+        }
+
+        // FATURAMENTO DO CRUZAMENTO ERP: 'reativado' SEM atendimento da equipe.
+        function sqlFaturamentoCruzamento(a) {
+          const p = a ? a + '.' : ''
+          const ref = a ? a + '.id' : 'clientes.id'
+          return (
+            '(' +
+            p +
+            "estado = 'reativado' AND ((" +
+            p +
+            'operador IS NULL OR TRIM(' +
+            p +
+            ") = '') OR NOT " +
+            sqlExisteInteracaoReativacao(ref, 'i_chk2') +
+            '))'
+          )
+        }
+
+        // Janela: EXISTS de interação de reativação dentro de [janelaInicio, janelaFim].
+        function sqlJanelaInteracoes(refCliente, janela, iAlias) {
+          if (!janela || !janela.ativa) return '1=1'
+          const I = iAlias || 'i_win'
+          return (
+            'EXISTS (SELECT 1 FROM interacoes ' +
+            I +
+            ' WHERE ' +
+            I +
+            '.cliente = ' +
+            refCliente +
+            ' AND ' +
+            I +
+            '.created >= {:janelaInicio} AND ' +
+            I +
+            '.created <= {:janelaFim} AND (' +
+            I +
+            '.desfecho IN ' +
+            DESFECHOS_REATIVACAO +
+            ' OR (' +
+            I +
+            '.numero_pedido IS NOT NULL AND TRIM(' +
+            I +
+            ".numero_pedido) != '' AND TRIM(" +
+            I +
+            ".numero_pedido) != '-')))"
+          )
+        }
+
+        // Janela temporal: ativa somente com data_inicial E data_final em YYYY-MM-DD. 00:00 BRT = 03:00 UTC.
+        function parseJanela(dataInicial, dataFinal) {
+          const di = String(dataInicial || '').trim()
+          const df = String(dataFinal || '').trim()
+          const res = { ativa: false, inicioIso: '', fimIso: '', dataInicial: di, dataFinal: df }
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(di) || !/^\d{4}-\d{2}-\d{2}$/.test(df)) return res
+          const pF = df.split('-')
+          res.ativa = true
+          res.inicioIso = di + ' 03:00:00.000Z'
+          res.fimIso = new Date(
+            Date.UTC(
+              parseInt(pF[0], 10),
+              parseInt(pF[1], 10) - 1,
+              parseInt(pF[2], 10) + 1,
+              2,
+              59,
+              59,
+              999,
+            ),
+          ).toISOString()
+          return res
+        }
+
+        // Categoria de base ('todas'|'normal'|'cliente_final'|'atacado_fora_mapa'|'sem_dono'|'repescagem').
+        function sqlCategoria(baseCategoriaParam, pfx) {
+          const p = pfx || ''
+          const cat = String(baseCategoriaParam || 'todas').trim()
+          const colCat = p + 'base_categoria'
+          const colSemDono = p + 'sem_dono_equipe'
+          const colRegiao = p + 'regiao'
+          const colDias = p + 'dias_sem_faturar'
+          if (cat === 'cliente_final') return colCat + " = 'cliente_final'"
+          if (cat === 'atacado_fora_mapa') return colCat + " = 'atacado_fora_mapa'"
+          if (cat === 'sem_dono' || cat === 'sem_dono_equipe')
+            return '(' + colSemDono + ' = 1 OR ' + colSemDono + ' = true)'
+          if (cat === 'repescagem')
+            return '(' + colRegiao + " = 'REPESCAGEM' OR " + colDias + ' >= 90)'
+          if (cat === 'normal')
+            return '(' + colCat + ' IS NULL OR ' + colCat + " = '' OR " + colCat + " = 'normal')"
+          return '1=1'
+        }
+
+        // Filtro de base: exclui ativo_fora_base (estado e flag) + categoria.
+        function sqlBaseFilter(catParam, a) {
+          const p = a ? a + '.' : ''
+          return (
+            p +
+            "estado != 'ativo_fora_base' AND (" +
+            p +
+            'ativo_fora_base IS NULL OR ' +
+            p +
+            'ativo_fora_base = 0) AND (' +
+            sqlCategoria(catParam, a ? a + '.' : '') +
+            ')'
+          )
+        }
+
+        // Região com todas as grafias; preenche bindParams.regiaoParam/regiaoLike quando livre.
+        function sqlRegiao(regiaoParam, pfx, bindParams) {
+          const p = pfx || ''
+          const reg = String(regiaoParam || '').trim()
+          if (!reg || reg.toLowerCase() === 'todas') return ''
+          const col = p + 'regiao'
+          const upper = reg.toUpperCase().trim()
+          if (upper === 'SEM REGIÃO' || upper === 'SEM REGIAO') {
+            return (
+              ' AND (' +
+              col +
+              " = '' OR " +
+              col +
+              ' IS NULL OR UPPER(TRIM(' +
+              col +
+              ")) = 'SEM REGIÃO' OR UPPER(TRIM(" +
+              col +
+              ")) = 'SEM REGIAO')"
+            )
+          }
+          const grupo = grupoDeRegiao(upper)
+          if (grupo) {
+            const u = 'UPPER(TRIM(' + col + '))'
+            return (
+              ' AND (' +
+              grupo[1]
+                .map(function (v) {
+                  return u + " = '" + v + "'"
+                })
+                .join(' OR ') +
+              ')'
+            )
+          }
+          if (bindParams) {
+            bindParams.regiaoParam = upper
+            bindParams.regiaoLike = '%' + upper + '%'
+          }
+          return (
+            ' AND (UPPER(TRIM(' +
+            col +
+            ')) = {:regiaoParam} OR UPPER(TRIM(' +
+            col +
+            ')) LIKE {:regiaoLike})'
+          )
+        }
+
+        return {
+          DESFECHOS_REATIVACAO: DESFECHOS_REATIVACAO,
+          parseJanela: parseJanela,
+          sqlCategoria: sqlCategoria,
+          sqlBaseFilter: sqlBaseFilter,
+          sqlRegiao: sqlRegiao,
+          sqlReativacaoReal: sqlReativacaoReal,
+          sqlFaturamentoCruzamento: sqlFaturamentoCruzamento,
+          sqlJanelaInteracoes: sqlJanelaInteracoes,
+          sqlExisteInteracaoReativacao: sqlExisteInteracaoReativacao,
+        }
+      })()
 
       const authRecord = e.auth
       if (!authRecord || !authRecord.id) {
