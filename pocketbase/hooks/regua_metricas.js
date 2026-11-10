@@ -2,7 +2,13 @@
 // ============================================================
 // RÉGUA ÚNICA DE MÉTRICAS (M1) — FONTE ÚNICA DE TODAS AS FÓRMULAS
 // ============================================================
-// Consumido via require() DENTRO do callback de cada hook (Goja não
+// ATENÇÃO: neste runtime (Goja) este arquivo NÃO é usado via require():
+// os hooks (metrics_base_kpis, reports_analytics, reports_export) carregam
+// as fórmulas EMBUTIDAS (inline) — padrão obrigatório, "Invalid module" se
+// chamar require() de módulo local. Manter este arquivo como REFERÊNCIA
+// canônica das fórmulas, e replicar qualquer correção aqui nos hooks.
+//
+// Consumo hipotético via require() DENTRO do callback de cada hook (Goja não
 // compartilha escopo top-level entre hooks; arquivo .js sem routerAdd
 // não é autoloadado, só carregado sob demanda).
 //

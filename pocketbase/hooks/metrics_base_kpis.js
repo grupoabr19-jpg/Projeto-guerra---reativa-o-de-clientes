@@ -100,7 +100,7 @@ routerAdd(
             p +
             'operador IS NULL OR TRIM(' +
             p +
-            ") = '') OR NOT " +
+            "operador) = '') OR NOT " +
             sqlExisteInteracaoReativacao(ref, 'i_chk2') +
             '))'
           )
@@ -201,7 +201,7 @@ routerAdd(
           const upper = reg.toUpperCase().trim()
           if (upper === 'SEM REGIÃO' || upper === 'SEM REGIAO') {
             return (
-             ' AND (' +
+              ' AND (' +
               col +
               " = '' OR " +
               col +
@@ -498,7 +498,10 @@ routerAdd(
           queryBuilder.bind(params)
         }
         queryBuilder.one(kpiModel)
-        console.log('[metrics_base_kpis] kpisQuery executada OK — total_base=' + Number(kpiModel.total_base || 0))
+        console.log(
+          '[metrics_base_kpis] kpisQuery executada OK — total_base=' +
+            Number(kpiModel.total_base || 0),
+        )
       } catch (dbErr) {
         const dbErrMsg = dbErr && dbErr.message ? dbErr.message : String(dbErr)
         console.error('[metrics_base_kpis] Erro na query de KPIs: ' + dbErrMsg)
