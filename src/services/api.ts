@@ -2171,6 +2171,13 @@ export async function fetchMetricasBaseKpis(options?: {
       data.valor_pedidos_em_aberto ??
       0,
   )
+  const toneladasPedidosEmAberto = Number(
+    kpisRaw.toneladasPedidosEmAberto ??
+      kpisRaw.toneladas_pedidos_em_aberto ??
+      data.toneladasPedidosEmAberto ??
+      data.toneladas_pedidos_em_aberto ??
+      0,
+  )
 
   return {
     kpis: {
@@ -2189,6 +2196,8 @@ export async function fetchMetricasBaseKpis(options?: {
       pedidos_em_aberto: pedidosEmAberto,
       valorPedidosEmAberto,
       valor_pedidos_em_aberto: valorPedidosEmAberto,
+      toneladasPedidosEmAberto,
+      toneladas_pedidos_em_aberto: toneladasPedidosEmAberto,
       reativadosTotalBruto: Number(
         kpisRaw.reativadosTotalBruto ?? kpisRaw.reativado_total ?? data.reativadosTotalBruto ?? 0,
       ),

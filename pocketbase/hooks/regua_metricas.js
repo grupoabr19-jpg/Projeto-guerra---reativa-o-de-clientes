@@ -100,17 +100,16 @@ function sqlReativacaoReal(a) {
 /** FATURAMENTO DO CRUZAMENTO ERP: 'reativado' SEM atendimento da equipe (métrica separada, sempre rotulada). */
 function sqlFaturamentoCruzamento(a) {
   var p = a ? a + '.' : ''
-  var ref = a ? a + '.id' : 'clientes.id'
   return (
     '(' +
     p +
-    "estado = 'reativado' AND ((" +
+    "estado = 'reativado' AND (" +
     p +
-    'operador IS NULL OR TRIM(' +
+    'operador_reativacao IS NULL OR TRIM(' +
     p +
-    "operador) = '') OR NOT " +
-    sqlExisteInteracaoReativacao(ref, 'i_chk2') +
-    '))'
+    "operador_reativacao) = '') AND NOT " +
+    sqlReativacaoReal(a) +
+    ')'
   )
 }
 

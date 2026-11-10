@@ -110,10 +110,20 @@ routerAdd(
         }
 
         // FATURAMENTO DO CRUZAMENTO ERP: 'reativado' SEM atendimento da equipe
-        // (complemento exato da régua Real Equipe).
+        // (complemento exato da régua Real Equipe — operador_reativacao preenchido é prova de equipe).
         function sqlFaturamentoCruzamento(a) {
           const p = a ? a + '.' : ''
-          return '(' + p + "estado = 'reativado' AND NOT " + sqlReativacaoReal(a) + ')'
+          return (
+            '(' +
+            p +
+            "estado = 'reativado' AND (" +
+            p +
+            'operador_reativacao IS NULL OR TRIM(' +
+            p +
+            "operador_reativacao) = '') AND NOT " +
+            sqlReativacaoReal(a) +
+            ')'
+          )
         }
 
         // Janela: EXISTS de interação de reativação dentro de [janelaInicio, janelaFim].

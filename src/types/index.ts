@@ -513,6 +513,8 @@ export interface MetricasBaseKpisResponse {
     pedidos_em_aberto?: number
     valorPedidosEmAberto?: number
     valor_pedidos_em_aberto?: number
+    toneladasPedidosEmAberto?: number
+    toneladas_pedidos_em_aberto?: number
     reativadosTotalBruto?: number
     valorRecuperadoTotalBruto?: number
   }
@@ -628,6 +630,8 @@ export interface ReportsAnalyticsResponse {
     pedidos_em_aberto?: number
     valorPedidosEmAberto?: number
     valor_pedidos_em_aberto?: number
+    toneladasPedidosEmAberto?: number
+    toneladas_pedidos_em_aberto?: number
     reativadosTotalBruto?: number
     valorRecuperadoTotalBruto?: number
   }
