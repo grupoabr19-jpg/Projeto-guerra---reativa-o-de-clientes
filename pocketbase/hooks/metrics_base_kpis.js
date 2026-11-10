@@ -358,7 +358,7 @@ routerAdd(
           const t = tag || '[regua]'
           const res = { followupsProgramados: 0, reagendadosPeriodo: 0 }
           try {
-            const fModel = arrayOf(new DynamicModel({ total: 0 }))
+            const fModel = new DynamicModel({ total: 0 })
             const fSql =
               "SELECT COUNT(*) as total FROM clientes WHERE reagendado_para IS NOT NULL AND TRIM(reagendado_para) != ''" +
               (filtrosSql ? ' AND ' + filtrosSql : '')
@@ -372,7 +372,7 @@ routerAdd(
             )
           }
           try {
-            const rModel = arrayOf(new DynamicModel({ total: 0 }))
+            const rModel = new DynamicModel({ total: 0 })
             let rSql =
               "SELECT COUNT(*) as total FROM interacoes i WHERE (i.desfecho = 'reagendado' OR (i.reagendado_para IS NOT NULL AND TRIM(i.reagendado_para) != ''))"
             const rParams = {}
@@ -580,7 +580,7 @@ routerAdd(
             rf.toneladas_potencial as toneladas_potencial
           FROM respostas_formulario rf
           INNER JOIN clientes c ON c.id = rf.cliente
-          WHERE ${rfBaseFilterSql} ${rfClientCondition}${rfWhereFichasExtra}
+          WHERE ${rfBaseFilterSql}${rfClientCondition}${rfWhereFichasExtra}
           ORDER BY rf.created DESC
         `
 
