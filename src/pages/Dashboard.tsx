@@ -2034,11 +2034,12 @@ export default function Dashboard() {
 
           {/* SEÇÃO VISUAL: MÉTRICAS DA FICHA DE ATENDIMENTO */}
           <MetricasFichaAtendimentoSection
-            selectedPeriodo={selectedPeriodo === 'personalizado' ? 'total' : selectedPeriodo}
+            selectedPeriodo={selectedPeriodo}
             selectedRegion={selectedRegion}
             selectedSegmento={selectedSegmento}
             selectedCategoria={selectedCategoria}
-            {...(janelaPersonalizadaAtiva ? { dataInicial, dataFinal } : {})}
+            dataInicial={janelaPersonalizadaAtiva ? dataInicial : undefined}
+            dataFinal={janelaPersonalizadaAtiva ? dataFinal : undefined}
           />
 
           {/* BLOCO DE AUDITORIA: CLIENTES ATIVOS REMOVIDOS DA BASE COM BREAKDOWN POR MOTIVO */}
