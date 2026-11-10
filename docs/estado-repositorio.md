@@ -1,7 +1,7 @@
 # Estado do repositório — Projeto Guerra
 
 - Branch de trabalho: `main`
-- Versão atual: v0.0.193 ou superior (a versão exata é a que o app reporta em runtime; não foi lida nesta rodada)
+- Versão atual: 0.0.194 (commit cfaf692)
 - Migrações aplicadas no backend: de `updated_users.js` e `0001` até `0140_censo_resumo_eventos_log.js`. Nenhuma pendente. Próximo número disponível: `0141`.
 
 ## Módulos principais
