@@ -2343,6 +2343,63 @@ export async function fetchListasColaborador(options?: {
   return res.json()
 }
 
+/**
+ * Busca a lista de clientes para drill-down de um KPI do Dashboard.
+ * Endpoint autenticado: /backend/v1/metrics/drilldown
+ */
+export async function fetchMetricsDrilldown(options: {
+  tipo: string
+  regiao?: string
+  baseCategoria?: string
+  dataInicial?: string
+  dataFinal?: string
+  desfecho?: string
+  canal?: string
+}): Promise<import('@/types').MetricsDrilldownResponse> {
+  const params = new URLSearchParams()
+  params.set('tipo', options.tipo)
+  if (options.regiao && options.regiao !== 'todas') {
+    params.set('regiao', options.regiao)
+  }
+  if (options.baseCategoria && options.baseCategoria !== 'todas') {
+    params.set('base_categoria', options.baseCategoria)
+  }
+  if (options.dataInicial) {
+    params.set('data_inicial', options.dataInicial)
+  }
+  if (options.dataFinal) {
+    params.set('data_final', options.dataFinal)
+  }
+  if (options.desfecho) {
+    params.set('desfecho', options.desfecho)
+  }
+  if (options.canal) {
+    params.set('canal', options.canal)
+  }
+
+  const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
+  const queryStr = params.toString()
+  const url = `${basePbUrl}/backend/v1/metrics/drilldown${queryStr ? `?${queryStr}` : ''}`
+
+  const token = pb.authStore.token || ''
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = token
+  }
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers,
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `Falha ao carregar drill-down de clientes (${res.status})`)
+  }
+
+  return res.json()
+}
+
 // Re-export diagnóstico e gamificação APIs
 export * from './diagnostico'
 export * from './gamificacao'

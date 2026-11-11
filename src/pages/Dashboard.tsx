@@ -67,6 +67,7 @@ import { DailyEvolutionSection } from '@/components/DailyEvolutionSection'
 import { AtividadeColaboradorSection } from '@/components/AtividadeColaboradorSection'
 import { ExportacaoRelatoriosSection } from '@/components/ExportacaoRelatoriosSection'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { MetricsDrilldownModal } from '@/components/MetricsDrilldownModal'
 import { SEGMENTOS_OFICIAIS } from '@/lib/segmentos'
 import { usePresence } from '@/hooks/usePresence'
 import { calcularTaxaConversao } from '@/lib/conversao'
@@ -111,6 +112,25 @@ export default function Dashboard() {
   // Operador selecionado para destaque/modal rápido
   const [selectedOperadorDetalhe, setSelectedOperadorDetalhe] =
     useState<MetricasAtendimentoOperador | null>(null)
+
+  // Drilldown de métricas de clientes (modal genérico com tabela de clientes e navegação)
+  const [drilldownState, setDrilldownState] = useState<{
+    open: boolean
+    tipo: string
+    titulo: string
+  }>({
+    open: false,
+    tipo: '',
+    titulo: '',
+  })
+
+  const abrirDrilldown = (tipo: string, titulo: string) => {
+    setDrilldownState({
+      open: true,
+      tipo,
+      titulo,
+    })
+  }
 
   // Filtro para exibir apenas operadores atuando (com dados no período/escopo)
   const [apenasAtuando, setApenasAtuando] = useState<boolean>(true)
@@ -666,11 +686,22 @@ export default function Dashboard() {
             {/* Cards Nível 1 — 7 KPIs de Atendimento */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
               {/* Total Atendimentos Realizados */}
-              <Card className="border-slate-200 shadow-xs hover:border-[#253575]/40 transition-colors">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => abrirDrilldown('total_atendidos', 'Total de Clientes Atendidos')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown('total_atendidos', 'Total de Clientes Atendidos')
+                  }
+                }}
+                className="border-slate-200 shadow-xs hover:border-[#253575] hover:shadow-md transition-all cursor-pointer group"
+              >
                 <CardContent className="p-3.5">
                   <div className="flex items-center justify-between text-slate-500 mb-1.5">
                     <div className="flex items-center gap-1 min-w-0">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate group-hover:text-[#253575]">
                         Total Atendidos
                       </span>
                       <TooltipProvider delayDuration={150}>
@@ -678,6 +709,7 @@ export default function Dashboard() {
                           <TooltipTrigger asChild>
                             <button
                               type="button"
+                              onClick={(e) => e.stopPropagation()}
                               className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
                               aria-label="Informações sobre Total Atendidos"
                             >
@@ -691,31 +723,42 @@ export default function Dashboard() {
                             <p className="font-bold text-blue-200 mb-1">Total de Atendimentos:</p>
                             <p className="text-slate-200 text-[11px] leading-relaxed">
                               Soma de todas as interações e fichas preenchidas no período (contatos,
-                              reagendamentos, vendas e recusas).
+                              reagendamentos, vendas e recusas). Clique para listar clientes.
                             </p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </div>
-                    <div className="p-1 rounded-md bg-[#253575]/10 text-[#253575] shrink-0">
+                    <div className="p-1 rounded-md bg-[#253575]/10 text-[#253575] shrink-0 group-hover:bg-[#253575] group-hover:text-white transition-colors">
                       <Activity className="h-3.5 w-3.5" />
                     </div>
                   </div>
-                  <div className="text-2xl font-black text-[#253575] font-mono">
+                  <div className="text-2xl font-black text-[#253575] font-mono group-hover:underline">
                     {loadingAtendimentos ? '—' : metricasAtendimento?.gerais.totalAtendimentos || 0}
                   </div>
-                  <span className="text-[10px] text-slate-400 mt-0.5 block truncate">
-                    desfecho ou andamento
+                  <span className="text-[10px] text-slate-400 mt-0.5 block truncate group-hover:text-[#253575]">
+                    desfecho ou andamento &rarr;
                   </span>
                 </CardContent>
               </Card>
 
               {/* Ligações / Contatos Feitos */}
-              <Card className="border-slate-200 shadow-xs hover:border-[#253575]/40 transition-colors">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => abrirDrilldown('canal_ligacao', 'Clientes Contatados via Ligação')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown('canal_ligacao', 'Clientes Contatados via Ligação')
+                  }
+                }}
+                className="border-slate-200 shadow-xs hover:border-[#253575] hover:shadow-md transition-all cursor-pointer group"
+              >
                 <CardContent className="p-3.5">
                   <div className="flex items-center justify-between text-slate-500 mb-1.5">
                     <div className="flex items-center gap-1 min-w-0">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate group-hover:text-[#253575]">
                         Ligações Feitas
                       </span>
                       <TooltipProvider delayDuration={150}>
@@ -723,6 +766,7 @@ export default function Dashboard() {
                           <TooltipTrigger asChild>
                             <button
                               type="button"
+                              onClick={(e) => e.stopPropagation()}
                               className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
                               aria-label="Informações sobre Ligações Feitas"
                             >
@@ -738,31 +782,45 @@ export default function Dashboard() {
                             </p>
                             <p className="text-slate-200 text-[11px] leading-relaxed">
                               Chamadas ativas realizadas pela equipe e formulários concluídos no
-                              período. Serve como base para a taxa de conversão.
+                              período. Serve como base para a taxa de conversão. Clique para listar
+                              clientes.
                             </p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </div>
-                    <div className="p-1 rounded-md bg-[#253575]/10 text-[#253575] shrink-0">
+                    <div className="p-1 rounded-md bg-[#253575]/10 text-[#253575] shrink-0 group-hover:bg-[#253575] group-hover:text-white transition-colors">
                       <PhoneCall className="h-3.5 w-3.5" />
                     </div>
                   </div>
-                  <div className="text-2xl font-black text-[#253575] font-mono">
+                  <div className="text-2xl font-black text-[#253575] font-mono group-hover:underline">
                     {loadingAtendimentos ? '—' : metricasAtendimento?.gerais.ligacoesFeitas || 0}
                   </div>
-                  <span className="text-[10px] text-slate-400 mt-0.5 block truncate">
-                    chamadas & formulários
+                  <span className="text-[10px] text-slate-400 mt-0.5 block truncate group-hover:text-[#253575]">
+                    chamadas & formulários &rarr;
                   </span>
                 </CardContent>
               </Card>
 
               {/* Conversões */}
-              <Card className="border-slate-200 shadow-xs hover:border-emerald-300 transition-colors">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  abrirDrilldown('conversoes', 'Clientes com Conversões de Atendimento')
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown('conversoes', 'Clientes com Conversões de Atendimento')
+                  }
+                }}
+                className="border-slate-200 shadow-xs hover:border-emerald-500 hover:shadow-md transition-all cursor-pointer group"
+              >
                 <CardContent className="p-3.5">
                   <div className="flex items-center justify-between text-slate-500 mb-1.5">
                     <div className="flex items-center gap-1 min-w-0">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate group-hover:text-emerald-700">
                         Conversões
                       </span>
                       <TooltipProvider delayDuration={150}>
@@ -770,6 +828,7 @@ export default function Dashboard() {
                           <TooltipTrigger asChild>
                             <button
                               type="button"
+                              onClick={(e) => e.stopPropagation()}
                               className="text-slate-400 hover:text-emerald-700 shrink-0 p-0.5 focus:outline-hidden"
                               aria-label="Informações sobre Conversões"
                             >
@@ -786,33 +845,44 @@ export default function Dashboard() {
                             <p className="text-slate-200 text-[11px] leading-relaxed">
                               Soma de todos os atendimentos/ligações da equipe encerrados com
                               desfecho de compra ou pedido no período (eventos de atendimento).
-                              Diferente do card &quot;Clientes Reativados (Real Equipe)&quot;
-                              abaixo, que consolida clientes ÚNICOS da carteira com reativação e
-                              pedido comprovado.
+                              Clique para listar clientes convertidos.
                             </p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </div>
-                    <div className="p-1 rounded-md bg-emerald-50 text-emerald-600 shrink-0">
+                    <div className="p-1 rounded-md bg-emerald-50 text-emerald-600 shrink-0 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
                       <CheckCircle2 className="h-3.5 w-3.5" />
                     </div>
                   </div>
-                  <div className="text-2xl font-black text-emerald-600 font-mono">
+                  <div className="text-2xl font-black text-emerald-600 font-mono group-hover:underline">
                     {loadingAtendimentos ? '—' : metricasAtendimento?.gerais.conversoes || 0}
                   </div>
                   <span className="text-[10px] text-emerald-700 font-medium mt-0.5 block truncate">
-                    reativados / compra
+                    reativados / compra &rarr;
                   </span>
                 </CardContent>
               </Card>
 
               {/* Taxa de Conversão Geral */}
-              <Card className="border-slate-200 shadow-xs hover:border-purple-300 transition-colors">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  abrirDrilldown('conversoes', 'Clientes Convertidos (Base da Taxa de Conversão)')
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown('conversoes', 'Clientes Convertidos (Base da Taxa de Conversão)')
+                  }
+                }}
+                className="border-slate-200 shadow-xs hover:border-purple-400 hover:shadow-md transition-all cursor-pointer group"
+              >
                 <CardContent className="p-3.5">
                   <div className="flex items-center justify-between text-slate-500 mb-1.5">
                     <div className="flex items-center gap-1 min-w-0">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate group-hover:text-purple-700">
                         Taxa Conversão
                       </span>
                       <TooltipProvider delayDuration={150}>
@@ -820,6 +890,7 @@ export default function Dashboard() {
                           <TooltipTrigger asChild>
                             <button
                               type="button"
+                              onClick={(e) => e.stopPropagation()}
                               className="text-slate-400 hover:text-purple-700 shrink-0 p-0.5 focus:outline-hidden"
                               aria-label="Informações sobre Taxa de Conversão"
                             >
@@ -835,33 +906,45 @@ export default function Dashboard() {
                             </p>
                             <p className="text-slate-200 text-[11px] leading-relaxed">
                               Percentual de atendimentos convertidos em relação ao total de
-                              ligações/chamadas realizadas (Conversões ÷ Ligações).
+                              ligações/chamadas realizadas (Conversões ÷ Ligações). Clique para ver
+                              clientes convertidos.
                             </p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </div>
-                    <div className="p-1 rounded-md bg-purple-50 text-purple-600 shrink-0">
+                    <div className="p-1 rounded-md bg-purple-50 text-purple-600 shrink-0 group-hover:bg-purple-600 group-hover:text-white transition-colors">
                       <TrendingUp className="h-3.5 w-3.5" />
                     </div>
                   </div>
-                  <div className="text-2xl font-black text-purple-700 font-mono">
+                  <div className="text-2xl font-black text-purple-700 font-mono group-hover:underline">
                     {loadingAtendimentos
                       ? '—'
                       : `${metricasAtendimento?.gerais.taxaConversao || 0}%`}
                   </div>
-                  <span className="text-[10px] text-slate-400 mt-0.5 block truncate">
-                    conversoes / ligações
+                  <span className="text-[10px] text-slate-400 mt-0.5 block truncate group-hover:text-purple-700">
+                    conversoes / ligações &rarr;
                   </span>
                 </CardContent>
               </Card>
 
               {/* Reagendamentos */}
-              <Card className="border-slate-200 shadow-xs hover:border-amber-300 transition-colors">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => abrirDrilldown('reagendados', 'Clientes Reagendados')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown('reagendados', 'Clientes Reagendados')
+                  }
+                }}
+                className="border-slate-200 shadow-xs hover:border-amber-400 hover:shadow-md transition-all cursor-pointer group"
+              >
                 <CardContent className="p-3.5">
                   <div className="flex items-center justify-between text-slate-500 mb-1.5">
                     <div className="flex items-center gap-1 min-w-0">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate group-hover:text-amber-700">
                         Reagendamentos
                       </span>
                       <TooltipProvider delayDuration={150}>
@@ -869,6 +952,7 @@ export default function Dashboard() {
                           <TooltipTrigger asChild>
                             <button
                               type="button"
+                              onClick={(e) => e.stopPropagation()}
                               className="text-slate-400 hover:text-amber-700 shrink-0 p-0.5 focus:outline-hidden"
                               aria-label="Informações sobre Reagendamentos"
                             >
@@ -882,31 +966,43 @@ export default function Dashboard() {
                             <p className="font-bold text-amber-300 mb-1">Retornos Marcados:</p>
                             <p className="text-slate-200 text-[11px] leading-relaxed">
                               Total de contatos em que o cliente solicitou retorno futuro ou
-                              agendamento de proposta registrado pela equipe.
+                              agendamento de proposta registrado pela equipe. Clique para listar
+                              clientes.
                             </p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </div>
-                    <div className="p-1 rounded-md bg-amber-50 text-amber-600 shrink-0">
+                    <div className="p-1 rounded-md bg-amber-50 text-amber-600 shrink-0 group-hover:bg-amber-600 group-hover:text-white transition-colors">
                       <PhoneForwarded className="h-3.5 w-3.5" />
                     </div>
                   </div>
-                  <div className="text-2xl font-black text-amber-600 font-mono">
+                  <div className="text-2xl font-black text-amber-600 font-mono group-hover:underline">
                     {loadingAtendimentos ? '—' : metricasAtendimento?.gerais.reagendamentos || 0}
                   </div>
-                  <span className="text-[10px] text-slate-400 mt-0.5 block truncate">
-                    retornos marcados
+                  <span className="text-[10px] text-slate-400 mt-0.5 block truncate group-hover:text-amber-700">
+                    retornos marcados &rarr;
                   </span>
                 </CardContent>
               </Card>
 
               {/* Follow-ups do Dia */}
-              <Card className="border-slate-200 shadow-xs hover:border-rose-300 transition-colors">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => abrirDrilldown('follow_ups_hoje', 'Follow-ups Agendados para Hoje')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown('follow_ups_hoje', 'Follow-ups Agendados para Hoje')
+                  }
+                }}
+                className="border-slate-200 shadow-xs hover:border-rose-400 hover:shadow-md transition-all cursor-pointer group"
+              >
                 <CardContent className="p-3.5">
                   <div className="flex items-center justify-between text-slate-500 mb-1.5">
                     <div className="flex items-center gap-1 min-w-0">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate group-hover:text-rose-700">
                         Follow-ups Hoje
                       </span>
                       <TooltipProvider delayDuration={150}>
@@ -914,6 +1010,7 @@ export default function Dashboard() {
                           <TooltipTrigger asChild>
                             <button
                               type="button"
+                              onClick={(e) => e.stopPropagation()}
                               className="text-slate-400 hover:text-rose-700 shrink-0 p-0.5 focus:outline-hidden"
                               aria-label="Informações sobre Follow-ups de Hoje"
                             >
@@ -929,31 +1026,44 @@ export default function Dashboard() {
                             </p>
                             <p className="text-slate-200 text-[11px] leading-relaxed">
                               Contatos programados especificamente para a data de hoje (horário de
-                              Brasília) aguardando retorno do operador.
+                              Brasília) aguardando retorno do operador. Clique para listar clientes.
                             </p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </div>
-                    <div className="p-1 rounded-md bg-rose-50 text-rose-600 shrink-0">
+                    <div className="p-1 rounded-md bg-rose-50 text-rose-600 shrink-0 group-hover:bg-rose-600 group-hover:text-white transition-colors">
                       <Calendar className="h-3.5 w-3.5" />
                     </div>
                   </div>
-                  <div className="text-2xl font-black text-rose-600 font-mono">
+                  <div className="text-2xl font-black text-rose-600 font-mono group-hover:underline">
                     {loadingAtendimentos ? '—' : metricasAtendimento?.gerais.followUpsHoje || 0}
                   </div>
                   <span className="text-[10px] text-rose-700 font-medium mt-0.5 block truncate">
-                    agendados p/ hoje
+                    agendados p/ hoje &rarr;
                   </span>
                 </CardContent>
               </Card>
 
               {/* Vendas Perdidas */}
-              <Card className="border-slate-200 shadow-xs hover:border-slate-400 transition-colors">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  abrirDrilldown('vendas_perdidas', 'Clientes com Vendas Perdidas e Recusas')
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown('vendas_perdidas', 'Clientes com Vendas Perdidas e Recusas')
+                  }
+                }}
+                className="border-slate-200 shadow-xs hover:border-slate-500 hover:shadow-md transition-all cursor-pointer group"
+              >
                 <CardContent className="p-3.5">
                   <div className="flex items-center justify-between text-slate-500 mb-1.5">
                     <div className="flex items-center gap-1 min-w-0">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate group-hover:text-slate-900">
                         Vendas Perdidas
                       </span>
                       <TooltipProvider delayDuration={150}>
@@ -961,6 +1071,7 @@ export default function Dashboard() {
                           <TooltipTrigger asChild>
                             <button
                               type="button"
+                              onClick={(e) => e.stopPropagation()}
                               className="text-slate-400 hover:text-slate-700 shrink-0 p-0.5 focus:outline-hidden"
                               aria-label="Informações sobre Vendas Perdidas"
                             >
@@ -976,21 +1087,22 @@ export default function Dashboard() {
                             </p>
                             <p className="text-slate-200 text-[11px] leading-relaxed">
                               Atendimentos encerrados sem venda: compra de terceiros, sem interesse
-                              em negociar, restrição financeira ou sem contato.
+                              em negociar, restrição financeira ou sem contato. Clique para listar
+                              clientes.
                             </p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </div>
-                    <div className="p-1 rounded-md bg-slate-100 text-slate-600 shrink-0">
+                    <div className="p-1 rounded-md bg-slate-100 text-slate-600 shrink-0 group-hover:bg-slate-700 group-hover:text-white transition-colors">
                       <XCircle className="h-3.5 w-3.5" />
                     </div>
                   </div>
-                  <div className="text-2xl font-black text-slate-700 font-mono">
+                  <div className="text-2xl font-black text-slate-700 font-mono group-hover:underline">
                     {loadingAtendimentos ? '—' : metricasAtendimento?.gerais.vendasPerdidas || 0}
                   </div>
-                  <span className="text-[10px] text-slate-400 mt-0.5 block truncate">
-                    recusas / terceiros / s.c.
+                  <span className="text-[10px] text-slate-400 mt-0.5 block truncate group-hover:text-slate-900">
+                    recusas / terceiros / s.c. &rarr;
                   </span>
                 </CardContent>
               </Card>
@@ -1485,12 +1597,23 @@ export default function Dashboard() {
             {/* Grid dos 7 Indicadores em Layout Arejado (4 colunas no desktop xl, 2 colunas sm/md, 1 mobile) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {/* CARD 1: TOTAL INATIVOS BASE (Base) */}
-              <Card className="border-slate-200/90 bg-white shadow-xs hover:shadow-md hover:border-[#253575]/40 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => abrirDrilldown('total_inativos_base', 'Total de Inativos da Base')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown('total_inativos_base', 'Total de Inativos da Base')
+                  }
+                }}
+                className="border-slate-200/90 bg-white shadow-xs hover:shadow-md hover:border-[#253575] transition-all flex flex-col justify-between rounded-xl overflow-hidden group cursor-pointer"
+              >
                 <div className="p-4 pb-3">
                   <div className="flex items-start justify-between gap-2 min-h-[42px]">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                        <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider group-hover:text-[#253575]">
                           Total Inativos Base
                         </span>
                         <TooltipProvider delayDuration={150}>
@@ -1498,6 +1621,7 @@ export default function Dashboard() {
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
+                                onClick={(e) => e.stopPropagation()}
                                 className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
                                 aria-label="Informações sobre Total Inativos Base"
                               >
@@ -1513,13 +1637,14 @@ export default function Dashboard() {
                               </p>
                               <p className="text-slate-200 text-[11px] leading-relaxed">
                                 Total de clientes cadastrados sob acompanhamento (exclui apenas
-                                cadastros já removidos como ativos fora da base).
+                                cadastros já removidos como ativos fora da base). Clique para listar
+                                clientes.
                               </p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </div>
-                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5 group-hover:text-[#253575]">
                         Carteira geral sob acompanhamento
                       </span>
                     </div>
@@ -1530,11 +1655,11 @@ export default function Dashboard() {
 
                   {/* Valor Principal Protagonista */}
                   <div className="mt-4">
-                    <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
+                    <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight group-hover:underline">
                       {totalBase.toLocaleString('pt-BR')}
                     </div>
                     <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
-                      Aguardando contato ou reconciliação
+                      Aguardando contato ou reconciliação &rarr;
                     </p>
                   </div>
                 </div>
@@ -1547,12 +1672,23 @@ export default function Dashboard() {
               </Card>
 
               {/* CARD 2: NA FILA DE TRABALHO (Base) */}
-              <Card className="border-slate-200/90 bg-white shadow-xs hover:shadow-md hover:border-[#253575]/40 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => abrirDrilldown('na_fila', 'Clientes na Fila de Trabalho')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown('na_fila', 'Clientes na Fila de Trabalho')
+                  }
+                }}
+                className="border-slate-200/90 bg-white shadow-xs hover:shadow-md hover:border-[#253575] transition-all flex flex-col justify-between rounded-xl overflow-hidden group cursor-pointer"
+              >
                 <div className="p-4 pb-3">
                   <div className="flex items-start justify-between gap-2 min-h-[42px]">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                        <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider group-hover:text-[#253575]">
                           Na Fila de Trabalho
                         </span>
                         <TooltipProvider delayDuration={150}>
@@ -1560,6 +1696,7 @@ export default function Dashboard() {
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
+                                onClick={(e) => e.stopPropagation()}
                                 className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
                                 aria-label="Informações sobre Na Fila de Trabalho"
                               >
@@ -1574,13 +1711,13 @@ export default function Dashboard() {
                               <p className="text-slate-200 text-[11px] leading-relaxed">
                                 Clientes livres na esteira aguardando contato (estados
                                 &quot;na_base&quot; e &quot;reservado&quot;), respeitando as regras
-                                de carteira e rota de cada operador.
+                                de carteira e rota de cada operador. Clique para listar clientes.
                               </p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </div>
-                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5 group-hover:text-[#253575]">
                         Esteira disponível para contato
                       </span>
                     </div>
@@ -1591,11 +1728,11 @@ export default function Dashboard() {
 
                   {/* Valor Principal Protagonista */}
                   <div className="mt-4">
-                    <div className="text-3xl font-extrabold text-[#253575] tabular-nums tracking-tight">
+                    <div className="text-3xl font-extrabold text-[#253575] tabular-nums tracking-tight group-hover:underline">
                       {naFila.toLocaleString('pt-BR')}
                     </div>
                     <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
-                      Clientes prontos para abordagem
+                      Clientes prontos para abordagem &rarr;
                     </p>
                   </div>
                 </div>
@@ -1610,12 +1747,25 @@ export default function Dashboard() {
               </Card>
 
               {/* CARD 3: CLIENTES REATIVADOS (Resultado Real da Equipe) */}
-              <Card className="border-emerald-200/90 bg-emerald-50/20 shadow-xs hover:shadow-md hover:border-emerald-400 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  abrirDrilldown('reativados_real', 'Clientes Reativados (Real Equipe)')
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown('reativados_real', 'Clientes Reativados (Real Equipe)')
+                  }
+                }}
+                className="border-emerald-200/90 bg-emerald-50/20 shadow-xs hover:shadow-md hover:border-emerald-500 transition-all flex flex-col justify-between rounded-xl overflow-hidden group cursor-pointer"
+              >
                 <div className="p-4 pb-3">
                   <div className="flex items-start justify-between gap-2 min-h-[42px]">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-emerald-950 uppercase tracking-wider">
+                        <span className="text-[11px] font-bold text-emerald-950 uppercase tracking-wider group-hover:text-emerald-700">
                           Clientes Reativados
                         </span>
                         <Badge className="bg-emerald-700 text-white hover:bg-emerald-700 text-[10px] font-semibold px-1.5 py-0 rounded border-0 shrink-0">
@@ -1626,6 +1776,7 @@ export default function Dashboard() {
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
+                                onClick={(e) => e.stopPropagation()}
                                 className="text-emerald-700 hover:text-emerald-950 shrink-0 p-0.5 focus:outline-hidden"
                                 aria-label="Informações sobre Clientes Reativados Real Equipe"
                               >
@@ -1642,7 +1793,8 @@ export default function Dashboard() {
                               <p className="text-slate-200 text-[11px] leading-relaxed">
                                 Conta clientes ÚNICOS com ficha preenchida pela equipe e
                                 pedido/confirmação (desfechos isentos excluídos; dedupe por
-                                cliente). Valores e toneladas vêm das fichas da equipe.
+                                cliente). Valores e toneladas vêm das fichas da equipe. Clique para
+                                listar clientes.
                               </p>
                             </TooltipContent>
                           </Tooltip>
@@ -1659,7 +1811,7 @@ export default function Dashboard() {
 
                   {/* Valor Principal Protagonista */}
                   <div className="mt-4">
-                    <div className="text-3xl font-extrabold text-emerald-800 tabular-nums tracking-tight">
+                    <div className="text-3xl font-extrabold text-emerald-800 tabular-nums tracking-tight group-hover:underline">
                       {reativados.toLocaleString('pt-BR')}
                     </div>
                     <TooltipProvider>
@@ -1695,19 +1847,38 @@ export default function Dashboard() {
                 {/* Rodapé Alinhado */}
                 <div className="px-4 py-2.5 bg-emerald-100/50 border-t border-emerald-200/70 flex items-center justify-between text-[11px] text-emerald-900">
                   <span className="font-medium">Conversões confirmadas</span>
-                  <span className="font-semibold text-emerald-800 text-[11px]">
-                    Sucesso comprovado
+                  <span className="font-semibold text-emerald-800 text-[11px] inline-flex items-center gap-1">
+                    Ver lista &rarr;
                   </span>
                 </div>
               </Card>
 
               {/* CARD 4: TAXA DE RECUPERAÇÃO (Resultado) */}
-              <Card className="border-slate-200/90 bg-white shadow-xs hover:shadow-md hover:border-[#253575]/40 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  abrirDrilldown(
+                    'reativados_real',
+                    'Clientes Reativados (Base da Taxa de Recuperação)',
+                  )
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown(
+                      'reativados_real',
+                      'Clientes Reativados (Base da Taxa de Recuperação)',
+                    )
+                  }
+                }}
+                className="border-slate-200/90 bg-white shadow-xs hover:shadow-md hover:border-[#253575] transition-all flex flex-col justify-between rounded-xl overflow-hidden group cursor-pointer"
+              >
                 <div className="p-4 pb-3">
                   <div className="flex items-start justify-between gap-2 min-h-[42px]">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                        <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider group-hover:text-[#253575]">
                           Taxa de Recuperação
                         </span>
                         <TooltipProvider delayDuration={150}>
@@ -1715,6 +1886,7 @@ export default function Dashboard() {
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
+                                onClick={(e) => e.stopPropagation()}
                                 className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
                                 aria-label="Informações sobre Taxa de Recuperação"
                               >
@@ -1728,13 +1900,14 @@ export default function Dashboard() {
                               <p className="font-bold text-blue-200 mb-1">Eficiência da Base:</p>
                               <p className="text-slate-200 text-[11px] leading-relaxed">
                                 Percentual de clientes reativados pela equipe em relação ao total da
-                                base inativa cadastrada (Reativados Reais ÷ Total Base).
+                                base inativa cadastrada (Reativados Reais ÷ Total Base). Clique para
+                                ver clientes reativados.
                               </p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </div>
-                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5 group-hover:text-[#253575]">
                         Eficiência de reativação real
                       </span>
                     </div>
@@ -1745,7 +1918,7 @@ export default function Dashboard() {
 
                   {/* Valor Principal Protagonista */}
                   <div className="mt-4">
-                    <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
+                    <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight group-hover:underline">
                       {reativados === 0 || totalBase === 0
                         ? '—'
                         : taxaReativacao < 1
@@ -1759,7 +1932,7 @@ export default function Dashboard() {
                             })}%`}
                     </div>
                     <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
-                      Meta operacional da esteira: &ge; 18%
+                      Meta operacional da esteira: &ge; 18% &rarr;
                     </p>
                   </div>
                 </div>
@@ -1778,12 +1951,31 @@ export default function Dashboard() {
               </Card>
 
               {/* CARD 5: PEDIDOS EM ABERTO (Financeiro / Pendente) */}
-              <Card className="border-amber-200/90 bg-white shadow-xs hover:shadow-md hover:border-amber-400 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  abrirDrilldown(
+                    'pedidos_em_aberto',
+                    'Clientes com Pedidos em Aberto (Aguardando NF)',
+                  )
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown(
+                      'pedidos_em_aberto',
+                      'Clientes com Pedidos em Aberto (Aguardando NF)',
+                    )
+                  }
+                }}
+                className="border-amber-200/90 bg-white shadow-xs hover:shadow-md hover:border-amber-400 transition-all flex flex-col justify-between rounded-xl overflow-hidden group cursor-pointer"
+              >
                 <div className="p-4 pb-3">
                   <div className="flex items-start justify-between gap-2 min-h-[42px]">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider">
+                        <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider group-hover:text-amber-800">
                           Pedidos em Aberto
                         </span>
                         <Badge className="bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-100 text-[10px] font-semibold px-1.5 py-0 rounded shrink-0">
@@ -1794,6 +1986,7 @@ export default function Dashboard() {
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
+                                onClick={(e) => e.stopPropagation()}
                                 className="text-amber-700 hover:text-amber-900 shrink-0 p-0.5 focus:outline-hidden"
                                 aria-label="Informações sobre Pedidos em Aberto"
                               >
@@ -1809,13 +2002,13 @@ export default function Dashboard() {
                               </p>
                               <p className="text-slate-200 text-[11px] leading-relaxed">
                                 Clientes com pedido de reativação registrado pela equipe cuja nota
-                                fiscal ainda não foi faturada no ERP.
+                                fiscal ainda não foi faturada no ERP. Clique para listar clientes.
                               </p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </div>
-                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5 group-hover:text-amber-800">
                         Aguardando faturamento / emissão NF
                       </span>
                     </div>
@@ -1826,7 +2019,7 @@ export default function Dashboard() {
 
                   {/* Valor Principal Protagonista */}
                   <div className="mt-4">
-                    <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
+                    <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight group-hover:underline">
                       {pedidosEmAbertoCount}
                     </div>
                     <TooltipProvider>
@@ -1865,22 +2058,38 @@ export default function Dashboard() {
                 {/* Rodapé Alinhado com Link de Ação CTA em Laranja */}
                 <div className="px-4 py-2.5 bg-amber-50/40 border-t border-amber-100 flex items-center justify-between text-[11px]">
                   <span className="text-slate-500 truncate">Reativações c/ pedido</span>
-                  <Link
-                    to="/clientes"
-                    className="font-bold text-[#F18800] hover:text-[#d97706] hover:underline inline-flex items-center gap-0.5 shrink-0 transition-colors"
-                  >
+                  <span className="font-bold text-[#F18800] group-hover:text-[#d97706] inline-flex items-center gap-0.5 shrink-0 transition-colors">
                     Listar &rarr;
-                  </Link>
+                  </span>
                 </div>
               </Card>
 
               {/* CARD 6: FATURAMENTO RECENTE (Financeiro / Cruzamento) */}
-              <Card className="border-amber-200/90 bg-white shadow-xs hover:shadow-md hover:border-amber-400 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  abrirDrilldown(
+                    'faturamento_cruzamento',
+                    'Clientes com Faturamento Recente no Cruzamento ERP',
+                  )
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown(
+                      'faturamento_cruzamento',
+                      'Clientes com Faturamento Recente no Cruzamento ERP',
+                    )
+                  }
+                }}
+                className="border-amber-200/90 bg-white shadow-xs hover:shadow-md hover:border-amber-400 transition-all flex flex-col justify-between rounded-xl overflow-hidden group cursor-pointer"
+              >
                 <div className="p-4 pb-3">
                   <div className="flex items-start justify-between gap-2 min-h-[42px]">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider">
+                        <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider group-hover:text-amber-800">
                           Faturamento Recente
                         </span>
                         <Badge className="bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-100 text-[10px] font-semibold px-1.5 py-0 rounded shrink-0">
@@ -1891,6 +2100,7 @@ export default function Dashboard() {
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
+                                onClick={(e) => e.stopPropagation()}
                                 className="text-amber-700 hover:text-amber-900 shrink-0 p-0.5 focus:outline-hidden"
                                 aria-label="Informações sobre Faturamento Recente do Cruzamento"
                               >
@@ -1907,13 +2117,13 @@ export default function Dashboard() {
                               <p className="text-slate-200 text-[11px] leading-relaxed">
                                 Clientes que faturaram no ERP sem ficha de atendimento vinculada à
                                 equipe de reativação. Serve de insumo para reconciliação e limpeza
-                                da base.
+                                da base. Clique para listar clientes.
                               </p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </div>
-                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5 group-hover:text-amber-800">
                         Identificados na base sem operador
                       </span>
                     </div>
@@ -1924,7 +2134,7 @@ export default function Dashboard() {
 
                   {/* Valor Principal Protagonista */}
                   <div className="mt-4">
-                    <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
+                    <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight group-hover:underline">
                       {faturamentoCruzamentoCount.toLocaleString('pt-BR')}
                     </div>
                     <TooltipProvider>
@@ -1961,22 +2171,30 @@ export default function Dashboard() {
                 {/* Rodapé Alinhado com Link de Ação CTA em Laranja */}
                 <div className="px-4 py-2.5 bg-amber-50/40 border-t border-amber-100 flex items-center justify-between text-[11px]">
                   <span className="text-slate-500 truncate">Insumo para esteira</span>
-                  <Link
-                    to="/relatorios"
-                    className="font-bold text-[#F18800] hover:text-[#d97706] hover:underline inline-flex items-center gap-0.5 shrink-0 transition-colors"
-                  >
-                    Limpar &rarr;
-                  </Link>
+                  <span className="font-bold text-[#F18800] group-hover:text-[#d97706] inline-flex items-center gap-0.5 shrink-0 transition-colors">
+                    Listar clientes &rarr;
+                  </span>
                 </div>
               </Card>
 
               {/* CARD 7: ATIVOS FORA DA BASE (Base / Limpeza) */}
-              <Card className="border-slate-200/90 bg-white shadow-xs hover:shadow-md hover:border-[#253575]/40 transition-all flex flex-col justify-between rounded-xl overflow-hidden group">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => abrirDrilldown('ativos_fora_base', 'Clientes Ativos Fora da Base')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirDrilldown('ativos_fora_base', 'Clientes Ativos Fora da Base')
+                  }
+                }}
+                className="border-slate-200/90 bg-white shadow-xs hover:shadow-md hover:border-[#253575] transition-all flex flex-col justify-between rounded-xl overflow-hidden group cursor-pointer"
+              >
                 <div className="p-4 pb-3">
                   <div className="flex items-start justify-between gap-2 min-h-[42px]">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider">
+                        <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider group-hover:text-[#253575]">
                           Ativos Fora da Base
                         </span>
                         <Badge className="bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-100 text-[10px] font-semibold px-1.5 py-0 rounded shrink-0">
@@ -1987,6 +2205,7 @@ export default function Dashboard() {
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
+                                onClick={(e) => e.stopPropagation()}
                                 className="text-slate-400 hover:text-[#253575] shrink-0 p-0.5 focus:outline-hidden"
                                 aria-label="Informações sobre Ativos Fora da Base"
                               >
@@ -2001,12 +2220,13 @@ export default function Dashboard() {
                               <p className="text-slate-200 text-[11px] leading-relaxed">
                                 Cadastros inativos removidos da esteira porque já compram por outro
                                 CPF/CNPJ ou são acompanhados ativamente pelo vendedor de rota.
+                                Clique para listar clientes.
                               </p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </div>
-                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5 group-hover:text-[#253575]">
                         Clientes ativos removidos da esteira
                       </span>
                     </div>
@@ -2017,7 +2237,7 @@ export default function Dashboard() {
 
                   {/* Valor Principal Protagonista */}
                   <div className="mt-4">
-                    <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
+                    <div className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight group-hover:underline">
                       {loadingAtendimentos
                         ? '—'
                         : ativosRemovidosData.total.toLocaleString('pt-BR')}
@@ -2030,7 +2250,8 @@ export default function Dashboard() {
                           : selectedPeriodo === '30dias'
                             ? 'Últimos 30 dias'
                             : 'Acumulado total'}
-                      {selectedRegion !== 'todas' ? ` • ${selectedRegion}` : ' • Todas rotas'}
+                      {selectedRegion !== 'todas' ? ` • ${selectedRegion}` : ' • Todas rotas'}{' '}
+                      &rarr;
                     </p>
                   </div>
                 </div>
@@ -2038,12 +2259,9 @@ export default function Dashboard() {
                 {/* Rodapé Alinhado com Link de Ação CTA em Laranja */}
                 <div className="px-4 py-2.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-[11px]">
                   <span className="text-slate-500 truncate">Auditoria de esteira</span>
-                  <Link
-                    to="/relatorios"
-                    className="font-bold text-[#F18800] hover:text-[#d97706] hover:underline inline-flex items-center gap-0.5 shrink-0 transition-colors"
-                  >
-                    Ver no Relatório &rarr;
-                  </Link>
+                  <span className="font-bold text-[#F18800] group-hover:text-[#d97706] inline-flex items-center gap-0.5 shrink-0 transition-colors">
+                    Listar clientes &rarr;
+                  </span>
                 </div>
               </Card>
             </div>

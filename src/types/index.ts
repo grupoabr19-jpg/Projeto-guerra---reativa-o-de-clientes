@@ -661,6 +661,29 @@ export interface ReportsAnalyticsResponse {
   }
 }
 
+// Item retornado pelo endpoint de drill-down de clientes (/backend/v1/metrics/drilldown)
+export interface MetricsDrilldownItem {
+  id: string
+  codigo: string
+  nome: string
+  regiao: string
+  operador: string
+  valor: number
+  toneladas: number // kg canônico
+  estado: string
+  data_evento?: string
+  desfecho?: string
+  canal?: string
+  numero_pedido?: string
+}
+
+export interface MetricsDrilldownResponse {
+  tipo: string
+  total: number
+  items: MetricsDrilldownItem[]
+  error?: string
+}
+
 // Chat Interno
 export type ChatConversaTipo = 'geral' | 'canal_rota' | 'dm' | 'kommo_whatsapp'
 export type ChatMensagemTipo = 'normal' | 'aviso' | 'notificacao'
