@@ -331,6 +331,10 @@ routerAdd(
                       .replace(',', '.'),
                   ) || 0
 
+            const temTonCol =
+              row.toneladas_historico !== undefined &&
+              row.toneladas_historico !== null &&
+              String(row.toneladas_historico).trim() !== ''
             const pesoVal =
               typeof row.toneladas_historico === 'number'
                 ? row.toneladas_historico
@@ -339,6 +343,15 @@ routerAdd(
                       .replace(/[^\d.,]/g, '')
                       .replace(',', '.'),
                   ) || 0
+            // peso_nf_tonelagem vem da sincronização ERP em TONELADAS
+            const pesoNfVal =
+              row.peso_nf_tonelagem !== undefined && row.peso_nf_tonelagem !== null
+                ? parseFloat(
+                    String(row.peso_nf_tonelagem)
+                      .replace(/[^\d.,]/g, '')
+                      .replace(',', '.'),
+                  ) || 0
+                : 0
 
             const numPedido = String(
               row.pedido || row.numero_pedido || row.ultimo_pedido_numero || '',
@@ -403,15 +416,31 @@ routerAdd(
               }
             }
 
-            if (pesoVal > 0) {
+            // Unidade canônica: toneladas_historico em KG; peso_nf_tonelagem em TONELADAS.
+            // Coluna de toneladas própria (kg) atualiza o histórico; sem coluna,
+            // fallback peso_nf (t) * 1000 somente quando o histórico está vazio/zero.
+            if (temTonCol && pesoVal > 0) {
               if (numbersDifferent(targetRec.getFloat('toneladas_historico'), pesoVal)) {
                 targetRec.set('toneladas_historico', pesoVal)
                 mudou = true
               }
-              if (numbersDifferent(targetRec.getFloat('peso_nf_tonelagem'), pesoVal)) {
-                targetRec.set('peso_nf_tonelagem', pesoVal)
-                mudou = true
+            } else if (!temTonCol) {
+              const tonAtualRec = targetRec.getFloat('toneladas_historico') || 0
+              const pesoNfEfetivo = pesoNfVal > 0 ? pesoNfVal : pesoVal
+              if (tonAtualRec <= 0 && pesoNfEfetivo > 0) {
+                const fallbackKg = Number((pesoNfEfetivo * 1000).toFixed(4))
+                if (numbersDifferent(targetRec.getFloat('toneladas_historico'), fallbackKg)) {
+                  targetRec.set('toneladas_historico', fallbackKg)
+                  mudou = true
+                }
               }
+            }
+            if (
+              pesoNfVal > 0 &&
+              numbersDifferent(targetRec.getFloat('peso_nf_tonelagem'), pesoNfVal)
+            ) {
+              targetRec.set('peso_nf_tonelagem', pesoNfVal)
+              mudou = true
             }
 
             if (
@@ -1384,9 +1413,24 @@ routerAdd(
               rec.set('valor_ultima_compra', valorUltimaCompra)
               mudou = true
             }
-            if (numbersDifferent(rec.getFloat('toneladas_historico'), toneladasHistorico)) {
+            // toneladas_historico em kg (canônico): NUNCA sobrescrever valor > 0 com 0;
+            // sem coluna/valor na planilha, fallback peso_nf (t) * 1000 quando histórico vazio.
+            const tonHistoricoAtual = rec.getFloat('toneladas_historico') || 0
+            if (toneladasHistorico > 0 && numbersDifferent(tonHistoricoAtual, toneladasHistorico)) {
               rec.set('toneladas_historico', toneladasHistorico)
               mudou = true
+            } else if (toneladasHistorico <= 0 && tonHistoricoAtual <= 0) {
+              const pesoNfLinha =
+                row.peso_nf_tonelagem !== undefined && row.peso_nf_tonelagem !== null
+                  ? Number(row.peso_nf_tonelagem) || 0
+                  : 0
+              if (pesoNfLinha > 0) {
+                const fallbackKgM3 = Number((pesoNfLinha * 1000).toFixed(4))
+                if (numbersDifferent(tonHistoricoAtual, fallbackKgM3)) {
+                  rec.set('toneladas_historico', fallbackKgM3)
+                  mudou = true
+                }
+              }
             }
             if (numbersDifferent(rec.getFloat('valor_historico'), valorHistorico)) {
               rec.set('valor_historico', valorHistorico)

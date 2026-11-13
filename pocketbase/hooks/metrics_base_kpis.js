@@ -471,19 +471,19 @@ routerAdd(
           SUM(CASE WHEN estado = 'reativado' THEN 1 ELSE 0 END) as reativado,
           SUM(CASE WHEN ${isReativacaoRealCond} THEN 1 ELSE 0 END) as reativados_reais,
           SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado_real,
-          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas_real,
+          SUM(CASE WHEN ${isReativacaoRealCond} THEN COALESCE(NULLIF(toneladas_historico, 0), CASE WHEN COALESCE(peso_nf_tonelagem, 0) > 0 THEN peso_nf_tonelagem * 1000 ELSE 0 END, 0) ELSE 0 END) as toneladas_recuperadas_real,
           SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN 1 ELSE 0 END) as faturamento_recente_cruzamento,
           SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_faturamento_recente_cruzamento,
-          SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_faturamento_recente_cruzamento,
+          SUM(CASE WHEN ${isFaturamentoCruzamentoCond} THEN COALESCE(NULLIF(toneladas_historico, 0), CASE WHEN COALESCE(peso_nf_tonelagem, 0) > 0 THEN peso_nf_tonelagem * 1000 ELSE 0 END, 0) ELSE 0 END) as toneladas_faturamento_recente_cruzamento,
           SUM(CASE WHEN pedido_em_aberto = 1 THEN 1 ELSE 0 END) as pedidos_em_aberto,
           SUM(CASE WHEN pedido_em_aberto = 1 THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_pedidos_em_aberto,
-          SUM(CASE WHEN pedido_em_aberto = 1 THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_pedidos_em_aberto,
+          SUM(CASE WHEN pedido_em_aberto = 1 THEN COALESCE(NULLIF(toneladas_historico, 0), CASE WHEN COALESCE(peso_nf_tonelagem, 0) > 0 THEN peso_nf_tonelagem * 1000 ELSE 0 END, 0) ELSE 0 END) as toneladas_pedidos_em_aberto,
           SUM(CASE WHEN estado = 'compra_terceiros' THEN 1 ELSE 0 END) as compra_terceiros,
           SUM(CASE WHEN estado = 'nao_quer_negociar' THEN 1 ELSE 0 END) as nao_quer_negociar,
           SUM(CASE WHEN estado = 'restricao_financeira' THEN 1 ELSE 0 END) as restricao_financeira,
           SUM(CASE WHEN estado = 'sem_contato' THEN 1 ELSE 0 END) as sem_contato,
           SUM(CASE WHEN estado = 'reativado' THEN COALESCE(valor_ultima_compra, 0) ELSE 0 END) as valor_recuperado_total,
-          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(toneladas_historico, 0) ELSE 0 END) as toneladas_recuperadas_total
+          SUM(CASE WHEN estado = 'reativado' THEN COALESCE(NULLIF(toneladas_historico, 0), CASE WHEN COALESCE(peso_nf_tonelagem, 0) > 0 THEN peso_nf_tonelagem * 1000 ELSE 0 END, 0) ELSE 0 END) as toneladas_recuperadas_total
         FROM clientes
         WHERE ${baseFilterSql} ${regiaoCondition}
       `
