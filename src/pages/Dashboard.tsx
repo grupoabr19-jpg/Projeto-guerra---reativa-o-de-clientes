@@ -1823,7 +1823,7 @@ export default function Dashboard() {
                               {formatCompactCurrency(valorRecuperado)}
                             </span>
                             <span className="text-emerald-700 font-normal shrink-0">
-                              ({toneladasRecuperadas.toLocaleString('pt-BR')} ton)
+                              ({formatarToneladas(toneladasRecuperadas)})
                             </span>
                           </div>
                         </TooltipTrigger>
@@ -1833,7 +1833,7 @@ export default function Dashboard() {
                             {formatFullCurrency(valorRecuperado)}
                           </p>
                           <p className="text-slate-200 text-[11px] mt-0.5">
-                            Volume: {toneladasRecuperadas.toLocaleString('pt-BR')} toneladas
+                            Volume: {formatarToneladas(toneladasRecuperadas)}
                           </p>
                           <p className="text-blue-200 text-[10px] mt-1 pt-1 border-t border-blue-900/60">
                             Soma das fichas da equipe (dedupe por cliente)

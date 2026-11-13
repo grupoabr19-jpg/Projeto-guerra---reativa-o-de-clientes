@@ -88,6 +88,15 @@ function formatNumberPtBr(value: number, decimals: number = 2): string {
   }).format(value)
 }
 
+/**
+ * Recebe kg canônico (migração 0141) e exibe em toneladas (kg ÷ 1.000),
+ * formatado pt-BR com sufixo " t".
+ */
+function formatarPesoToneladas(pesoEmKg: number, decimals: number = 1): string {
+  const t = (pesoEmKg || 0) / 1000
+  return `${formatNumberPtBr(t, decimals)} t`
+}
+
 export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoSectionProps> = ({
   selectedPeriodo,
   selectedRegion,
@@ -453,11 +462,11 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
             <div className="mt-4">
               <div className="flex items-baseline gap-1.5 flex-wrap">
                 <span className="text-3xl font-extrabold text-[#142758] tabular-nums tracking-tight">
-                  {loading ? '—' : `${formatNumberPtBr(kpis.somaToneladas, 1)} ton`}
+                  {loading ? '—' : `${formatarPesoToneladas(kpis.somaToneladas, 1)}`}
                 </span>
                 {!loading && kpis.somaToneladas > 0 && (
                   <span className="text-xs text-slate-500 font-mono font-medium">
-                    ({formatNumberPtBr(Math.round(kpis.somaToneladas * 1000), 0)} kg)
+                    ({formatNumberPtBr(kpis.somaToneladas, 0)} kg)
                   </span>
                 )}
               </div>
@@ -470,10 +479,10 @@ export const MetricasFichaAtendimentoSection: React.FC<MetricasFichaAtendimentoS
           <div className="px-4 py-2.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
             <span>Média por ficha com peso</span>
             <span className="font-mono text-slate-700 font-semibold text-[11px]">
-              {formatNumberPtBr(kpis.mediaToneladas, 2)} ton
+              {formatarPesoToneladas(kpis.mediaToneladas, 1)}
               {kpis.mediaToneladas > 0 && (
                 <span className="text-slate-400 font-normal ml-1">
-                  ({formatNumberPtBr(Math.round(kpis.mediaToneladas * 1000), 0)} kg)
+                  ({formatNumberPtBr(kpis.mediaToneladas, 0)} kg)
                 </span>
               )}
             </span>
