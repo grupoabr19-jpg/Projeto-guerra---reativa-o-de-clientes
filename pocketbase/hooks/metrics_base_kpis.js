@@ -652,9 +652,12 @@ routerAdd(
           toneladasRecuperadasReal = somaTonFichas
         }
       } catch (fichasErr) {
+        // Diagnóstico: inclui a SQL montada para expor qualquer token solto de concatenação
         console.error(
           '[metrics_base_kpis] Erro ao calcular valor/ton das fichas: ' +
-            (fichasErr && fichasErr.message ? fichasErr.message : String(fichasErr)),
+            (fichasErr && fichasErr.message ? fichasErr.message : String(fichasErr)) +
+            ' | fichasQuery: ' +
+            fichasQuery,
         )
       }
 
