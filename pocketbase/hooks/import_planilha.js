@@ -435,6 +435,18 @@ routerAdd(
                 }
               }
             }
+            // Fallback de replicação do ERP: coluna de toneladas presente mas vazia/zero
+            // na linha reconciliada (ex.: GRISANTE). peso_nf_tonelagem (t) > 0 e
+            // toneladas_historico = 0 => replica kg; nunca sobrescreve kg > 0 com 0
+            // e nunca inventa peso ausente (caso FERMUNK permanece 0).
+            const tonFallbackRec = targetRec.getFloat('toneladas_historico') || 0
+            if (temTonCol && tonFallbackRec <= 0 && pesoNfVal > 0) {
+              const fallbackKgNf = Number((pesoNfVal * 1000).toFixed(4))
+              if (numbersDifferent(targetRec.getFloat('toneladas_historico'), fallbackKgNf)) {
+                targetRec.set('toneladas_historico', fallbackKgNf)
+                mudou = true
+              }
+            }
             if (
               pesoNfVal > 0 &&
               numbersDifferent(targetRec.getFloat('peso_nf_tonelagem'), pesoNfVal)

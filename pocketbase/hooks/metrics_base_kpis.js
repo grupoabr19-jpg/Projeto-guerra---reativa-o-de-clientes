@@ -658,6 +658,21 @@ routerAdd(
             toneladasRecuperadasReal = somaTonFichas
           }
         }
+        // Diagnóstico do card Real Equipe: soma vinda da query de clientes vs fichas.
+        console.log(
+          '[metrics_base_kpis] Real Equipe — query_clientes: valor=' +
+            Number(kpiModel.valor_recuperado_real || 0) +
+            ', ton=' +
+            Number(kpiModel.toneladas_recuperadas_real || 0) +
+            ' | fichas: valor=' +
+            somaValorFichas +
+            ', ton=' +
+            somaTonFichas +
+            ' | final: valor=' +
+            valorRecuperadoReal +
+            ', ton=' +
+            toneladasRecuperadasReal,
+        )
       } catch (fichasErr) {
         // Diagnóstico: inclui a SQL montada para expor qualquer token solto de concatenação
         console.error(
