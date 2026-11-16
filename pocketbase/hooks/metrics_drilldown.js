@@ -235,7 +235,12 @@ routerAdd(
       const items = []
 
       // Roteamento de acordo com o tipo de métrica
-      if (tipo === 'reativados' || tipo === 'reativados_real_equipe') {
+      // 'reativados_real' é o tipo enviado pelo card "Clientes Reativados (Real Equipe)" do Dashboard.
+      if (
+        tipo === 'reativados' ||
+        tipo === 'reativados_real' ||
+        tipo === 'reativados_real_equipe'
+      ) {
         const reatCond = sqlReativacaoReal('c.')
         let janelaCond = '1=1'
         if (janela.ativa) {
@@ -507,6 +512,7 @@ routerAdd(
       // Se for reativados ou conversoes, buscar potenciais da ficha mais recente para cada cliente
       if (
         (tipo === 'reativados' ||
+          tipo === 'reativados_real' ||
           tipo === 'reativados_real_equipe' ||
           tipo === 'pedidos_em_aberto') &&
         items.length > 0
@@ -546,7 +552,12 @@ routerAdd(
                   const valPot = Number(fr.valor_potencial || 0)
                   const tonPot = Number(fr.toneladas_potencial || 0)
                   if (valPot > 0) items[idx].valor = valPot
-                  if (tonPot > 0) items[idx].toneladas = tonPot
+                  // Tonelagem: ficha só complementa quando o cliente está sem peso
+                  // (toneladas_historico e peso_nf*1000 zerados). ERP/peso real da NF
+                  // vence a estimativa da ficha (ex.: ATROS 324 t no ERP vs 1,3 t na ficha).
+                  if (tonPot > 0 && Number(items[idx].toneladas || 0) <= 0) {
+                    items[idx].toneladas = tonPot
+                  }
                   if (fr.numero_pedido) items[idx].numero_pedido = String(fr.numero_pedido)
                 }
               }

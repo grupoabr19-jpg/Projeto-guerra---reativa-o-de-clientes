@@ -646,10 +646,17 @@ routerAdd(
           somaTonFichas = Number(somaTonJanela.toFixed(4))
         }
 
-        // Se houver fichas apuradas na esteira, essa é a fonte da verdade de Real Equipe
+        // Se houver fichas apuradas na esteira, essa é a fonte da verdade de Real Equipe.
+        // Valor e tonelada sobrescrevem SOMENTE quando a ficha traz o dado — ficha com
+        // valor mas tonelada 0 NÃO zera a tonelada vinda dos clientes (backfill
+        // toneladas_historico / peso_nf*1000); cliente sem peso em lugar nenhum segue 0.
         if (somaValorFichas > 0 || somaTonFichas > 0) {
-          valorRecuperadoReal = somaValorFichas
-          toneladasRecuperadasReal = somaTonFichas
+          if (somaValorFichas > 0) {
+            valorRecuperadoReal = somaValorFichas
+          }
+          if (somaTonFichas > 0) {
+            toneladasRecuperadasReal = somaTonFichas
+          }
         }
       } catch (fichasErr) {
         // Diagnóstico: inclui a SQL montada para expor qualquer token solto de concatenação
