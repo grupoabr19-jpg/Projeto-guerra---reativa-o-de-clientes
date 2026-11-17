@@ -340,7 +340,7 @@ routerAdd(
           return c
         }
 
-        // Cinto de segurança + dedupe das fichas (FONTE OFICIAL de valor/ton da Real Equipe).
+        // Cinto de segurança + dedupe das fichas (COMPLEMENTO de valor/ton da Real Equipe — ERP vence).
         function agregarFichas(fRows, tag) {
           const t = tag || '[regua]'
           let somaValor = 0
@@ -646,17 +646,18 @@ routerAdd(
           somaTonFichas = Number(somaTonJanela.toFixed(4))
         }
 
-        // Se houver fichas apuradas na esteira, essa é a fonte da verdade de Real Equipe.
-        // Valor e tonelada sobrescrevem SOMENTE quando a ficha traz o dado — ficha com
-        // valor mas tonelada 0 NÃO zera a tonelada vinda dos clientes (backfill
-        // toneladas_historico / peso_nf*1000); cliente sem peso em lugar nenhum segue 0.
-        if (somaValorFichas > 0 || somaTonFichas > 0) {
-          if (somaValorFichas > 0) {
-            valorRecuperadoReal = somaValorFichas
-          }
-          if (somaTonFichas > 0) {
-            toneladasRecuperadasReal = somaTonFichas
-          }
+        // ERP (query dos clientes) é a fonte da verdade de Real Equipe e VENCE;
+        // as fichas só COMPLEMENTAM campo a campo quando o campo correspondente
+        // da base estiver 0/vazio — ficha nunca sobrescreve dado do ERP
+        // (mesmo padrão do drilldown: "a ficha só complementa quando o cliente
+        // está sem peso"; fichas com kg cru pequeno não derrubam a ton do ERP).
+        const valorRecuperadoQuery = Number(kpiModel.valor_recuperado_real || 0)
+        const toneladasRecuperadasQuery = Number(kpiModel.toneladas_recuperadas_real || 0)
+        if (valorRecuperadoQuery <= 0 && somaValorFichas > 0) {
+          valorRecuperadoReal = somaValorFichas
+        }
+        if (toneladasRecuperadasQuery <= 0 && somaTonFichas > 0) {
+          toneladasRecuperadasReal = somaTonFichas
         }
         // Diagnóstico do card Real Equipe: soma vinda da query de clientes vs fichas.
         console.log(
