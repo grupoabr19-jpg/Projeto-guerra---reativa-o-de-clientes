@@ -2280,6 +2280,7 @@ export async function fetchListasColaborador(options?: {
     operadorResponsavel: string
     pedido: string
     valor: number
+    volumeKg: number
     data: string
     dataFormatada: string
   }>

@@ -230,10 +230,254 @@ routerAdd(
         bindParams.janelaFuFim = `${dataFinalParam} 23:59:59.999Z`
       }
 
-      // 1. LISTA 1: CLIENTES REATIVADOS
-      // Apenas reativações reais com operador preenchido e interação confirmada
+      // REGUA REAL EQUIPE (cópia inline de metrics_base_kpis.js — manter idêntica).
+      // Mesma base, mesma prova de reativação, mesma janela e mesmo complemento de fichas
+      // que o card "Real Equipe": ERP vence; ficha só complementa valor/kg quando vazio no ERP.
+      const REGUA = (function () {
+        const DESFECHOS_REATIVACAO = "('reativado', 'reativado_com_pedido', 'fechou_pedido')"
+
+        const REGIAO_GRUPOS = [
+          ['BRAGANÇA', ['BRAGANÇA', 'BRAGANCA', 'BRAGANÇA PAULISTA', 'BRAGANCA PAULISTA']],
+          ['CAMBUÍ', ['CAMBUÍ', 'CAMBUI', 'MICRO-REGIÃO', 'MICRO REGIAO', 'MICROREGIAO']],
+          [
+            'POÇOS DE CALDAS',
+            [
+              'POÇOS DE CALDAS',
+              'POCOS DE CALDAS',
+              'POÇOS CALDAS',
+              'POCOS CALDAS',
+              'POÇOS',
+              'POCOS',
+            ],
+          ],
+          ['JUNDIAÍ', ['JUNDIAÍ', 'JUNDIAI']],
+          ['ITAJUBÁ', ['ITAJUBÁ', 'ITAJUBA']],
+          ['VARGINHA', ['VARGINHA']],
+          ['POUSO ALEGRE', ['POUSO ALEGRE']],
+          ['EXTREMA', ['EXTREMA']],
+          ['ATACADO', ['ATACADO']],
+          ['REPESCAGEM', ['REPESCAGEM']],
+        ]
+
+        function grupoDeRegiao(upper) {
+          for (let g = 0; g < REGIAO_GRUPOS.length; g++) {
+            if (REGIAO_GRUPOS[g][1].indexOf(upper) !== -1) return REGIAO_GRUPOS[g]
+          }
+          return null
+        }
+
+        function sqlExisteInteracaoReativacao(refCliente, iAlias) {
+          const I = iAlias || 'i_chk'
+          return (
+            'EXISTS (SELECT 1 FROM interacoes ' +
+            I +
+            ' WHERE ' +
+            I +
+            '.cliente = ' +
+            refCliente +
+            ' AND (' +
+            I +
+            '.desfecho IN ' +
+            DESFECHOS_REATIVACAO +
+            ' OR (' +
+            I +
+            '.numero_pedido IS NOT NULL AND TRIM(' +
+            I +
+            ".numero_pedido) != '' AND TRIM(" +
+            I +
+            ".numero_pedido) != '-')))"
+          )
+        }
+
+        function sqlExisteInteracaoReativacaoComOperador(refCliente, iAlias) {
+          const I = iAlias || 'i_chk2'
+          return (
+            'EXISTS (SELECT 1 FROM interacoes ' +
+            I +
+            ' WHERE ' +
+            I +
+            '.cliente = ' +
+            refCliente +
+            ' AND ' +
+            I +
+            '.desfecho IN ' +
+            DESFECHOS_REATIVACAO +
+            ' AND ' +
+            I +
+            '.operador IS NOT NULL AND TRIM(' +
+            I +
+            ".operador) != '')"
+          )
+        }
+
+        // RÉGUA OFICIAL DE REATIVAÇÃO: operador_reativacao OU interação com operador real + prova de reativação.
+        function sqlReativacaoReal(a) {
+          const p = a ? a + '.' : ''
+          const ref = a ? a + '.id' : 'clientes.id'
+          return (
+            '(' +
+            p +
+            "estado = 'reativado' AND ((" +
+            p +
+            'operador_reativacao IS NOT NULL AND TRIM(' +
+            p +
+            "operador_reativacao) != '') OR " +
+            sqlExisteInteracaoReativacaoComOperador(ref) +
+            ') AND ' +
+            sqlExisteInteracaoReativacao(ref) +
+            ')'
+          )
+        }
+
+        function sqlJanelaInteracoes(refCliente, janela, iAlias) {
+          if (!janela || !janela.ativa) return '1=1'
+          const I = iAlias || 'i_win'
+          return (
+            'EXISTS (SELECT 1 FROM interacoes ' +
+            I +
+            ' WHERE ' +
+            I +
+            '.cliente = ' +
+            refCliente +
+            ' AND ' +
+            I +
+            '.created >= {:janelaInicio} AND ' +
+            I +
+            '.created <= {:janelaFim} AND (' +
+            I +
+            '.desfecho IN ' +
+            DESFECHOS_REATIVACAO +
+            ' OR (' +
+            I +
+            '.numero_pedido IS NOT NULL AND TRIM(' +
+            I +
+            ".numero_pedido) != '' AND TRIM(" +
+            I +
+            ".numero_pedido) != '-')))"
+          )
+        }
+
+        function parseJanela(dataInicial, dataFinal) {
+          const di = String(dataInicial || '').trim()
+          const df = String(dataFinal || '').trim()
+          const res = { ativa: false, inicioIso: '', fimIso: '', dataInicial: di, dataFinal: df }
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(di) || !/^\d{4}-\d{2}-\d{2}$/.test(df)) return res
+          const pF = df.split('-')
+          res.ativa = true
+          res.inicioIso = di + ' 03:00:00.000Z'
+          res.fimIso = new Date(
+            Date.UTC(
+              parseInt(pF[0], 10),
+              parseInt(pF[1], 10) - 1,
+              parseInt(pF[2], 10) + 1,
+              2,
+              59,
+              59,
+              999,
+            ),
+          ).toISOString()
+          return res
+        }
+
+        function sqlRegiao(regiaoParam, pfx, bindParams) {
+          const p = pfx || ''
+          const reg = String(regiaoParam || '').trim()
+          if (!reg || reg.toLowerCase() === 'todas') return ''
+          const col = p + 'regiao'
+          const upper = reg.toUpperCase().trim()
+          if (upper === 'SEM REGIÃO' || upper === 'SEM REGIAO') {
+            return (
+              ' AND (' +
+              col +
+              " = '' OR " +
+              col +
+              ' IS NULL OR UPPER(TRIM(' +
+              col +
+              ")) = 'SEM REGIÃO' OR UPPER(TRIM(" +
+              col +
+              ")) = 'SEM REGIAO')"
+            )
+          }
+          const grupo = grupoDeRegiao(upper)
+          if (grupo) {
+            const u = 'UPPER(TRIM(' + col + '))'
+            return (
+              ' AND (' +
+              grupo[1]
+                .map(function (v) {
+                  return u + " = '" + v + "'"
+                })
+                .join(' OR ') +
+              ')'
+            )
+          }
+          if (bindParams) {
+            bindParams.regiaoParam = upper
+            bindParams.regiaoLike = '%' + upper + '%'
+          }
+          return (
+            ' AND (UPPER(TRIM(' +
+            col +
+            ')) = {:regiaoParam} OR UPPER(TRIM(' +
+            col +
+            ')) LIKE {:regiaoLike})'
+          )
+        }
+
+        return {
+          parseJanela: parseJanela,
+          sqlRegiao: sqlRegiao,
+          sqlReativacaoReal: sqlReativacaoReal,
+          sqlJanelaInteracoes: sqlJanelaInteracoes,
+        }
+      })()
+
+      // 1. LISTA 1: CLIENTES REATIVADOS — mesma régua do card Real Equipe (contagem, valor e kg batem)
       let reativadosList = []
       if (tipoLista === 'todas' || tipoLista === 'reativados') {
+        const bReat = {}
+        let escopoReat = ''
+        if (userRole === 'admin' || userRole === 'supervisor') {
+          escopoReat += REGUA.sqlRegiao(filtroRegiao, 'c.', bReat)
+        } else if (userRole === 'lider') {
+          if (userRegioes.length > 0) {
+            const regPartsR = []
+            for (let rj = 0; rj < userRegioes.length; rj++) {
+              const kR = 'liderRegR_' + rj
+              regPartsR.push('c.regiao = {:' + kR + '}')
+              bReat[kR] = userRegioes[rj]
+            }
+            escopoReat += ' AND (' + regPartsR.join(' OR ') + ')'
+          }
+        } else {
+          escopoReat +=
+            ' AND (c.operador = {:myUserId} OR c.operador_reativacao = {:myUserId} OR c.vendedor LIKE {:myNomeLike} OR EXISTS (SELECT 1 FROM interacoes ipo WHERE ipo.cliente = c.id AND ipo.operador = {:myUserId}))'
+          bReat.myUserId = userId
+          bReat.myNomeLike = '%' + primeNome + '%'
+        }
+        if (
+          (userRole === 'admin' || userRole === 'supervisor' || userRole === 'lider') &&
+          filtroOperador &&
+          filtroOperador.toLowerCase() !== 'todos'
+        ) {
+          escopoReat +=
+            ' AND (c.operador_reativacao = {:filtroOp} OR c.operador = {:filtroOp} OR EXISTS (SELECT 1 FROM interacoes ipf LEFT JOIN users upf ON upf.id = ipf.operador WHERE ipf.cliente = c.id AND (ipf.operador = {:filtroOp} OR upf.name = {:filtroOp})))'
+          bReat.filtroOp = filtroOperador
+        }
+
+        const janelaReat = REGUA.parseJanela(dataInicialParam, dataFinalParam)
+        if (janelaReat.ativa) {
+          bReat.janelaInicio = janelaReat.inicioIso
+          bReat.janelaFim = janelaReat.fimIso
+        }
+        const janelaCondReat = REGUA.sqlJanelaInteracoes('c.id', janelaReat, 'i_win')
+        const condReativados = `
+            ${baseCliFilter}
+            AND ${REGUA.sqlReativacaoReal('c')}
+            AND ${janelaCondReat}
+            ${escopoReat}
+        `
+
         const reatSql = `
           SELECT
             c.id as cliente_id,
@@ -242,25 +486,23 @@ routerAdd(
             c.endereco as endereco,
             c.regiao as regiao,
             c.vendedor as vendedor_origem,
-            COALESCE(u.name, c.operador, c.operador_reativacao, '') as operador_nome,
-            COALESCE(i.numero_pedido, c.pedido_reativacao, '') as pedido,
+            COALESCE((SELECT up.name FROM interacoes ip LEFT JOIN users up ON up.id = ip.operador
+                      WHERE ip.cliente = c.id
+                        AND ip.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido')
+                        AND ip.operador IS NOT NULL AND TRIM(ip.operador) != ''
+                      ORDER BY ip.created DESC LIMIT 1), c.operador, c.operador_reativacao, '') as operador_nome,
+            COALESCE((SELECT ip2.numero_pedido FROM interacoes ip2
+                      WHERE ip2.cliente = c.id AND ip2.numero_pedido IS NOT NULL
+                        AND TRIM(ip2.numero_pedido) != '' AND TRIM(ip2.numero_pedido) != '-'
+                      ORDER BY ip2.created DESC LIMIT 1), c.pedido_reativacao, '') as pedido,
             COALESCE(c.valor_ultima_compra, 0) as valor,
-            COALESCE(NULLIF(c.toneladas_historico, 0), c.peso_nf_tonelagem * 1000, 0) as volume_kg,
-            COALESCE(i.created, c.reativado_em, c.updated) as data_reativacao
+            COALESCE(NULLIF(c.toneladas_historico, 0), CASE WHEN COALESCE(c.peso_nf_tonelagem, 0) > 0 THEN c.peso_nf_tonelagem * 1000 ELSE 0 END, 0) as kg,
+            COALESCE((SELECT MAX(ip3.created) FROM interacoes ip3 WHERE ip3.cliente = c.id
+                      AND (ip3.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido')
+                           OR (ip3.numero_pedido IS NOT NULL AND TRIM(ip3.numero_pedido) != '' AND TRIM(ip3.numero_pedido) != '-'))),
+                     c.reativado_em, c.updated) as data_reativacao
           FROM clientes c
-          INNER JOIN interacoes i ON i.cliente = c.id
-          LEFT JOIN users u ON u.id = i.operador
-          WHERE c.estado = 'reativado'
-            AND (c.operador_reativacao IS NOT NULL AND TRIM(c.operador_reativacao) != ''
-                 OR EXISTS (SELECT 1 FROM interacoes ip WHERE ip.cliente = c.id
-                   AND ip.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido')
-                   AND ip.operador IS NOT NULL AND TRIM(ip.operador) != ''))
-            AND ${baseCliFilter}
-            AND (i.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido')
-                 OR (i.numero_pedido IS NOT NULL AND TRIM(i.numero_pedido) != '' AND TRIM(i.numero_pedido) != '-'))
-            AND ${scopeClienteCond}
-            AND ${scopeInteracaoCond}
-            ${janelaInteracaoCond}
+          WHERE ${condReativados}
           ORDER BY data_reativacao DESC
         `
 
@@ -275,20 +517,57 @@ routerAdd(
             operador_nome: '',
             pedido: '',
             valor: -0,
-            volume_kg: -0,
+            kg: -0,
             data_reativacao: '',
           }),
         )
-
         const qbReat = $app.db().newQuery(reatSql)
-        if (Object.keys(bindParams).length > 0) qbReat.bind(bindParams)
+        if (Object.keys(bReat).length > 0) qbReat.bind(bReat)
         qbReat.all(reatRows)
 
-        const vistosReat = {}
+        // Fichas de atendimento dos mesmos clientes: 1ª (mais recente) por cliente, só desfecho reativado
+        const fichaRows = arrayOf(
+          new DynamicModel({
+            cliente_id: '',
+            desfecho: '',
+            valor_potencial: -0,
+            toneladas_potencial: -0,
+          }),
+        )
+        const fichasSql = `
+          SELECT rf.cliente as cliente_id, rf.desfecho as desfecho,
+                 rf.valor_potencial as valor_potencial, rf.toneladas_potencial as toneladas_potencial
+          FROM respostas_formulario rf
+          WHERE rf.cliente IN (SELECT c.id FROM clientes c WHERE ${condReativados})
+          ORDER BY rf.created DESC
+        `
+        const qbFichas = $app.db().newQuery(fichasSql)
+        if (Object.keys(bReat).length > 0) qbFichas.bind(bReat)
+        qbFichas.all(fichaRows)
+
+        const fichaPorCliente = {}
+        const fichaVista = {}
+        for (let fi = 0; fi < fichaRows.length; fi++) {
+          const fr = fichaRows[fi]
+          const cId = String(fr.cliente_id || '')
+          if (!cId || fichaVista[cId]) continue
+          fichaVista[cId] = true
+          if (String(fr.desfecho || '').trim() !== 'reativado') continue
+          const vPot = Number(fr.valor_potencial || 0)
+          const kgPot = Number(fr.toneladas_potencial || 0)
+          fichaPorCliente[cId] = {
+            valor: vPot > 0 ? vPot : 0,
+            kg: kgPot > 0 ? kgPot : 0,
+          }
+        }
+
         for (let idx = 0; idx < reatRows.length; idx++) {
           const r = reatRows[idx]
-          if (vistosReat[r.cliente_id]) continue
-          vistosReat[r.cliente_id] = true
+          const ficha = fichaPorCliente[String(r.cliente_id || '')]
+          // ERP vence; ficha só complementa o campo que estiver 0/vazio no ERP
+          const valorCli =
+            Number(r.valor || 0) > 0 ? Number(r.valor) : ficha ? Number(ficha.valor || 0) : 0
+          const kgCli = Number(r.kg || 0) > 0 ? Number(r.kg) : ficha ? Number(ficha.kg || 0) : 0
           reativadosList.push({
             id: r.cliente_id,
             codigo: r.codigo,
@@ -298,14 +577,15 @@ routerAdd(
             vendedorOrigem: r.vendedor_origem,
             operadorResponsavel: r.operador_nome,
             pedido: r.pedido,
-            valor: Number(r.valor || 0),
-            volumeKg: Number(r.volume_kg || 0),
+            valor: valorCli,
+            volumeKg: kgCli,
             data: r.data_reativacao,
             dataFormatada: formatBrasiliaDate(r.data_reativacao),
           })
         }
       }
 
+      // 2. LISTA 2: CLIENTES REAGENDADOS
       // 2. LISTA 2: CLIENTES REAGENDADOS
       let reagendadosList = []
       if (tipoLista === 'todas' || tipoLista === 'reagendados') {

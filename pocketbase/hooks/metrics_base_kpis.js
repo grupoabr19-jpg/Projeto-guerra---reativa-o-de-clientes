@@ -651,14 +651,43 @@ routerAdd(
         // da base estiver 0/vazio — ficha nunca sobrescreve dado do ERP
         // (mesmo padrão do drilldown: "a ficha só complementa quando o cliente
         // está sem peso"; fichas com kg cru pequeno não derrubam a ton do ERP).
-        const valorRecuperadoQuery = Number(kpiModel.valor_recuperado_real || 0)
-        const toneladasRecuperadasQuery = Number(kpiModel.toneladas_recuperadas_real || 0)
-        if (valorRecuperadoQuery <= 0 && somaValorFichas > 0) {
-          valorRecuperadoReal = somaValorFichas
+        // REAL EQUIPE POR CLIENTE (régua única com a aba Atividades): para cada cliente
+        // reativado de verdade, valor e kg vêm do ERP e a ficha só COMPLEMENTA o campo
+        // que estiver 0/vazio no ERP. Contagem, valor e kg do card = soma dessa lista.
+        const rBindReais = {}
+        const regClauseReais = REGUA.sqlRegiao(regiao, 'c.', rBindReais)
+        rBindReais.janelaInicio = janela.inicioIso
+        rBindReais.janelaFim = janela.fimIso
+        const reaisSql = `
+          SELECT
+            c.id as cliente_id,
+            COALESCE(c.valor_ultima_compra, 0) as valor,
+            COALESCE(NULLIF(c.toneladas_historico, 0), CASE WHEN COALESCE(c.peso_nf_tonelagem, 0) > 0 THEN c.peso_nf_tonelagem * 1000 ELSE 0 END, 0) as kg
+          FROM clientes c
+          WHERE ${REGUA.sqlBaseFilter(baseCategoriaParam, 'c.')}${regClauseReais}
+            AND ${REGUA.sqlReativacaoReal('c')}
+            AND ${REGUA.sqlJanelaInteracoes('c.id', janela, 'i_win')}
+        `
+        const reaisRows = arrayOf(new DynamicModel({ cliente_id: '', valor: -0, kg: -0 }))
+        const reaisQb = $app.db().newQuery(reaisSql)
+        if (Object.keys(rBindReais).length > 0) reaisQb.bind(rBindReais)
+        reaisQb.all(reaisRows)
+
+        const rfPorCliente = fichasAgg.fichasPorCliente
+        let somaValorReais = 0
+        let somaKgReais = 0
+        for (let ri = 0; ri < reaisRows.length; ri++) {
+          const rr = reaisRows[ri]
+          const ficha = rfPorCliente[String(rr.cliente_id || '')]
+          const valorCli =
+            Number(rr.valor || 0) > 0 ? Number(rr.valor) : ficha ? Number(ficha.valor || 0) : 0
+          const kgCli = Number(rr.kg || 0) > 0 ? Number(rr.kg) : ficha ? Number(ficha.kg || 0) : 0
+          somaValorReais += valorCli
+          somaKgReais += kgCli
         }
-        if (toneladasRecuperadasQuery <= 0 && somaTonFichas > 0) {
-          toneladasRecuperadasReal = somaTonFichas
-        }
+        reativadosReaisCount = reaisRows.length
+        valorRecuperadoReal = Number(somaValorReais.toFixed(2))
+        toneladasRecuperadasReal = Number(somaKgReais.toFixed(2))
         // Diagnóstico do card Real Equipe: soma vinda da query de clientes vs fichas.
         console.log(
           '[metrics_base_kpis] Real Equipe — query_clientes: valor=' +
