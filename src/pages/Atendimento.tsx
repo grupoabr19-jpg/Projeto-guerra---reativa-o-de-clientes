@@ -738,6 +738,7 @@ export default function AtendimentoPage() {
       if (val === 'Não') {
         delete updated.q15
         delete updated.q16
+        delete updated.q16_unidade
       }
       return updated
     })
@@ -1175,36 +1176,16 @@ export default function AtendimentoPage() {
       const valorPotencial = parseNumeroLimpo(rawQ15)
       const pesoDigitado = parseNumeroLimpo(rawQ16)
 
-      // Prevenção no frontend: normalização unificada kg -> ton
-      let toneladasPotencial = pesoDigitado
-      let unidadeDetectada = 'ton'
+      // Unidade de peso vem EXPLICITAMENTE do seletor do Q16 (default kg).
+      // O backend NUNCA adivinha: unidade_forcada tem precedência absoluta
+      // (ton × 1000 → kg canônico) e a esteira de normalização central
+      // (unit_normalizer.js) grava o kg correto.
+      const unidadePeso = (answers.q16_unidade === 'ton' ? 'ton' : 'kg') as 'kg' | 'ton'
+      const pesoBruto = pesoDigitado
 
-      if (pesoDigitado > 0) {
-        if (valorPotencial > 0) {
-          const ratio = valorPotencial / pesoDigitado
-          if (ratio >= 2 && ratio <= 60) {
-            unidadeDetectada = 'kg'
-            toneladasPotencial = Number((pesoDigitado / 1000).toFixed(6))
-          } else if (ratio < 2 && pesoDigitado >= 50) {
-            unidadeDetectada = 'kg'
-            toneladasPotencial = Number((pesoDigitado / 1000).toFixed(6))
-          } else if (pesoDigitado >= 50 && ratio > 60 && ratio < 500) {
-            unidadeDetectada = 'kg'
-            toneladasPotencial = Number((pesoDigitado / 1000).toFixed(6))
-          } else {
-            unidadeDetectada = 'ton'
-            toneladasPotencial = pesoDigitado
-          }
-        } else {
-          if (pesoDigitado >= 50) {
-            unidadeDetectada = 'kg'
-            toneladasPotencial = Number((pesoDigitado / 1000).toFixed(6))
-          } else {
-            unidadeDetectada = 'ton'
-            toneladasPotencial = pesoDigitado
-          }
-        }
-      }
+      // kg canônico no banco (toneladas_potencial é gravado em kg pela esteira server-side)
+      const toneladasPotencial =
+        unidadePeso === 'ton' ? Number((pesoBruto * 1000).toFixed(6)) : Number(pesoBruto.toFixed(6))
 
       // Consolidar respostas com "Outros: <texto>"
       const chavesOutros = ['q3', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'q12', 'q13']
@@ -1217,8 +1198,11 @@ export default function AtendimentoPage() {
       })
 
       respostasConsolidadas.q16 = rawQ16 !== '0' && rawQ16.trim() !== '' ? rawQ16 : pesoDigitado
-      respostasConsolidadas.q16_unidade_detectada = unidadeDetectada
-      respostasConsolidadas.q16_toneladas_normalizadas = toneladasPotencial
+      respostasConsolidadas.q16_unidade = unidadePeso
+      respostasConsolidadas.q16_unidade_detectada = unidadePeso
+      respostasConsolidadas.q16_toneladas_normalizadas = Number(
+        (toneladasPotencial / 1000).toFixed(6),
+      )
 
       await saveRespostasFormulario({
         cliente: cliente.id,
@@ -1227,6 +1211,7 @@ export default function AtendimentoPage() {
         desfecho: desfechoFinal,
         valor_potencial: valorPotencial,
         toneladas_potencial: toneladasPotencial,
+        unidade_peso: unidadePeso,
       })
 
       // 2. Determinar novos campos no Cliente

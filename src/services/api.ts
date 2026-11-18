@@ -223,6 +223,9 @@ export async function saveRespostasFormulario(data: {
   if (data.toneladas_potencial !== undefined && data.toneladas_potencial !== null) {
     formData.append('toneladas_potencial', String(data.toneladas_potencial))
   }
+  if (data.unidade_peso) {
+    formData.append('unidade_peso', data.unidade_peso)
+  }
 
   if (data.anexos && data.anexos.length > 0) {
     const limitedFiles = data.anexos.slice(0, 3)
@@ -651,6 +654,43 @@ export async function editarAtendimentoFechadoAdmin(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || err.message || 'Falha ao editar atendimento fechado')
+  }
+  return res.json()
+}
+
+export interface EditarPesoAdminData {
+  cliente_id: string
+  peso: number
+  unidade: 'kg' | 't'
+  observacao?: string
+}
+
+/**
+ * Edita o peso/tonelagem de um cliente (exclusivo admin).
+ * Envia o valor BRUTO + unidade explícita (kg|t); o backend normaliza para kg canônico,
+ * grava em clientes.toneladas_historico e registra auditoria em eventos_log.
+ */
+export async function editarPesoAdmin(
+  data: EditarPesoAdminData,
+): Promise<{
+  ok: boolean
+  message: string
+  cliente: { id: string; kg_novo: number; kg_anterior: number }
+}> {
+  const res = await fetch(
+    `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/queue/editar-peso-admin`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: pb.authStore.token,
+      },
+      body: JSON.stringify(data),
+    },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || err.message || 'Falha ao editar peso')
   }
   return res.json()
 }
