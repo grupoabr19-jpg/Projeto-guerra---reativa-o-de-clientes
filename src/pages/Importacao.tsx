@@ -35,6 +35,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { fetchImportacoes, processSpreadsheetRows, fetchConfiguracoes } from '@/services/api'
 import { parseSpreadsheetWithSheetJS, type ParseProgress } from '@/lib/sheetParser'
+import { parseNumeroPtBr } from '@/lib/numeros'
 import type { Importacao } from '@/types'
 import { normalizarSegmento } from '@/lib/segmentos'
 import { Progress } from '@/components/ui/progress'
@@ -626,20 +627,19 @@ export default function ImportacaoPage() {
             ? r[mapping.toneladas_historico]
             : pesoNfVal || 0,
           valor_historico: mapping.valor_historico ? r[mapping.valor_historico] : fat12mVal || 0,
+          // (valores de margem/peso/fat_12m normalizados abaixo com parseNumeroPtBr)
           compras_count: mapping.compras_count ? r[mapping.compras_count] : freqComprasVal || 1,
           pedido: mapping.pedido ? r[mapping.pedido] : '',
           dias_sem_faturar: mapping.dias_sem_faturar ? r[mapping.dias_sem_faturar] : '',
           faixa: mapping.faixa ? r[mapping.faixa] : '',
           canal: canalVal ? String(canalVal) : undefined,
           margem_media_perc: margemMediaVal
-            ? Number(String(margemMediaVal).replace('%', '').replace(',', '.'))
+            ? parseNumeroPtBr(String(margemMediaVal).replace('%', ''))
             : undefined,
-          margem_reais: margemReaisVal
-            ? Number(String(margemReaisVal).replace(',', '.'))
-            : undefined,
-          peso_nf_tonelagem: pesoNfVal ? Number(String(pesoNfVal).replace(',', '.')) : undefined,
-          fat_12m_reais: fat12mVal ? Number(String(fat12mVal).replace(',', '.')) : undefined,
-          frequencia_compras_12m: freqComprasVal ? Number(freqComprasVal) : undefined,
+          margem_reais: margemReaisVal ? parseNumeroPtBr(margemReaisVal) : undefined,
+          peso_nf_tonelagem: pesoNfVal ? parseNumeroPtBr(pesoNfVal) : undefined,
+          fat_12m_reais: fat12mVal ? parseNumeroPtBr(fat12mVal) : undefined,
+          frequencia_compras_12m: freqComprasVal ? parseNumeroPtBr(freqComprasVal) : undefined,
           tipo_vendedor: tipoVendedorVal ? String(tipoVendedorVal) : undefined,
         }
       })

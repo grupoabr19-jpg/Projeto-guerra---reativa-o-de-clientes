@@ -54,6 +54,30 @@ routerAdd(
           .trim()
       }
 
+      // Helper inline: parse numérico pt-BR/en-US — mesmo algoritmo de src/lib/numeros.ts.
+      // Aceita "253,08" / "1.234,56" / "1,234.56" / "R$ 1 234,56" e numbers.
+      // OBRIGATÓRIO inline no callback (Goja bloqueia helper top-level/globalThis).
+      const parseNumeroPtBr = (v) => {
+        if (typeof v === 'number') return isNaN(v) ? 0 : v
+        let s = String(v === null || v === undefined ? '' : v)
+          .trim()
+          .replace(/[^\d.,-]/g, '')
+        if (!s) return 0
+        const hasComma = s.indexOf(',') >= 0
+        const hasDot = s.indexOf('.') >= 0
+        if (hasComma && hasDot) {
+          if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+            s = s.replace(/\./g, '').replace(',', '.') // pt-BR: 1.234,56
+          } else {
+            s = s.replace(/,/g, '') // en-US: 1,234.56
+          }
+        } else if (hasComma) {
+          s = s.replace(/,/g, '.') // pt-BR decimal: 253,08
+        }
+        const n = parseFloat(s)
+        return isNaN(n) ? 0 : n
+      }
+
       // Helper inline para comparação de números (trata null/undefined como 0 ou compara com tolerância)
       const numbersDifferent = (a, b) => {
         const numA = a === null || a === undefined || a === '' ? 0 : Number(a)
@@ -322,35 +346,17 @@ routerAdd(
 
             countMatchesNome++
 
-            const fatValor =
-              typeof row.valor_ultima_compra === 'number'
-                ? row.valor_ultima_compra
-                : parseFloat(
-                    String(row.valor_ultima_compra || 0)
-                      .replace(/[^\d.,]/g, '')
-                      .replace(',', '.'),
-                  ) || 0
+            const fatValor = parseNumeroPtBr(row.valor_ultima_compra || 0)
 
             const temTonCol =
               row.toneladas_historico !== undefined &&
               row.toneladas_historico !== null &&
               String(row.toneladas_historico).trim() !== ''
-            const pesoVal =
-              typeof row.toneladas_historico === 'number'
-                ? row.toneladas_historico
-                : parseFloat(
-                    String(row.toneladas_historico || row.peso_nf_tonelagem || 0)
-                      .replace(/[^\d.,]/g, '')
-                      .replace(',', '.'),
-                  ) || 0
+            const pesoVal = parseNumeroPtBr(row.toneladas_historico || row.peso_nf_tonelagem || 0)
             // peso_nf_tonelagem vem da sincronização ERP em TONELADAS
             const pesoNfVal =
               row.peso_nf_tonelagem !== undefined && row.peso_nf_tonelagem !== null
-                ? parseFloat(
-                    String(row.peso_nf_tonelagem)
-                      .replace(/[^\d.,]/g, '')
-                      .replace(',', '.'),
-                  ) || 0
+                ? parseNumeroPtBr(row.peso_nf_tonelagem)
                 : 0
 
             const numPedido = String(
@@ -616,16 +622,16 @@ routerAdd(
 
             let targetMargemPerc = null
             if (row.margem_media_perc !== undefined && row.margem_media_perc !== null) {
-              targetMargemPerc = Number(row.margem_media_perc)
+              targetMargemPerc = parseNumeroPtBr(row.margem_media_perc)
             } else if (row.margem_perc !== undefined && row.margem_perc !== null) {
-              targetMargemPerc = Number(row.margem_perc)
+              targetMargemPerc = parseNumeroPtBr(row.margem_perc)
             }
 
             let targetMargemReais = null
             if (row.margem_reais !== undefined && row.margem_reais !== null) {
-              targetMargemReais = Number(row.margem_reais)
+              targetMargemReais = parseNumeroPtBr(row.margem_reais)
             } else if (row.margem_valor !== undefined && row.margem_valor !== null) {
-              targetMargemReais = Number(row.margem_valor)
+              targetMargemReais = parseNumeroPtBr(row.margem_valor)
             }
 
             if (
@@ -674,30 +680,9 @@ routerAdd(
           // ==========================================
           importedCodigos.add(rawCodigo)
 
-          const valorUltimaCompra =
-            typeof row.valor_ultima_compra === 'number'
-              ? row.valor_ultima_compra
-              : parseFloat(
-                  String(row.valor_ultima_compra || 0)
-                    .replace(/[^\d.,]/g, '')
-                    .replace(',', '.'),
-                ) || 0
-          const toneladasHistorico =
-            typeof row.toneladas_historico === 'number'
-              ? row.toneladas_historico
-              : parseFloat(
-                  String(row.toneladas_historico || 0)
-                    .replace(/[^\d.,]/g, '')
-                    .replace(',', '.'),
-                ) || 0
-          const valorHistorico =
-            typeof row.valor_historico === 'number'
-              ? row.valor_historico
-              : parseFloat(
-                  String(row.valor_historico || 0)
-                    .replace(/[^\d.,]/g, '')
-                    .replace(',', '.'),
-                ) || 0
+          const valorUltimaCompra = parseNumeroPtBr(row.valor_ultima_compra || 0)
+          const toneladasHistorico = parseNumeroPtBr(row.toneladas_historico || 0)
+          const valorHistorico = parseNumeroPtBr(row.valor_historico || 0)
           const comprasCount = parseInt(row.compras_count || 1, 10) || 1
 
           let ultimaCompraDate = null
@@ -916,19 +901,19 @@ routerAdd(
 
             if (row.canal) rec.set('canal', String(row.canal).trim())
             if (row.margem_media_perc !== undefined && row.margem_media_perc !== null) {
-              rec.set('margem_media_perc', Number(row.margem_media_perc))
+              rec.set('margem_media_perc', parseNumeroPtBr(row.margem_media_perc))
             }
             if (row.margem_reais !== undefined && row.margem_reais !== null) {
-              rec.set('margem_reais', Number(row.margem_reais))
+              rec.set('margem_reais', parseNumeroPtBr(row.margem_reais))
             }
             if (row.peso_nf_tonelagem !== undefined && row.peso_nf_tonelagem !== null) {
-              rec.set('peso_nf_tonelagem', Number(row.peso_nf_tonelagem))
+              rec.set('peso_nf_tonelagem', parseNumeroPtBr(row.peso_nf_tonelagem))
             }
             if (row.fat_12m_reais !== undefined && row.fat_12m_reais !== null) {
-              rec.set('fat_12m_reais', Number(row.fat_12m_reais))
+              rec.set('fat_12m_reais', parseNumeroPtBr(row.fat_12m_reais))
             }
             if (row.frequencia_compras_12m !== undefined && row.frequencia_compras_12m !== null) {
-              rec.set('frequencia_compras_12m', Number(row.frequencia_compras_12m))
+              rec.set('frequencia_compras_12m', parseNumeroPtBr(row.frequencia_compras_12m))
             }
             if (row.tipo_vendedor) rec.set('tipo_vendedor', String(row.tipo_vendedor).trim())
             if (row.ultimo_pedido_numero || row.pedido) {
@@ -1434,7 +1419,7 @@ routerAdd(
             } else if (toneladasHistorico <= 0 && tonHistoricoAtual <= 0) {
               const pesoNfLinha =
                 row.peso_nf_tonelagem !== undefined && row.peso_nf_tonelagem !== null
-                  ? Number(row.peso_nf_tonelagem) || 0
+                  ? parseNumeroPtBr(row.peso_nf_tonelagem)
                   : 0
               if (pesoNfLinha > 0) {
                 const fallbackKgM3 = Number((pesoNfLinha * 1000).toFixed(4))
@@ -1468,33 +1453,39 @@ routerAdd(
             if (
               row.margem_media_perc !== undefined &&
               row.margem_media_perc !== null &&
-              numbersDifferent(rec.getFloat('margem_media_perc'), Number(row.margem_media_perc))
+              numbersDifferent(
+                rec.getFloat('margem_media_perc'),
+                parseNumeroPtBr(row.margem_media_perc),
+              )
             ) {
-              rec.set('margem_media_perc', Number(row.margem_media_perc))
+              rec.set('margem_media_perc', parseNumeroPtBr(row.margem_media_perc))
               mudou = true
             }
             if (
               row.margem_reais !== undefined &&
               row.margem_reais !== null &&
-              numbersDifferent(rec.getFloat('margem_reais'), Number(row.margem_reais))
+              numbersDifferent(rec.getFloat('margem_reais'), parseNumeroPtBr(row.margem_reais))
             ) {
-              rec.set('margem_reais', Number(row.margem_reais))
+              rec.set('margem_reais', parseNumeroPtBr(row.margem_reais))
               mudou = true
             }
             if (
               row.peso_nf_tonelagem !== undefined &&
               row.peso_nf_tonelagem !== null &&
-              numbersDifferent(rec.getFloat('peso_nf_tonelagem'), Number(row.peso_nf_tonelagem))
+              numbersDifferent(
+                rec.getFloat('peso_nf_tonelagem'),
+                parseNumeroPtBr(row.peso_nf_tonelagem),
+              )
             ) {
-              rec.set('peso_nf_tonelagem', Number(row.peso_nf_tonelagem))
+              rec.set('peso_nf_tonelagem', parseNumeroPtBr(row.peso_nf_tonelagem))
               mudou = true
             }
             if (
               row.fat_12m_reais !== undefined &&
               row.fat_12m_reais !== null &&
-              numbersDifferent(rec.getFloat('fat_12m_reais'), Number(row.fat_12m_reais))
+              numbersDifferent(rec.getFloat('fat_12m_reais'), parseNumeroPtBr(row.fat_12m_reais))
             ) {
-              rec.set('fat_12m_reais', Number(row.fat_12m_reais))
+              rec.set('fat_12m_reais', parseNumeroPtBr(row.fat_12m_reais))
               mudou = true
             }
             if (
@@ -1502,10 +1493,10 @@ routerAdd(
               row.frequencia_compras_12m !== null &&
               numbersDifferent(
                 rec.getFloat('frequencia_compras_12m'),
-                Number(row.frequencia_compras_12m),
+                parseNumeroPtBr(row.frequencia_compras_12m),
               )
             ) {
-              rec.set('frequencia_compras_12m', Number(row.frequencia_compras_12m))
+              rec.set('frequencia_compras_12m', parseNumeroPtBr(row.frequencia_compras_12m))
               mudou = true
             }
             if (
