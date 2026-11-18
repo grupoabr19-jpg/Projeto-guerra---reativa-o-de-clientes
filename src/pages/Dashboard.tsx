@@ -68,6 +68,7 @@ import { AtividadeColaboradorSection } from '@/components/AtividadeColaboradorSe
 import { ExportacaoRelatoriosSection } from '@/components/ExportacaoRelatoriosSection'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { MetricsDrilldownModal } from '@/components/MetricsDrilldownModal'
+import { AuditoriaPesoModal } from '@/components/AuditoriaPesoModal'
 import { SEGMENTOS_OFICIAIS } from '@/lib/segmentos'
 import { usePresence } from '@/hooks/usePresence'
 import { calcularTaxaConversao } from '@/lib/conversao'
@@ -131,6 +132,9 @@ export default function Dashboard() {
       titulo,
     })
   }
+
+  // Auditoria de peso (exclusiva admin): modal com R$/kg das reativações reais
+  const [auditoriaPesoOpen, setAuditoriaPesoOpen] = useState(false)
 
   // Filtro para exibir apenas operadores atuando (com dados no período/escopo)
   const [apenasAtuando, setApenasAtuando] = useState<boolean>(true)
@@ -1847,8 +1851,24 @@ export default function Dashboard() {
                 {/* Rodapé Alinhado */}
                 <div className="px-4 py-2.5 bg-emerald-100/50 border-t border-emerald-200/70 flex items-center justify-between text-[11px] text-emerald-900">
                   <span className="font-medium">Conversões confirmadas</span>
-                  <span className="font-semibold text-emerald-800 text-[11px] inline-flex items-center gap-1">
-                    Ver lista &rarr;
+                  <span className="flex items-center gap-2">
+                    {user?.role === 'admin' && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setAuditoriaPesoOpen(true)
+                        }}
+                        className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-0.5 text-[10px] font-bold text-rose-700 hover:bg-rose-50 hover:border-rose-400 transition-colors shadow-2xs"
+                        title="Auditar pesos suspeitos das reativações (R$/kg fora da faixa plausível)"
+                      >
+                        <AlertTriangle className="h-3 w-3" />
+                        Auditoria de peso
+                      </button>
+                    )}
+                    <span className="font-semibold text-emerald-800 text-[11px] inline-flex items-center gap-1">
+                      Ver lista &rarr;
+                    </span>
                   </span>
                 </div>
               </Card>
@@ -2661,6 +2681,23 @@ export default function Dashboard() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Auditoria de peso (somente admin): mesma região/categoria/período do painel;
+          ao corrigir um peso, revalida os KPIs do card Real Equipe */}
+      {user?.role === 'admin' && (
+        <AuditoriaPesoModal
+          isOpen={auditoriaPesoOpen}
+          onClose={() => setAuditoriaPesoOpen(false)}
+          regiao={selectedRegion}
+          baseCategoria={selectedCategoria}
+          dataInicial={dataInicial}
+          dataFinal={dataFinal}
+          onPesoCorrigido={() => {
+            loadDataBase()
+            loadMetricasAtendimento()
+          }}
+        />
+      )}
     </div>
   )
 }
