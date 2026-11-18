@@ -56,6 +56,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { CheckCircle2, DollarSign } from 'lucide-react'
 import { getBrasiliaDateStr } from '@/lib/expediente'
+import { parseNumeroPtBr } from '@/lib/numeros'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   AlertDialog,
@@ -111,6 +112,7 @@ export default function ClientesPage() {
   const [valorFaturadoInput, setValorFaturadoInput] = useState('')
   const [nfFaturaInput, setNfFaturaInput] = useState('')
   const [obsFaturamentoInput, setObsFaturamentoInput] = useState('')
+  const [pesoKgFaturadoInput, setPesoKgFaturadoInput] = useState('')
   const [salvandoFaturamento, setSalvandoFaturamento] = useState(false)
 
   useEffect(() => {
@@ -258,6 +260,11 @@ export default function ClientesPage() {
     )
     setNfFaturaInput(c.numero_nf_fatura || c.pedido_reativacao || '')
     setObsFaturamentoInput('')
+    // Peso em KG (canônico): pré-preenche com o peso já conhecido do cliente, se houver
+    const tonHist = Number(c.toneladas_historico) || 0
+    const pesoNfTon = Number(c.peso_nf_tonelagem) || 0
+    const pesoConhecidoKg = tonHist > 0 ? tonHist : pesoNfTon > 0 ? pesoNfTon * 1000 : 0
+    setPesoKgFaturadoInput(pesoConhecidoKg > 0 ? String(pesoConhecidoKg) : '')
     setModalFaturamentoAberto(true)
   }
 
@@ -285,11 +292,13 @@ export default function ClientesPage() {
 
     setSalvandoFaturamento(true)
     try {
+      const pesoKgNum = parseNumeroPtBr(pesoKgFaturadoInput)
       const res = await concluirFaturamentoPedido({
         cliente_id: clienteParaFaturar.id,
         data_faturamento: dataFaturamentoInput,
         valor_faturado: valorNum,
         numero_nf_fatura: nfFaturaInput.trim() || undefined,
+        peso_kg: pesoKgNum > 0 ? pesoKgNum : undefined,
         observacoes: obsFaturamentoInput.trim() || undefined,
       })
 
@@ -1263,6 +1272,27 @@ export default function ClientesPage() {
                     onChange={(e) => setNfFaturaInput(e.target.value)}
                     className="h-9 text-xs mt-1"
                   />
+                </div>
+
+                <div>
+                  <Label
+                    htmlFor="peso-fat-clientes"
+                    className="text-xs font-semibold text-slate-700"
+                  >
+                    Peso do Pedido / NF (kg) — sempre em QUILOS
+                  </Label>
+                  <Input
+                    id="peso-fat-clientes"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="Ex: 253,08 kg"
+                    value={pesoKgFaturadoInput}
+                    onChange={(e) => setPesoKgFaturadoInput(e.target.value)}
+                    className="h-9 text-xs mt-1 font-mono font-bold text-slate-900"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Digite em quilos. Aceita vírgula decimal (ex.: 1.234,56 kg).
+                  </p>
                 </div>
 
                 <div>

@@ -49,6 +49,7 @@ import pb from '@/lib/pocketbase/client'
 import { isConversao, isLigacaoOuChamada, calcularTaxaConversao } from '@/lib/conversao'
 import type { Interacao, Cliente, RankingUserRow, MetasOperacionaisConfig } from '@/types'
 import { getBrasiliaDateStr, getBrasiliaParts, formatarDataHoraBrasilia } from '@/lib/expediente'
+import { parseNumeroPtBr } from '@/lib/numeros'
 
 export type AtalhoPeriodo =
   | 'mes_atual'
@@ -89,6 +90,7 @@ export function MeuPainelPage() {
   const [dataFaturamentoInput, setDataFaturamentoInput] = useState(getBrasiliaDateStr(new Date()))
   const [valorFaturadoInput, setValorFaturadoInput] = useState('')
   const [nfFaturaInput, setNfFaturaInput] = useState('')
+  const [pesoKgFaturadoInput, setPesoKgFaturadoInput] = useState('')
   const [obsFaturamentoInput, setObsFaturamentoInput] = useState('')
   const [salvandoFaturamento, setSalvandoFaturamento] = useState(false)
 
@@ -207,6 +209,11 @@ export function MeuPainelPage() {
     )
     setNfFaturaInput(c.numero_nf_fatura || c.pedido_reativacao || '')
     setObsFaturamentoInput('')
+    // Peso em KG (canônico): pré-preenche com o peso já conhecido do cliente, se houver
+    const tonHist = Number(c.toneladas_historico) || 0
+    const pesoNfTon = Number(c.peso_nf_tonelagem) || 0
+    const pesoConhecidoKg = tonHist > 0 ? tonHist : pesoNfTon > 0 ? pesoNfTon * 1000 : 0
+    setPesoKgFaturadoInput(pesoConhecidoKg > 0 ? String(pesoConhecidoKg) : '')
     setModalFaturamentoAberto(true)
   }
 
@@ -234,11 +241,13 @@ export function MeuPainelPage() {
 
     setSalvandoFaturamento(true)
     try {
+      const pesoKgNum = parseNumeroPtBr(pesoKgFaturadoInput)
       const res = await concluirFaturamentoPedido({
         cliente_id: clienteParaFaturar.id,
         data_faturamento: dataFaturamentoInput,
         valor_faturado: valorNum,
         numero_nf_fatura: nfFaturaInput.trim() || undefined,
+        peso_kg: pesoKgNum > 0 ? pesoKgNum : undefined,
         observacoes: obsFaturamentoInput.trim() || undefined,
       })
 
@@ -1255,6 +1264,23 @@ export function MeuPainelPage() {
                   onChange={(e) => setNfFaturaInput(e.target.value)}
                   className="text-xs bg-white"
                 />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-slate-700">
+                  Peso do Pedido / NF (kg) — sempre em QUILOS
+                </Label>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Ex: 253,08"
+                  value={pesoKgFaturadoInput}
+                  onChange={(e) => setPesoKgFaturadoInput(e.target.value)}
+                  className="text-xs bg-white font-mono"
+                />
+                <p className="text-[11px] text-slate-400">
+                  Digite em quilos. Aceita vírgula decimal (ex.: 1.234,56 kg).
+                </p>
               </div>
             </div>
 

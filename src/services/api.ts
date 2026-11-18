@@ -1120,6 +1120,8 @@ export async function concluirFaturamentoPedido(params: {
   data_faturamento: string
   valor_faturado: number
   numero_nf_fatura?: string
+  /** Peso do pedido/NF em QUILOS (unidade canônica). Convertido para toneladas no servidor. */
+  peso_kg?: number
   observacoes?: string
 }): Promise<{ ok: boolean; message: string; cliente: Cliente }> {
   const res = await fetch(

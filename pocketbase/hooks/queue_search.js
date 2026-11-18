@@ -2250,6 +2250,33 @@ routerAdd(
       const numeroNfFatura = String(body.numero_nf_fatura || '').trim()
       const observacoes = String(body.observacoes || '').trim()
 
+      // Peso do pedido/NF em KG (canônico — ERP/pedidos sempre em QUILOS).
+      // Aceita formatos pt-BR ("253,08", "1.234,56") e en-US ("1234.56"/"1,234.56").
+      const parsePesoKgLocal = (v) => {
+        if (typeof v === 'number') return isNaN(v) ? 0 : v
+        let s = String(v || '').trim()
+        if (!s) return 0
+        s = s.replace(/[^\d.,-]/g, '')
+        const hasComma = s.indexOf(',') >= 0
+        const hasDot = s.indexOf('.') >= 0
+        if (hasComma && hasDot) {
+          if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+            s = s.replace(/\./g, '').replace(',', '.') // pt-BR: 1.234,56
+          } else {
+            s = s.replace(/,/g, '') // en-US: 1,234.56
+          }
+        } else if (hasComma) {
+          s = s.replace(/,/g, '.') // pt-BR decimal: 253,08
+        }
+        const n = parseFloat(s)
+        return isNaN(n) ? 0 : n
+      }
+      const pesoKgFaturado = parsePesoKgLocal(
+        body.peso_kg !== undefined && body.peso_kg !== null && body.peso_kg !== ''
+          ? body.peso_kg
+          : body.peso,
+      )
+
       const cliente = $app.findRecordById('clientes', clienteId)
       if (!cliente) {
         return e.json(404, { error: 'Cliente não encontrado' })
@@ -2285,6 +2312,14 @@ routerAdd(
       cliente.set('valor_ultima_compra', valorFaturadoNum)
       cliente.set('dias_sem_faturar', 0)
       cliente.set('faixa', 'recente')
+      if (pesoKgFaturado > 0) {
+        // kg é canônico em toneladas_historico; peso_nf_tonelagem segue como espelho em toneladas
+        cliente.set('toneladas_historico', Number(pesoKgFaturado.toFixed(4)))
+        const tonMirror = Number((pesoKgFaturado / 1000).toFixed(6))
+        if (tonMirror > 0) {
+          cliente.set('peso_nf_tonelagem', tonMirror)
+        }
+      }
       $app.save(cliente)
 
       const agoraIso = new Date().toISOString()
@@ -2344,6 +2379,7 @@ routerAdd(
           data_faturamento: dataFatDate.toISOString(),
           valor_faturado: valorFaturadoNum,
           numero_nf_fatura: numeroNfFatura,
+          peso_kg: pesoKgFaturado > 0 ? Number(pesoKgFaturado.toFixed(4)) : 0,
           observacoes: observacoes,
           operador_id: userId,
           operador_nome: userName,
