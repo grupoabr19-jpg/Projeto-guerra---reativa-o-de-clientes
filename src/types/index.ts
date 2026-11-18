@@ -684,6 +684,27 @@ export interface MetricsDrilldownResponse {
   error?: string
 }
 
+// Auditoria de peso (somente admin) — /backend/v1/metrics/auditoria-peso
+export type AuditoriaPesoOrigem = 'esteira_erp' | 'nf_erp' | 'manual_admin' | 'ausente' | string
+
+export interface AuditoriaPesoItem {
+  id: string
+  codigo: string
+  nome: string
+  regiao: string
+  operador: string
+  valor: number // R$ faturado
+  peso_kg: number // kg canônico (toneladas_historico, fallback peso_nf_tonelagem × 1000)
+  origem: AuditoriaPesoOrigem
+  peso_nf_tonelagem?: number
+}
+
+export interface AuditoriaPesoResponse {
+  itens: AuditoriaPesoItem[]
+  total: number
+  error?: string
+}
+
 // Chat Interno
 export type ChatConversaTipo = 'geral' | 'canal_rota' | 'dm' | 'kommo_whatsapp'
 export type ChatMensagemTipo = 'normal' | 'aviso' | 'notificacao'

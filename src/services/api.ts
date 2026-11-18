@@ -2446,3 +2446,49 @@ export async function fetchMetricsDrilldown(options: {
 // Re-export diagnóstico e gamificação APIs
 export * from './diagnostico'
 export * from './gamificacao'
+
+/**
+ * Auditoria de peso (somente ADMIN).
+ * Endpoint autenticado: /backend/v1/metrics/auditoria-peso
+ * Lista clientes reativados (mesma régua do card "Real Equipe") com valor,
+ * peso em kg (ERP vence ficha) e origem. A correção é feita via editarPesoAdmin.
+ */
+export async function fetchAuditoriaPeso(options: {
+  regiao?: string
+  baseCategoria?: string
+  dataInicial?: string
+  dataFinal?: string
+}): Promise<import('@/types').AuditoriaPesoResponse> {
+  const params = new URLSearchParams()
+  if (options.regiao && options.regiao !== 'todas') {
+    params.set('regiao', options.regiao)
+  }
+  if (options.baseCategoria && options.baseCategoria !== 'todas') {
+    params.set('base_categoria', options.baseCategoria)
+  }
+  if (options.dataInicial) {
+    params.set('data_inicial', options.dataInicial)
+  }
+  if (options.dataFinal) {
+    params.set('data_final', options.dataFinal)
+  }
+
+  const basePbUrl = (import.meta.env.VITE_POCKETBASE_URL || '').replace(/\/$/, '')
+  const queryStr = params.toString()
+  const url = `${basePbUrl}/backend/v1/metrics/auditoria-peso${queryStr ? `?${queryStr}` : ''}`
+
+  const token = pb.authStore.token || ''
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = token
+  }
+
+  const res = await fetch(url, { method: 'GET', headers })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `Falha ao carregar auditoria de peso (${res.status})`)
+  }
+
+  return res.json()
+}
