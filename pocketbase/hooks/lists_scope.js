@@ -245,12 +245,16 @@ routerAdd(
             COALESCE(u.name, c.operador, c.operador_reativacao, '') as operador_nome,
             COALESCE(i.numero_pedido, c.pedido_reativacao, '') as pedido,
             COALESCE(c.valor_ultima_compra, 0) as valor,
+            COALESCE(NULLIF(c.toneladas_historico, 0), c.peso_nf_tonelagem * 1000, 0) as volume_kg,
             COALESCE(i.created, c.reativado_em, c.updated) as data_reativacao
           FROM clientes c
           INNER JOIN interacoes i ON i.cliente = c.id
           LEFT JOIN users u ON u.id = i.operador
           WHERE c.estado = 'reativado'
-            AND ((c.operador IS NOT NULL AND TRIM(c.operador) != '') OR (c.operador_reativacao IS NOT NULL AND TRIM(c.operador_reativacao) != ''))
+            AND (c.operador_reativacao IS NOT NULL AND TRIM(c.operador_reativacao) != ''
+                 OR EXISTS (SELECT 1 FROM interacoes ip WHERE ip.cliente = c.id
+                   AND ip.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido')
+                   AND ip.operador IS NOT NULL AND TRIM(ip.operador) != ''))
             AND ${baseCliFilter}
             AND (i.desfecho IN ('reativado', 'reativado_com_pedido', 'fechou_pedido')
                  OR (i.numero_pedido IS NOT NULL AND TRIM(i.numero_pedido) != '' AND TRIM(i.numero_pedido) != '-'))
@@ -258,7 +262,6 @@ routerAdd(
             AND ${scopeInteracaoCond}
             ${janelaInteracaoCond}
           ORDER BY data_reativacao DESC
-          LIMIT ${limit}
         `
 
         const reatRows = arrayOf(
@@ -272,6 +275,7 @@ routerAdd(
             operador_nome: '',
             pedido: '',
             valor: -0,
+            volume_kg: -0,
             data_reativacao: '',
           }),
         )
@@ -295,6 +299,7 @@ routerAdd(
             operadorResponsavel: r.operador_nome,
             pedido: r.pedido,
             valor: Number(r.valor || 0),
+            volumeKg: Number(r.volume_kg || 0),
             data: r.data_reativacao,
             dataFormatada: formatBrasiliaDate(r.data_reativacao),
           })

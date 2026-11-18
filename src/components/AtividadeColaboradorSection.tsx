@@ -71,6 +71,7 @@ export const AtividadeColaboradorSection: React.FC<AtividadeColaboradorSectionPr
       operadorResponsavel: string
       pedido: string
       valor: number
+      volumeKg: number
       data: string
       dataFormatada: string
     }>
@@ -324,6 +325,33 @@ export const AtividadeColaboradorSection: React.FC<AtividadeColaboradorSectionPr
       </CardHeader>
 
       <CardContent className="p-4 sm:p-6 space-y-4">
+        {/* Totais da lista de reativados — mesma régua do card Real Equipe do Dashboard */}
+        {subAba === 'reativados' && !loading && dados && (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-slate-700 bg-emerald-50/60 border border-emerald-100 rounded-lg px-3 py-2">
+            <span>
+              <strong className="font-mono">{dados.totais.reativados}</strong> reativados
+            </span>
+            <span>
+              Valor:{' '}
+              <strong className="font-mono">
+                {formatCurrency(dados.reativados.reduce((s, r) => s + (r.valor || 0), 0))}
+              </strong>
+            </span>
+            <span>
+              Volume:{' '}
+              <strong className="font-mono">
+                {(
+                  dados.reativados.reduce((s, r) => s + (r.volumeKg || 0), 0) / 1000
+                ).toLocaleString('pt-BR', {
+                  minimumFractionDigits: 1,
+                  maximumFractionDigits: 1,
+                })}{' '}
+                t
+              </strong>
+            </span>
+          </div>
+        )}
+
         {/* Barra de Busca e Filtros de Escopo */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
           <div className="relative flex-1 max-w-md">
@@ -412,6 +440,7 @@ export const AtividadeColaboradorSection: React.FC<AtividadeColaboradorSectionPr
                           <th className="py-2.5 px-3">Cidade / Rota</th>
                           <th className="py-2.5 px-3">Operador / Vendedor</th>
                           <th className="py-2.5 px-3">Pedido / Valor</th>
+                          <th className="py-2.5 px-3">Volume</th>
                           <th className="py-2.5 px-3">Data Reativação</th>
                           <th className="py-2.5 px-3 text-right">Ação</th>
                         </tr>
@@ -452,6 +481,14 @@ export const AtividadeColaboradorSection: React.FC<AtividadeColaboradorSectionPr
                               <div className="text-[11px] text-slate-500">
                                 Pedido: {item.pedido || '—'}
                               </div>
+                            </td>
+                            <td className="py-2.5 px-3 font-mono text-slate-700">
+                              {item.volumeKg > 0
+                                ? `${(item.volumeKg / 1000).toLocaleString('pt-BR', {
+                                    minimumFractionDigits: 1,
+                                    maximumFractionDigits: 1,
+                                  })} t`
+                                : '—'}
                             </td>
                             <td className="py-2.5 px-3 text-slate-600 font-mono">
                               {item.dataFormatada || '—'}
