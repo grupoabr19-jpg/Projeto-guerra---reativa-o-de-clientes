@@ -206,6 +206,8 @@ export async function saveRespostasFormulario(data: {
   desfecho: string
   valor_potencial?: number
   toneladas_potencial?: number
+  /** Unidade em que o valor bruto foi digitado (padrão e canônico: kg). */
+  unidade_peso?: 'kg' | 'ton'
   anexos?: File[]
 }) {
   const formData = new FormData()
@@ -670,9 +672,7 @@ export interface EditarPesoAdminData {
  * Envia o valor BRUTO + unidade explícita (kg|t); o backend normaliza para kg canônico,
  * grava em clientes.toneladas_historico e registra auditoria em eventos_log.
  */
-export async function editarPesoAdmin(
-  data: EditarPesoAdminData,
-): Promise<{
+export async function editarPesoAdmin(data: EditarPesoAdminData): Promise<{
   ok: boolean
   message: string
   cliente: { id: string; kg_novo: number; kg_anterior: number }
